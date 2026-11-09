@@ -1,0 +1,11 @@
+:host {
+  display: grid;
+  gap: 10px;
+}
+
+/* Parents, partners and children, brothers and sisters: each in a frame of its own, so they are easy to tell apart. */
+:host ::ng-deep .group {
+  padding: 8px 10px 10px;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-md);
+}

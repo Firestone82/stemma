@@ -1,0 +1,47 @@
+import { ChangeDetectionStrategy, Component, computed, inject, input } from '@angular/core';
+import { Person } from '../../../core/model/types';
+import { relativesOf } from '../../../core/poster/scope';
+import { I18n } from '../../../i18n/i18n';
+import { Icon } from '../../../shared/icon/icon';
+import { Switch } from '../../../shared/switch/switch';
+import { ChartModel } from '../../../state/chart-model';
+import { PersonActions } from '../../../state/person-actions';
+import { Relation } from '../../../state/ui-state';
+import { PersonFamily } from './person-family/person-family';
+import { PersonHeader } from './person-header/person-header';
+import { PersonLifeForm } from './person-life-form/person-life-form';
+import { PersonNameForm } from './person-name-form/person-name-form';
+import { PersonSummary } from './person-summary/person-summary';
+
+/** One person: who they are, their details, their family, and what can be done with them. */
+@Component({
+  selector: 'stemma-person-panel',
+  imports: [Icon, Switch, PersonHeader, PersonSummary, PersonNameForm, PersonLifeForm, PersonFamily],
+  templateUrl: './person-panel.html',
+  styleUrl: './person-panel.scss',
+  changeDetection: ChangeDetectionStrategy.OnPush,
+})
+export class PersonPanel {
+  private readonly model = inject(ChartModel);
+  protected readonly people = inject(PersonActions);
+  protected readonly t = inject(I18n).t;
+
+  readonly person = input.required<Person>();
+
+  protected readonly isFocus = computed(() => this.model.focusId() === this.person().id);
+  /** Left out of the chart by the Relatives setting (found in the list, or just added). */
+  protected readonly hidden = computed(() => this.model.hidden().has(this.person().id));
+  protected readonly level = computed(() => this.t(`relatives.${relativesOf(this.model.view())}`));
+
+  protected showEveryone(): void {
+    this.people.showEveryone(this.person().id);
+  }
+
+  protected setHiddenFromPrint(hidden: boolean): void {
+    this.people.update(this.person().id, { hiddenFromPrint: hidden || undefined }, 'hiddenFromPrint');
+  }
+
+  protected add(relation: Relation): void {
+    this.people.startAdd(relation, this.person().id);
+  }
+}

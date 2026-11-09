@@ -1,0 +1,51 @@
+@let p = person();
+<h3>{{ t('name.title') }}</h3>
+<div class="field">
+  <label for="person-given">{{ t('name.given') }}</label>
+  <input
+    id="person-given"
+    class="input"
+    autocomplete="off"
+    [value]="p.name.given"
+    [placeholder]="t('name.givenUnknown')"
+    (input)="setName('given', $event)"
+    (change)="trimName('given', $event)"
+  />
+</div>
+@if (!p.name.given.trim()) {
+  <label class="check">
+    <input id="person-given-unknown" type="checkbox" [checked]="!!p.name.givenUnknown" (change)="setGivenUnknown($event)" />
+    {{ t('name.unknown') }}
+  </label>
+}
+<div class="grid-2">
+  <div class="field">
+    <label for="person-surname">{{ t('name.surname') }}</label>
+    <input
+      id="person-surname"
+      class="input"
+      autocomplete="off"
+      [value]="p.name.derived ? '' : p.name.surname"
+      [placeholder]="p.name.derived ? p.name.surname : ''"
+      [title]="p.name.derived ? t('name.fromHusband') : ''"
+      (input)="setName('surname', $event)"
+      (change)="trimName('surname', $event)"
+    />
+  </div>
+  <div class="field">
+    <label for="person-birthSurname">{{ t('name.birthSurname') }}</label>
+    <input
+      id="person-birthSurname"
+      class="input"
+      autocomplete="off"
+      [value]="p.name.birthSurname ?? ''"
+      [placeholder]="birthSurnameHint()"
+      (input)="setName('birthSurname', $event)"
+      (change)="trimName('birthSurname', $event)"
+    />
+  </div>
+</div>
+<div class="field">
+  <span class="field-label" id="person-sex-label">{{ t('name.sex') }}</span>
+  <stemma-segmented labelledBy="person-sex-label" [options]="sexes()" [value]="p.sex" (valueChange)="setSex($event)" />
+</div>

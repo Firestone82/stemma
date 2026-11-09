@@ -1,0 +1,24 @@
+@let p = person();
+<stemma-person-header [person]="p" (closePanel)="people.close()" />
+<div class="panel-body">
+  @if (hidden()) {
+    <p class="hidden-note" role="status">
+      <stemma-icon name="info" [size]="16" />
+      <span>{{ t('relatives.hiddenNote', { level: level() }) }}</span>
+      <button type="button" class="link-btn" (click)="showEveryone()">{{ t('relatives.showEveryone') }}</button>
+    </p>
+  }
+  <stemma-person-summary [person]="p" (add)="add($event)" />
+  <stemma-person-name-form [person]="p" />
+  <stemma-person-life-form [person]="p" />
+  <stemma-person-family [person]="p" />
+  <section class="panel-section">
+    <stemma-switch [checked]="!!p.hiddenFromPrint" (checkedChange)="setHiddenFromPrint($event)">{{ t('person.hideFromPrint') }}</stemma-switch>
+    <div class="footer-actions">
+      @if (!isFocus()) {
+        <button type="button" class="btn" (click)="people.centreOn(p.id)"><stemma-icon name="target" [size]="16" />{{ t('person.centreHere') }}</button>
+      }
+      <button type="button" class="btn danger" (click)="people.askDelete(p.id)"><stemma-icon name="trash" [size]="16" />{{ t('person.delete') }}</button>
+    </div>
+  </section>
+</div>

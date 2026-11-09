@@ -1,0 +1,38 @@
+<section class="studio" [class.docked]="preview.isOpen()" aria-labelledby="studio-title">
+  <header class="head">
+    <button type="button" class="btn ghost back" (click)="model.close()"><stemma-icon name="chevronLeft" [size]="17" />{{ t('print.back') }}</button>
+    <h2 id="studio-title">{{ t('print.title') }}</h2>
+    <stemma-output-actions class="actions" />
+  </header>
+
+  <div #body class="body" [class.fitted]="previewWidth() !== undefined" [style.--preview-w.px]="previewWidth()">
+    @if (preview.isOpen()) {
+      <div class="away" role="status">
+        <p>{{ t('print.window.note') }}</p>
+        <button type="button" class="btn small" (click)="preview.close()"><stemma-icon name="popIn" [size]="15" />{{ t('print.window.back') }}</button>
+      </div>
+    } @else {
+      <stemma-print-preview
+        [svg]="model.poster()?.svg ?? null"
+        [width]="model.poster()?.width ?? 0"
+        [height]="model.poster()?.height ?? 0"
+        [summary]="model.summary()"
+        [note]="model.sizeNote()"
+        [omitted]="model.omittedCount()"
+        [canPopOut]="preview.available()"
+        [popOutFailed]="preview.failed()"
+        (popOut)="preview.open()"
+        (pick)="model.omit($event)"
+        (restore)="model.restoreOmitted()"
+      />
+    }
+
+    <div class="controls">
+      <stemma-style-picker [current]="model.themeId()" (choose)="model.set({ theme: $event })" />
+      <stemma-centre-options />
+      <stemma-reach-options />
+      <stemma-card-options />
+      <stemma-paper-options />
+    </div>
+  </div>
+</section>

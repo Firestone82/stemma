@@ -1,0 +1,40 @@
+// The groups sit directly in the family section's grid.
+:host {
+  display: contents;
+}
+
+/* A sibling's row, with the twin switch at its end: quiet until it is on. */
+.sibling {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+
+  > [stemmaPersonRow] {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+}
+
+.twin {
+  flex: 0 0 auto;
+  gap: 4px;
+  padding: 2px 6px;
+  border-radius: 999px;
+  color: var(--ink-3);
+  font-size: var(--text-xs);
+  text-decoration: none;
+  opacity: 0.75;
+
+  &:hover,
+  &:focus-visible {
+    color: var(--ink);
+    opacity: 1;
+  }
+
+  &.linked {
+    background: var(--sheet-2);
+    color: var(--ink);
+    font-weight: 500;
+    opacity: 1;
+  }
+}

@@ -1,0 +1,14 @@
+@if (title()) {
+  <div class="menu-title">{{ title() }}</div>
+}
+@for (item of items(); track item.id) {
+  @if (item.separated) {
+    <div class="menu-sep" role="separator"></div>
+  }
+  <button type="button" class="menu-item" role="menuitem" [class.danger]="item.danger" (click)="choose(item.id)">
+    @if (item.icon) {
+      <stemma-icon [name]="item.icon" [size]="16" />
+    }
+    <span>{{ item.label }}</span>
+  </button>
+}

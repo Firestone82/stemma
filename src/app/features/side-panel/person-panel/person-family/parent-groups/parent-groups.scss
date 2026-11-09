@@ -1,0 +1,12 @@
+// The groups sit directly in the family section's grid.
+:host {
+  display: contents;
+}
+
+/* The couples the child can be moved under, one button each. */
+.move-to {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}

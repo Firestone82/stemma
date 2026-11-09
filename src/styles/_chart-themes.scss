@@ -1,0 +1,203 @@
+// The chart's colours, one set for light and one for dark. Components of the
+// chart use only these tokens (--t-*). The chart follows the app: light or
+// dark as chosen under Appearance (<html data-theme>), or as the device is set
+// when that is Auto (state/theme.ts).
+//
+// light  grey-green board with index-card names
+// dark   dark slate
+
+@use 'sass:list';
+
+$light: (
+  paper: #e9ece6,
+  dots: #cdd3cb,
+  band: rgb(29 39 49 / 0.035),
+  card: #fbfbf8,
+  card-edge: #c3cac2,
+  shadow: rgb(29 39 49 / 0.08),
+  ink: #1d2731,
+  muted: #5b6770,
+  faint: #8b969d,
+  line: #5c6871,
+  line-path: #1d2731,
+  select: #1d2731,
+  kin: #8a5524,
+  card-male: #e8eef5,
+  card-female: #f6e9ec,
+  male: #2f5d9e,
+  female: #a33d5e,
+  break: #b0443a,
+);
+
+$dark: (
+  paper: #13181c,
+  dots: #252d33,
+  band: rgb(235 230 219 / 0.03),
+  card: #1e252b,
+  card-edge: #353f47,
+  shadow: rgb(0 0 0 / 0.35),
+  ink: #ebe6db,
+  muted: #a4adb4,
+  faint: #7d8890,
+  line: #8a959d,
+  line-path: #ebe6db,
+  select: #ebe6db,
+  kin: #d6a96d,
+  card-male: #1f2832,
+  card-female: #2b2226,
+  male: #84aae2,
+  female: #e08aa3,
+  break: #e88a7c,
+);
+
+// Family colours on the name shields.
+$tinctures-light: (
+  'azure': (
+    #2f5d9e,
+    #ffffff,
+  ),
+  'gules': (
+    #a53b3b,
+    #ffffff,
+  ),
+  'vert': (
+    #2e7250,
+    #ffffff,
+  ),
+  'purpure': (
+    #6a4b90,
+    #ffffff,
+  ),
+  'or': (
+    #c4952c,
+    #2a1f0a,
+  ),
+  'tenne': (
+    #b3632a,
+    #ffffff,
+  ),
+  'sanguine': (
+    #8b2f53,
+    #ffffff,
+  ),
+  'celeste': (
+    #3a88b3,
+    #ffffff,
+  ),
+  'sable': (
+    #353b42,
+    #ffffff,
+  ),
+  'teal': (
+    #2a7f7a,
+    #ffffff,
+  ),
+  'rose': (
+    #c4627f,
+    #ffffff,
+  ),
+  'olive': (
+    #7c7a2a,
+    #ffffff,
+  ),
+  'cendree': (
+    #8a8f94,
+    #ffffff,
+  ),
+  'brunatre': (
+    #6d4a2e,
+    #ffffff,
+  ),
+  'argent': (
+    #ffffff,
+    #38424a,
+  ),
+);
+
+$tinctures-dark: (
+  'azure': (
+    #5a85c6,
+    #0e1622,
+  ),
+  'gules': (
+    #c55f5b,
+    #1c0d0c,
+  ),
+  'vert': (
+    #4f9a71,
+    #0b1a12,
+  ),
+  'purpure': (
+    #9172b6,
+    #160f20,
+  ),
+  'or': (
+    #d6ab48,
+    #1e1608,
+  ),
+  'tenne': (
+    #cd8145,
+    #1f1206,
+  ),
+  'sanguine': (
+    #b0527a,
+    #1d0b13,
+  ),
+  'celeste': (
+    #5eacd4,
+    #0a1820,
+  ),
+  'sable': (
+    #5b636c,
+    #f1ede4,
+  ),
+  'teal': (
+    #4fa8a2,
+    #0a1a19,
+  ),
+  'rose': (
+    #d9819c,
+    #200c13,
+  ),
+  'olive': (
+    #a3a04a,
+    #1a1a08,
+  ),
+  'cendree': (
+    #9aa0a6,
+    #14181b,
+  ),
+  'brunatre': (
+    #a07656,
+    #1c120a,
+  ),
+  'argent': (
+    #2b333a,
+    #d9d4ca,
+  ),
+);
+
+@mixin tokens($colors, $tinctures, $argent-edge) {
+  @each $name, $value in $colors {
+    --t-#{$name}: #{$value};
+  }
+  @each $name, $pair in $tinctures {
+    --tc-#{$name}: #{list.nth($pair, 1)};
+    --tc-#{$name}-ink: #{list.nth($pair, 2)};
+  }
+  --tc-argent-edge: #{$argent-edge};
+}
+
+stemma-chart {
+  @include tokens($light, $tinctures-light, #9aa3a9);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) stemma-chart {
+    @include tokens($dark, $tinctures-dark, #66717a);
+  }
+}
+
+:root[data-theme='dark'] stemma-chart {
+  @include tokens($dark, $tinctures-dark, #66717a);
+}

@@ -1,0 +1,29 @@
+<h3 id="print-g-middle">{{ t('print.middle') }}</h3>
+<div class="couple">
+  <div class="field">
+    <label for="print-center">{{ t('print.person') }}</label>
+    <stemma-search-select inputId="print-center" [options]="people()" [value]="model.centerId()" (valueChange)="setCenter($event)" />
+  </div>
+  <button
+    type="button"
+    class="btn icon ghost swap"
+    (click)="swap()"
+    [disabled]="!model.poster()?.partnerId"
+    [attr.aria-label]="t('print.swap')"
+    [title]="t('print.swap')"
+  >
+    <stemma-icon name="swap" [size]="17" />
+  </button>
+  <div class="field">
+    <label for="print-partner">{{ t('print.with') }}</label>
+    <stemma-search-select
+      inputId="print-partner"
+      [options]="partners()"
+      [value]="model.partnerChoice()"
+      [disabled]="!model.partners().length"
+      (valueChange)="setPartner($event)"
+    />
+  </div>
+</div>
+<stemma-switch [checked]="model.settings().centered" (checkedChange)="model.set({ centered: $event })">{{ t('print.keepCentred') }}</stemma-switch>
+<span class="hint">{{ t('print.keepCentredHint') }}</span>

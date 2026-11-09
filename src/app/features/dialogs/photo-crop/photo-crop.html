@@ -1,0 +1,37 @@
+<div class="dialog-body">
+  <h2>{{ t('photo.adjust.title') }}</h2>
+  <p>{{ t('photo.adjust.hint') }}</p>
+  <div
+    class="frame"
+    [attr.data-shape]="shape()"
+    [class.dragging]="dragging()"
+    (pointerdown)="onPointerDown($event)"
+    (pointermove)="onPointerMove($event)"
+    (pointerup)="endDrag($event)"
+    (pointercancel)="endDrag($event)"
+    (wheel)="onWheel($event)"
+  >
+    <img
+      [src]="photo().image.src"
+      alt=""
+      draggable="false"
+      [style.width.px]="shown().w"
+      [style.height.px]="shown().h"
+      [style.left.px]="shown().left"
+      [style.top.px]="shown().top"
+    />
+    <div class="mask" aria-hidden="true"></div>
+  </div>
+  <label class="zoom">
+    <span>{{ t('photo.adjust.zoom') }}</span>
+    <input type="range" min="1" max="4" step="0.01" [value]="zoom()" (input)="setZoom($event)" />
+  </label>
+  <div class="field">
+    <span class="field-label" id="photo-shape">{{ t('photo.adjust.shape') }}</span>
+    <stemma-segmented labelledBy="photo-shape" [compact]="true" [options]="shapes" [value]="shape()" (valueChange)="shape.set($event)" />
+  </div>
+</div>
+<div class="dialog-actions">
+  <button type="button" class="btn" (click)="cancel()">{{ t('common.cancel') }}</button>
+  <button type="button" class="btn primary" (click)="accept()">{{ t('photo.adjust.use') }}</button>
+</div>

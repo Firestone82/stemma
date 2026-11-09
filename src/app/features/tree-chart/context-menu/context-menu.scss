@@ -1,0 +1,27 @@
+:host {
+  position: absolute;
+  z-index: 40;
+  min-width: 200px;
+  max-width: 280px;
+  // Keeps the whole menu usable when the pointer is near the bottom: the chart's own scrolling is off.
+  max-height: calc(100% - 16px);
+  overflow: auto;
+}
+
+.menu-title {
+  padding: 4px 10px 6px;
+  color: var(--ink-3);
+  font-size: var(--text-xs);
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.menu-item.danger {
+  color: var(--danger);
+
+  stemma-icon {
+    color: var(--danger);
+  }
+}

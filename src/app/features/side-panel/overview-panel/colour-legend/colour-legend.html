@@ -1,0 +1,15 @@
+@if (entries().length) {
+  <section class="panel-section">
+    <h3>{{ t('legend.familyTitle') }}</h3>
+    <ul class="legend">
+      @for (l of entries(); track l.key) {
+        <li>
+          <span class="mini-shield" [attr.data-tincture]="l.tincture"></span>
+          <span class="name">{{ l.label }}</span>
+          <span class="count">{{ l.count }}</span>
+        </li>
+      }
+    </ul>
+    <p class="hint">{{ t('legend.familyHint') }}</p>
+  </section>
+}

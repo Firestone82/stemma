@@ -1,0 +1,63 @@
+:host {
+  display: block;
+}
+
+/* The upright rectangle that becomes the portrait; the picture moves under it. */
+.frame {
+  position: relative;
+  width: 240px;
+  height: 320px;
+  max-width: 100%;
+  overflow: hidden;
+  border-radius: var(--radius-md);
+  background: var(--sheet-2);
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+
+  &.dragging {
+    cursor: grabbing;
+  }
+
+  img {
+    position: absolute;
+    max-width: none;
+    pointer-events: none;
+  }
+}
+
+/*
+ * The window a print or the chart shows of the portrait: round or square in
+ * the middle (the rest is dimmed), or the whole rectangle.
+ */
+.mask {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.5);
+
+  [data-shape='round'] &,
+  [data-shape='square'] & {
+    inset: 40px 0;
+    box-shadow:
+      0 0 0 400px rgb(0 0 0 / 0.42),
+      inset 0 0 0 1px rgb(255 255 255 / 0.6);
+  }
+
+  [data-shape='round'] & {
+    border-radius: 50%;
+  }
+}
+
+.zoom {
+  display: grid;
+  gap: 4px;
+  width: 240px;
+  max-width: 100%;
+  color: var(--ink-2);
+  font-size: var(--text-sm);
+
+  input {
+    width: 100%;
+  }
+}

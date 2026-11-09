@@ -1,0 +1,34 @@
+<div class="group">
+  <span class="group-label">{{ t('siblings.title') }}</span>
+  @for (s of siblings(); track s.id) {
+    <div class="sibling">
+      <button type="button" stemmaPersonRow [name]="s.name" [dates]="s.dates" [tincture]="s.tincture" [tag]="s.tag" (click)="people.select(s.id)"></button>
+      @if (s.familyId) {
+        <button
+          type="button"
+          class="link-btn twin"
+          [class.linked]="!!s.tag"
+          [attr.aria-pressed]="!!s.tag"
+          [title]="s.tag ? t('births.unlink') : t('births.link')"
+          (click)="toggleTwin(s)"
+        >
+          <stemma-icon [name]="s.tag ? 'link' : 'plus'" [size]="12" />{{ s.tag ? t('births.2') : t('births.linkShort') }}
+        </button>
+      }
+    </div>
+  }
+  <div class="adds">
+    <button type="button" class="link-btn" (click)="people.startAdd('sibling', person().id)">
+      <stemma-icon name="sibling" [size]="15" />{{ t('siblings.add') }}
+    </button>
+  </div>
+</div>
+
+@if (halfSiblings().length) {
+  <div class="group">
+    <span class="group-label">{{ t('siblings.half') }}</span>
+    @for (s of halfSiblings(); track s.id) {
+      <button type="button" stemmaPersonRow [name]="s.name" [dates]="s.dates" [tincture]="s.tincture" (click)="people.select(s.id)"></button>
+    }
+  </div>
+}

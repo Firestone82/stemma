@@ -1,0 +1,26 @@
+:host {
+  display: block;
+}
+
+.form-actions {
+  display: flex;
+  gap: 8px;
+  padding-top: 18px;
+
+  .btn.primary {
+    flex: 1 1 auto;
+  }
+}
+
+.note {
+  margin: 0;
+  color: var(--ink-2);
+  font-size: var(--text-sm);
+}
+
+/* A parent's partners, to put the child under one of their marriages. */
+.couple-picks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}

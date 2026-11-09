@@ -1,0 +1,5 @@
+<div class="field">
+  <span class="field-label" id="lang-app">{{ t('language.title') }}</span>
+  <stemma-segmented labelledBy="lang-app" [compact]="true" [options]="options" [value]="i18n.code()" (valueChange)="i18n.setLanguage($event)" />
+  <span class="hint">{{ t('language.hint') }}</span>
+</div>

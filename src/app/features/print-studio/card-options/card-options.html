@@ -1,0 +1,39 @@
+<h3 id="print-g-cards">{{ t('print.cards') }}</h3>
+<div class="switches">
+  @for (s of switches(); track s.key) {
+    <stemma-switch [checked]="s.on" (checkedChange)="toggle(s.key, $event)">{{ t(s.label) }}</stemma-switch>
+  }
+</div>
+<div class="portraits">
+  <div class="field">
+    <span class="field-label" id="print-dates">{{ t('print.dates') }}</span>
+    <stemma-segmented labelledBy="print-dates" [options]="dateOptions()" [value]="dates()" (valueChange)="setDates($event)" />
+  </div>
+</div>
+<div class="portraits">
+  <div class="field">
+    <span class="field-label" id="print-portrait">{{ t('print.portrait') }}</span>
+    <stemma-segmented labelledBy="print-portrait" [options]="shapes()" [value]="settings().portrait" (valueChange)="model.set({ portrait: $event })" />
+  </div>
+  <div class="field">
+    <span class="field-label" id="print-portrait-align">{{ t('print.portraitAlign') }}</span>
+    <stemma-segmented
+      labelledBy="print-portrait-align"
+      [options]="aligns()"
+      [value]="settings().portraitAlign"
+      (valueChange)="model.set({ portraitAlign: $event })"
+    />
+  </div>
+  <label class="field size">
+    <span class="field-label"
+      >{{ t('print.portraitSize') }} <span class="value">{{ sizePercent() }}</span></span
+    >
+    <input type="range" min="0.75" max="2.5" step="0.05" [value]="settings().portraitSize" (input)="setSize($event)" />
+  </label>
+</div>
+@if (showTree()) {
+  <div class="background">
+    <span class="field-label">{{ t('background.title') }}</span>
+    <stemma-background-picker idPrefix="print-bg" />
+  </div>
+}

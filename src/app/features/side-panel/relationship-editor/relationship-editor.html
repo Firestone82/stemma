@@ -1,0 +1,9 @@
+@let id = family().id;
+<div class="field">
+  <label [for]="'status-' + id">{{ t('rel.status') }}</label>
+  <select class="select" [id]="'status-' + id" (change)="setStatus($event)">
+    @for (s of statuses; track s) {
+      <option [value]="s" [selected]="status() === s">{{ t(labels[s]) }}</option>
+    }
+  </select>
+</div>

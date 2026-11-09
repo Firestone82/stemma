@@ -1,0 +1,27 @@
+:host {
+  display: grid;
+}
+
+/* The person, the swap button and the partner on one row. */
+.couple {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: end;
+  gap: 6px;
+}
+
+.swap {
+  padding: 0;
+  width: 36px;
+}
+
+@media (max-width: 380px) {
+  .couple {
+    grid-template-columns: 1fr;
+  }
+
+  .swap {
+    justify-self: center;
+    transform: rotate(90deg);
+  }
+}

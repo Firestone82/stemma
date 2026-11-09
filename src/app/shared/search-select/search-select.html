@@ -1,0 +1,58 @@
+<button
+  type="button"
+  class="select trigger"
+  [id]="inputId()"
+  [disabled]="disabled()"
+  aria-haspopup="listbox"
+  [attr.aria-expanded]="open()"
+  [attr.aria-controls]="listId"
+  (click)="toggle()"
+  (keydown)="onButtonKey($event)"
+>
+  <span class="label">{{ current()?.label ?? '' }}</span>
+  @if (current()?.detail; as detail) {
+    <span class="detail">{{ detail }}</span>
+  }
+</button>
+@if (open()) {
+  <div class="popover">
+    <div class="search">
+      <stemma-icon name="search" [size]="14" />
+      <input
+        class="input"
+        type="search"
+        autocomplete="off"
+        role="combobox"
+        aria-autocomplete="list"
+        aria-expanded="true"
+        [attr.aria-controls]="listId"
+        [attr.aria-activedescendant]="activeId()"
+        [placeholder]="t('picker.search')"
+        [value]="query()"
+        (input)="onQuery($event)"
+        (keydown)="onKey($event)"
+      />
+    </div>
+    <ul class="list" role="listbox" [id]="listId">
+      @for (o of results(); track o.id; let i = $index) {
+        <!-- eslint-disable-next-line @angular-eslint/template/click-events-have-key-events, @angular-eslint/template/interactive-supports-focus -- options are chosen from the keyboard in the search field (arrow keys and Enter) -->
+        <li
+          role="option"
+          [id]="listId + '-' + i"
+          [attr.aria-selected]="o.id === value()"
+          [class.active]="i === active()"
+          [class.chosen]="o.id === value()"
+          (click)="choose(o.id)"
+          (pointerenter)="active.set(i)"
+        >
+          <span class="name">{{ o.label }}</span>
+          @if (o.detail) {
+            <span class="dates">{{ o.detail }}</span>
+          }
+        </li>
+      } @empty {
+        <li class="empty">{{ t('picker.noMatch') }}</li>
+      }
+    </ul>
+  </div>
+}

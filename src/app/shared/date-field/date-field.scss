@@ -1,0 +1,26 @@
+:host {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.box {
+  position: relative;
+  min-width: 0;
+}
+
+.input.with-reading {
+  padding-right: 8.5em;
+}
+
+/* How the typed date was read, in numbers, inside the box at its right end. */
+.reading {
+  position: absolute;
+  top: 50%;
+  right: 10px;
+  transform: translateY(-50%);
+  color: var(--ink-3);
+  font-size: var(--text-sm);
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+}

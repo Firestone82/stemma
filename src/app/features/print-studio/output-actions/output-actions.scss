@@ -1,0 +1,17 @@
+:host {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.btn {
+  min-width: 92px;
+}
+
+@media (max-width: 860px) {
+  .btn {
+    flex: 1 1 0;
+    min-width: 0;
+  }
+}

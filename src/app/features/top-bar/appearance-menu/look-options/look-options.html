@@ -1,0 +1,7 @@
+<div class="field">
+  <span class="field-label" id="look-style">{{ t('look.style') }}</span>
+  <stemma-segmented labelledBy="look-style" [compact]="true" [options]="styles()" [value]="theme.choice()" (valueChange)="theme.set($event)" />
+  @if (theme.choice() === 'auto') {
+    <span class="hint">{{ t('look.style.autoHint') }}</span>
+  }
+</div>

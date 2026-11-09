@@ -1,0 +1,16 @@
+:host {
+  display: grid;
+  gap: 12px;
+}
+
+/* "Name not known" belongs to the given name above it. */
+.unknown {
+  margin-top: -5px;
+}
+
+/* "Has died" and "year of birth not known" side by side. */
+.checks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 20px;
+}

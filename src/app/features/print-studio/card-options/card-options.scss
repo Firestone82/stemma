@@ -1,0 +1,39 @@
+:host {
+  display: grid;
+}
+
+.portraits {
+  display: grid;
+  gap: 12px;
+  margin: 4px 0 14px;
+}
+
+.size {
+  .value {
+    color: var(--ink-3);
+    font-weight: 400;
+    font-variant-numeric: tabular-nums;
+  }
+
+  input {
+    width: 100%;
+  }
+}
+
+.background {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.switches {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  column-gap: 20px;
+}
+
+@media (max-width: 380px) {
+  .switches {
+    grid-template-columns: 1fr;
+  }
+}

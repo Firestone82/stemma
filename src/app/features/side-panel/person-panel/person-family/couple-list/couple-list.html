@@ -1,0 +1,82 @@
+<div class="group">
+  <span class="group-label">{{ t('couples.title') }}</span>
+  @for (c of couples(); track c.family.id) {
+    <div class="couple">
+      @if (c.partner; as partner) {
+        <div class="row-with-action">
+          <button type="button" stemmaPersonRow icon="rings" [name]="partner.name" (click)="people.select(partner.id)"></button>
+          <button
+            type="button"
+            class="status"
+            [class.open]="editing() === c.family.id"
+            [attr.aria-expanded]="editing() === c.family.id"
+            [attr.aria-controls]="'rel-' + c.family.id"
+            [title]="editing() === c.family.id ? t('couples.done') : t('couples.edit')"
+            (click)="toggleEdit(c.family.id)"
+          >
+            {{ t(c.status) }}<stemma-icon [name]="editing() === c.family.id ? 'chevronUp' : 'chevronDown'" [size]="13" />
+          </button>
+          <button type="button" class="row-action" (click)="people.openFamily(c.family.id)" [title]="t('couples.open')" [attr.aria-label]="t('couples.open')">
+            <stemma-icon name="chevronRight" [size]="16" />
+          </button>
+          <button
+            type="button"
+            class="row-action danger"
+            (click)="people.unlinkPartner(c.family.id, person().id, partner.id)"
+            [title]="t('couples.unlink')"
+            [attr.aria-label]="t('couples.unlink')"
+          >
+            <stemma-icon name="unlink" [size]="16" />
+          </button>
+        </div>
+        @if (editing() === c.family.id) {
+          <stemma-relationship-editor class="relationship" [id]="'rel-' + c.family.id" [family]="c.family" />
+        }
+      } @else {
+        <span class="group-label">{{ t('couples.noPartner') }}</span>
+      }
+      <div class="children">
+        @for (child of c.children; track child.id; let i = $index) {
+          <div class="row-with-action">
+            <button
+              type="button"
+              stemmaPersonRow
+              [ordinal]="i + 1"
+              [name]="child.name"
+              [dates]="child.dates"
+              [tincture]="child.tincture"
+              [tag]="child.tag"
+              (click)="people.select(child.id)"
+            ></button>
+            <button
+              type="button"
+              class="row-action danger"
+              (click)="people.unlinkChild(c.family.id, child.id)"
+              [title]="t('couples.removeChild')"
+              [attr.aria-label]="t('couples.removeChild')"
+            >
+              <stemma-icon name="unlink" [size]="16" />
+            </button>
+          </div>
+        }
+        <div class="adds">
+          <button type="button" class="link-btn" (click)="addChild(c.partner?.id ?? null)">
+            <stemma-icon name="child" [size]="15" />{{ c.partner ? t('couples.addChildWith', { name: c.partner.given }) : t('couples.addChild') }}
+          </button>
+        </div>
+      </div>
+    </div>
+  } @empty {
+    <p class="empty-note">{{ t('couples.none') }}</p>
+  }
+  <div class="adds">
+    <button type="button" class="link-btn" (click)="people.startAdd('partner', person().id)">
+      <stemma-icon name="partner" [size]="15" />{{ t('couples.addPartner') }}
+    </button>
+    @if (couples().length) {
+      <button type="button" class="link-btn" (click)="people.startAdd('child', person().id)">
+        <stemma-icon name="child" [size]="15" />{{ t('couples.addChild') }}
+      </button>
+    }
+  </div>
+</div>

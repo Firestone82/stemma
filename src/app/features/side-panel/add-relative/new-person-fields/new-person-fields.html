@@ -1,0 +1,46 @@
+<div class="field">
+  <label for="add-given">{{ t('name.given') }}</label>
+  <input
+    id="add-given"
+    class="input"
+    autocomplete="off"
+    [value]="unknown() ? '' : given()"
+    [disabled]="unknown()"
+    [placeholder]="unknown() ? t('name.givenUnknown') : ''"
+    (input)="givenChange.emit(text($event))"
+  />
+</div>
+<label class="check unknown">
+  <input type="checkbox" [checked]="unknown()" (change)="setUnknown(checked($event))" />
+  {{ t('name.unknown') }}
+</label>
+<div class="field">
+  <label for="add-surname">{{ surnameIsBirth() ? t('name.birthSurname') : t('name.surname') }}</label>
+  <input id="add-surname" class="input" autocomplete="off" [value]="surname()" (input)="surnameChange.emit(text($event))" />
+</div>
+<div class="field">
+  <span class="field-label" id="add-sex-label">{{ t('name.sex') }}</span>
+  <stemma-segmented labelledBy="add-sex-label" [options]="sexes()" [value]="sex()" (valueChange)="sexChange.emit($event)" />
+</div>
+<div class="field">
+  <label for="add-birth">{{ t('life.born') }}</label>
+  <stemma-date-field inputId="add-birth" [value]="birth()" (valueChange)="birthChange.emit($event)" />
+</div>
+<div class="checks">
+  <label class="check">
+    <input type="checkbox" [checked]="deceased()" (change)="deceasedChange.emit(checked($event))" />
+    {{ t('life.hasDied') }}
+  </label>
+  @if (!birth()) {
+    <label class="check">
+      <input type="checkbox" [checked]="birthUnknown()" (change)="birthUnknownChange.emit(checked($event))" />
+      {{ t('life.birthUnknown') }}
+    </label>
+  }
+</div>
+@if (deceased()) {
+  <div class="field">
+    <label for="add-death">{{ t('life.died') }}</label>
+    <stemma-date-field inputId="add-death" [value]="death()" (valueChange)="deathChange.emit($event)" />
+  </div>
+}

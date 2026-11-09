@@ -1,0 +1,127 @@
+:host {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+/* The whole window: a bar on top, the page beside the settings. */
+.studio {
+  display: grid;
+  flex: 1 1 auto;
+  grid-template-rows: auto minmax(0, 1fr);
+  min-width: 0;
+  min-height: 0;
+  background: var(--sheet);
+  color: var(--ink);
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 10px 16px 10px 12px;
+  border-bottom: 1px solid var(--rule);
+
+  h2 {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    font-size: var(--text-xl);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .back {
+    flex: 0 0 auto;
+    padding-left: 8px;
+  }
+}
+
+.actions {
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 550px;
+  min-height: 0;
+}
+
+/* The page as wide as it is at the full height; the settings take the rest (print-studio.ts). */
+.body.fitted {
+  grid-template-columns: var(--preview-w) minmax(550px, 1fr);
+}
+
+.controls {
+  min-height: 0;
+  padding: 0 22px 24px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border-left: 1px solid var(--rule);
+}
+
+/* The page is in a window of its own (preview-window/): the settings take the width, in a column. */
+.studio.docked {
+  .body,
+  .body.fitted {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+
+  .controls {
+    width: min(560px, 100%);
+    margin: 0 auto;
+    border-left: 0;
+  }
+}
+
+/* Where the page was: a note that it has its own window, and the way back. */
+.away {
+  display: grid;
+  justify-items: start;
+  gap: 8px;
+  width: min(560px, calc(100% - 44px));
+  margin: 14px auto 0;
+  padding: 10px 12px;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-md);
+  background: var(--sheet-2);
+
+  p {
+    margin: 0;
+    color: var(--ink-2);
+    font-size: var(--text-sm);
+  }
+}
+
+@media (max-width: 860px) {
+  .head {
+    flex-wrap: wrap;
+    padding: calc(8px + env(safe-area-inset-top, 0px)) 8px 8px 8px;
+
+    h2 {
+      font-size: var(--text-lg);
+    }
+  }
+
+  .actions {
+    flex-basis: 100%;
+    justify-content: flex-start;
+  }
+
+  .body,
+  .body.fitted {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: 40% minmax(0, 1fr);
+  }
+
+  .controls {
+    padding: 0 16px 20px;
+    border-top: 1px solid var(--rule);
+    border-left: 0;
+  }
+}

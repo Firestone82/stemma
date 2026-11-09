@@ -1,0 +1,38 @@
+<div class="stage">
+  @if (canPopOut() && svg()) {
+    <div class="pop-out">
+      <button type="button" class="btn small" (click)="popOut.emit()" [title]="t('print.window.open')">
+        <stemma-icon name="popOut" [size]="15" />{{ t('print.window.openShort') }}
+      </button>
+      @if (popOutFailed()) {
+        <p class="pop-out-failed" role="alert">{{ t('print.window.blocked') }}</p>
+      }
+    </div>
+  }
+  @if (svg()) {
+    <div
+      #sheet
+      class="sheet"
+      [style.--ratio]="ratio()"
+      role="img"
+      [attr.aria-label]="t('print.previewOf', { summary: summary() })"
+      [title]="t('print.clickToHide')"
+      (click)="onClick($event)"
+      (keydown.enter)="onClick($event)"
+    ></div>
+  } @else {
+    <p class="wait">{{ t('print.preparing') }}</p>
+  }
+</div>
+<p class="summary">
+  {{ summary() }}
+  @if (note(); as n) {
+    <span [class.warn]="n.warn">{{ n.text }}</span>
+  }
+  @if (omitted(); as count) {
+    <span class="omitted">
+      {{ t('print.omitted', { count }) }}
+      <button type="button" class="link" (click)="restore.emit()">{{ t('print.omittedRestore') }}</button>
+    </span>
+  }
+</p>

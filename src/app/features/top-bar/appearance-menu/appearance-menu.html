@@ -1,0 +1,21 @@
+<button
+  type="button"
+  class="btn ghost"
+  [class.icon]="iconOnly()"
+  (click)="ui.toggleMenu('appearance')"
+  aria-haspopup="dialog"
+  [attr.aria-expanded]="open()"
+  [attr.aria-label]="t('appearance.title')"
+>
+  <stemma-icon name="sliders" />
+  @if (!iconOnly()) {
+    <span>{{ t('appearance.title') }}</span>
+  }
+</button>
+@if (open()) {
+  <div class="menu" role="dialog" [attr.aria-label]="t('appearance.title')">
+    <stemma-look-options />
+    <stemma-language-options />
+    <stemma-display-options [view]="view()" (settingsChange)="set($event)" />
+  </div>
+}

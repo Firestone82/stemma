@@ -1,0 +1,245 @@
+import { ChangeDetectionStrategy, Component, ElementRef, computed, effect, inject, input, signal, untracked } from '@angular/core';
+import { bornLongAgo } from '../../../core/model/completeness';
+import { PersonSource } from '../../../core/model/operations';
+import { RelationshipStatus, relationshipStatus } from '../../../core/model/relationship';
+import { ChildRelation, GenDate, Person, Sex } from '../../../core/model/types';
+import { TreeStore } from '../../../core/store/tree-store';
+import { I18n } from '../../../i18n/i18n';
+import { Icon } from '../../../shared/icon/icon';
+import { PersonPicker } from '../../../shared/person-picker/person-picker';
+import { SegmentOption, Segmented } from '../../../shared/segmented/segmented';
+import { PersonActions } from '../../../state/person-actions';
+import { AddRequest } from '../../../state/ui-state';
+import { defaultSex, defaultSurname, excludedPeople, orphanChildren, partnerOptions, sharedSiblings } from './add-rules';
+import { ChildOptions } from './child-options/child-options';
+import { NewPersonFields } from './new-person-fields/new-person-fields';
+import { ParentOptions } from './parent-options/parent-options';
+import { PartnerOptions } from './partner-options/partner-options';
+
+/** The form for adding a parent, partner, child or sibling: a new person or someone already in the tree. */
+@Component({
+  selector: 'stemma-add-relative',
+  imports: [Icon, Segmented, PersonPicker, NewPersonFields, ParentOptions, PartnerOptions, ChildOptions],
+  templateUrl: './add-relative.html',
+  styleUrl: './add-relative.scss',
+  changeDetection: ChangeDetectionStrategy.OnPush,
+})
+export class AddRelativePanel {
+  private readonly store = inject(TreeStore);
+  private readonly people = inject(PersonActions);
+  private readonly i18n = inject(I18n);
+  private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
+  protected readonly t = this.i18n.t;
+
+  readonly request = input.required<AddRequest>();
+
+  protected readonly mode = signal<'new' | 'existing'>('new');
+  protected readonly given = signal('');
+  /** Nobody knows the new person's given name. */
+  protected readonly unknownName = signal(false);
+  private readonly surnameInput = signal<string | null>(null);
+  private readonly sexInput = signal<Sex | null>(null);
+  protected readonly birth = signal<GenDate | undefined>(undefined);
+  /** Nobody knows when the new person was born. */
+  protected readonly birthUnknown = signal(false);
+  protected readonly deceased = signal(false);
+  protected readonly death = signal<GenDate | undefined>(undefined);
+  protected readonly existingId = signal<string | null>(null);
+  protected readonly relation = signal<ChildRelation>('biological');
+  protected readonly status = signal<RelationshipStatus>('married');
+  private readonly otherParentInput = signal<string | null | undefined>(undefined);
+  protected readonly withSiblings = signal(true);
+  protected readonly joinFamily = signal(true);
+  /** A new sibling is a twin of the person: born together, same date and place. */
+  protected readonly twin = signal(false);
+
+  private readonly index = this.store.index;
+  protected readonly name = computed(() => this.i18n.name(this.index().person(this.request().personId)));
+  protected readonly title = computed(() => this.t(`add.title.${this.request().relation}`));
+  protected readonly submitLabel = computed(() => (this.coupleParent() ? this.t('add.submit.toCouple') : this.t(`add.submit.${this.request().relation}`)));
+  protected readonly modes = computed<SegmentOption<'new' | 'existing'>[]>(() => [
+    { value: 'new', label: this.t('add.new') },
+    { value: 'existing', label: this.t('add.existing') },
+  ]);
+
+  protected readonly partnerOptions = computed(() => partnerOptions(this.index(), this.request().personId));
+  protected readonly otherParentId = computed<string | null>(() => {
+    const chosen = this.otherParentInput();
+    if (chosen !== undefined) return chosen;
+    const requested = this.request().otherParentId;
+    if (requested !== undefined) return requested;
+    const options = this.partnerOptions();
+    return options.length ? options[options.length - 1].id : null;
+  });
+
+  protected readonly sex = computed<Sex>(() => this.sexInput() ?? defaultSex(this.index(), this.request()));
+  protected readonly surname = computed(
+    () => this.surnameInput() ?? defaultSurname(this.index(), this.request(), this.sex(), this.otherParentId(), this.i18n.code()),
+  );
+  /**
+   * A man's wife: the surname typed is the one she was born with. Her married
+   * surname comes from his (see married-surnames.ts) for as long as they are married.
+   */
+  protected readonly surnameIsBirth = computed(
+    () =>
+      this.request().relation === 'partner' &&
+      this.index().person(this.request().personId)?.sex === 'male' &&
+      this.sex() === 'female' &&
+      (this.status() === 'married' || this.status() === 'widowed'),
+  );
+  /**
+   * For a new parent of someone with one parent known: that parent's partners,
+   * to put the child under one of their marriages in one click.
+   */
+  protected readonly knownCouples = computed(() => {
+    const req = this.request();
+    if (req.relation !== 'parent') return null;
+    const index = this.index();
+    const current = index.primaryParentFamily(req.personId);
+    if (!current || current.partners.length !== 1 || index.childRelation(current, req.personId) !== 'biological') return null;
+    const known = index.person(current.partners[0]);
+    const below = index.descendants(req.personId);
+    const partners = index
+      .partnerFamilies(current.partners[0])
+      .filter((f) => f.id !== current.id && f.partners.length === 2)
+      .map((f) => ({ id: f.partners.find((p) => p !== known?.id)!, status: relationshipStatus(f) }))
+      .filter((p) => p.id !== req.personId && !below.has(p.id))
+      .map((p) => ({ id: p.id, label: `${this.i18n.name(index.person(p.id))} (${this.t(`status.${p.status}`).toLocaleLowerCase()})` }));
+    return partners.length ? { name: this.i18n.name(known), partners } : null;
+  });
+  /** One of those partners is chosen: the child goes under their marriage. */
+  protected readonly coupleParent = computed(() => this.mode() === 'existing' && !!this.knownCouples()?.partners.some((p) => p.id === this.existingId()));
+  protected readonly sharedSiblings = computed(() => {
+    const s = sharedSiblings(this.index(), this.request());
+    return s ? { names: this.names(s.people), optional: s.optional } : null;
+  });
+  protected readonly orphans = computed(() => {
+    const o = orphanChildren(this.index(), this.request());
+    return o ? { familyId: o.familyId, names: this.names(o.people) } : null;
+  });
+  protected readonly exclude = computed(() => excludedPeople(this.index(), this.request(), this.otherParentId(), this.relation()));
+
+  protected readonly siblingNote = computed(() => {
+    const req = this.request();
+    if (req.relation !== 'sibling') return '';
+    const parents = this.index().parents(req.personId);
+    if (parents.length) return this.t('add.siblingShares', { names: this.names(parents) });
+    const given = this.index().person(req.personId)?.name.given;
+    return given ? this.t('add.siblingNoParents', { name: given }) : this.t('add.siblingNoParentsUnnamed');
+  });
+
+  /** How a new sibling belongs to the parents' family: birth, adoptive, foster or step. */
+  protected readonly siblingRelations = computed<SegmentOption<ChildRelation>[]>(() =>
+    (['biological', 'adopted', 'foster', 'step'] as const).map((value) => ({ value, label: this.t(`childKind.${value}`) })),
+  );
+
+  protected readonly twinLabel = computed(() => this.t('add.twin', { name: this.index().person(this.request().personId)?.name.given || this.name() }));
+
+  protected readonly canSubmit = computed(() =>
+    this.mode() === 'new' ? this.unknownName() || !!(this.given().trim() || this.surname().trim()) : !!this.existingId(),
+  );
+
+  constructor() {
+    // Start fresh for each request, and put the cursor in the first field.
+    effect(() => {
+      this.request();
+      untracked(() => {
+        this.mode.set('new');
+        this.given.set('');
+        this.unknownName.set(false);
+        this.surnameInput.set(null);
+        this.sexInput.set(null);
+        this.birth.set(undefined);
+        this.birthUnknown.set(false);
+        this.deceased.set(false);
+        this.death.set(undefined);
+        this.existingId.set(null);
+        const req = this.request();
+        const family = req.relation === 'sibling' ? this.index().primaryParentFamily(req.personId) : undefined;
+        this.relation.set(family ? this.index().childRelation(family, req.personId) : 'biological');
+        this.status.set('married');
+        this.otherParentInput.set(undefined);
+        this.withSiblings.set(true);
+        this.joinFamily.set(true);
+        this.twin.set(false);
+        setTimeout(() => this.host.nativeElement.querySelector<HTMLInputElement>('#add-given')?.focus(), 40);
+      });
+    });
+  }
+
+  private names(people: Person[]): string {
+    return this.i18n.list(people.map((p) => p.name.given || this.i18n.name(p)));
+  }
+
+  /** Born more than a hundred years ago: they have surely died. */
+  protected setBirth(date: GenDate | undefined): void {
+    this.birth.set(date);
+    if (bornLongAgo(date)) this.deceased.set(true);
+  }
+
+  protected setSurname(value: string): void {
+    this.surnameInput.set(value);
+  }
+
+  protected setSex(sex: Sex): void {
+    this.sexInput.set(sex);
+  }
+
+  protected checked(event: Event): boolean {
+    return (event.target as HTMLInputElement).checked;
+  }
+
+  /** The child of the known parent and this partner: picked from the tree. */
+  protected pickCouple(id: string): void {
+    this.mode.set('existing');
+    this.existingId.set(id);
+  }
+
+  protected setOtherParent(id: string | null): void {
+    this.otherParentInput.set(id);
+  }
+
+  protected cancel(): void {
+    this.people.cancelAdd();
+  }
+
+  protected submit(event?: Event): void {
+    event?.preventDefault();
+    if (!this.canSubmit()) return;
+    const req = this.request();
+    const source: PersonSource =
+      this.mode() === 'existing'
+        ? { existingId: this.existingId()! }
+        : {
+            draft: {
+              given: this.unknownName() ? '' : this.given(),
+              givenUnknown: this.unknownName() || undefined,
+              ...(this.surnameIsBirth() ? { surname: '', birthSurname: this.surname() } : { surname: this.surname() }),
+              sex: this.sex(),
+              birth: this.birth() ? { date: this.birth() } : this.birthUnknown() ? { dateUnknown: true } : undefined,
+              death: this.deceased() ? (this.death() ? { date: this.death() } : {}) : undefined,
+            },
+          };
+    switch (req.relation) {
+      case 'parent':
+        this.people.addRelative('parent', req.personId, source, {
+          relation: this.relation(),
+          onlyThisChild: this.sharedSiblings()?.optional ? !this.withSiblings() : false,
+        });
+        break;
+      case 'partner': {
+        const orphans = this.orphans();
+        this.people.addRelative('partner', req.personId, source, {
+          partner: { status: this.status(), joinFamilyId: orphans && this.joinFamily() ? orphans.familyId : undefined },
+        });
+        break;
+      }
+      case 'child':
+        this.people.addRelative('child', req.personId, source, { child: { otherParentId: this.otherParentId(), relation: this.relation() } });
+        break;
+      case 'sibling':
+        this.people.addRelative('sibling', req.personId, source, { twin: this.twin(), relation: this.relation() });
+        break;
+    }
+  }
+}

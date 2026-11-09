@@ -1,0 +1,53 @@
+@for (g of groups(); track g.family.id) {
+  <div class="group">
+    <span class="group-label">{{ t(g.label) }}</span>
+    @for (parent of g.parents; track parent.id) {
+      <button
+        type="button"
+        stemmaPersonRow
+        [name]="parent.name"
+        [dates]="parent.dates"
+        [tincture]="parent.tincture"
+        (click)="people.select(parent.id)"
+      ></button>
+    } @empty {
+      <p class="empty-note">{{ t('parents.none') }}</p>
+    }
+    <div class="adds">
+      @if (g.canAdd) {
+        <button type="button" class="link-btn" (click)="people.startAdd('parent', person().id)">
+          <stemma-icon name="parent" [size]="15" />{{ t('parents.add') }}
+        </button>
+      }
+      @if (g.targets.length) {
+        <button
+          type="button"
+          class="link-btn"
+          [attr.aria-expanded]="moving() === g.family.id"
+          (click)="moving.set(moving() === g.family.id ? null : g.family.id)"
+        >
+          <stemma-icon name="swap" [size]="14" />{{ t('parents.move') }}
+        </button>
+      }
+      <button type="button" class="link-btn" (click)="people.unlinkFromParents(g.family.id, person().id)">
+        <stemma-icon name="unlink" [size]="14" />{{ t('parents.unlink') }}
+      </button>
+    </div>
+    @if (moving() === g.family.id) {
+      <div class="move-to" role="group" [attr.aria-label]="t('parents.move')">
+        @for (target of g.targets; track target.id) {
+          <button type="button" class="btn small" (click)="move(g.family.id, target.id)">{{ target.label }}</button>
+        }
+      </div>
+    }
+  </div>
+} @empty {
+  <div class="group">
+    <span class="group-label">{{ t('parents.biological') }}</span>
+    <div class="adds">
+      <button type="button" class="link-btn" (click)="people.startAdd('parent', person().id)">
+        <stemma-icon name="parent" [size]="15" />{{ t('parents.add') }}
+      </button>
+    </div>
+  </div>
+}
