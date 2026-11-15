@@ -97,7 +97,11 @@ export class UiState {
     this.centreRequest.set({ personId, seq: ++this.seq });
   }
 
-  fit(): void {
+  /** Whether the last fit asked for glides there; a big tree jumps, as gliding would redraw it every frame. */
+  fitAnimated = true;
+
+  fit(animate = true): void {
+    this.fitAnimated = animate;
     this.fitRequest.update((v) => v + 1);
   }
 

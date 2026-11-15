@@ -175,7 +175,7 @@ function familyGroups(people: readonly Person[], lineage: (p: Person) => string)
 }
 
 /** The shortest spelling, which is the base form (Novák, not Nováková, however many women the family has); on a tie the most used. */
-function preferredSpelling(spellings: Map<string, number>): string {
+export function preferredSpelling(spellings: Map<string, number>): string {
   let best = '';
   let bestCount = -1;
   for (const [s, c] of spellings) {

@@ -1,6 +1,13 @@
 @for (u of unions(); track u.familyId) {
   @if (u.d) {
     <svg:path class="partner-line" [attr.d]="u.d" />
+    @if (cuts().get(u.familyId); as title) {
+      <svg:g class="cuttable" (click)="onCut(u.familyId, $event)">
+        <svg:path class="cut-show" [attr.d]="u.d" />
+        <svg:path class="cut-hit" [attr.d]="u.d" />
+        <svg:title>{{ title }}</svg:title>
+      </svg:g>
+    }
   }
   @if (u.at; as at) {
     @let m = u.mark;

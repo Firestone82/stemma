@@ -1,8 +1,9 @@
 /**
  * Heraldic: a roll of arms. Name plates with a band in the family colour,
- * tied together with twisted cord, a quartered shield in the family colours
- * over the title, gold rings for marriages and pennants for the generations,
- * all on aged parchment in a blue and gold frame.
+ * tied together with twisted cord, the title between gold rules with the
+ * generations and people on one side and when it was drawn on the other,
+ * gold rings for marriages and pennants for the generations, all on aged
+ * parchment in a blue and gold frame.
  */
 import { LayoutCard, LayoutUnion } from '../../layout/layout-types';
 import { yearSpan } from '../../lang/language';
@@ -30,8 +31,8 @@ const palette = {
   card: PARCHMENT_LIGHT,
   cardEdge: '#6b5438',
   kin: '#1f3d63',
-  cardMale: '#e4e9ee',
-  cardFemale: '#f3e2dc',
+  cardMale: '#eeeade',
+  cardFemale: '#f4e7d7',
   male: '#2a4a74',
   female: '#8a2f46',
   break: '#9c2f22',
@@ -108,27 +109,39 @@ export const heraldic: PosterTheme = {
 
   header(c): PageBlock {
     const u = c.page.u;
-    const titleFont: FontSpec = { family: SMALL_CAPS, size: u * 3.6, weight: 500, letterSpacing: 0.1 };
-    const subFont: FontSpec = { family: SERIF, size: u * 1.5, style: 'italic' };
-    const shieldH = u * 8.2;
-    const height = shieldH + u * 1.2 + titleFont.size * 1.1 + (c.subtitle ? u * 0.6 + subFont.size : 0) + u * 2.4;
+    const titleFont: FontSpec = { family: SMALL_CAPS, size: u * 3.8, weight: 500, letterSpacing: 0.1 };
+    const wingFont: FontSpec = { family: SERIF, size: u * 1.5, style: 'italic' };
+    // As on the Heirloom print: the title in the middle between rules, how many generations and people
+    // on the left, when it was drawn and the years it spans on the right.
+    const height = u * 1.4 + titleFont.size * 1.1 + u * 2.2;
+    const drawn = c.language.drawn(c.now);
+    const years = c.years ? yearSpan(c.years.from, c.years.to) : '';
     return {
       height,
       draw(r: Rect) {
         const cx = r.x + r.w / 2;
-        const shieldW = shieldH / 1.18;
-        let out = achievement(c, cx, r.y, shieldW, shieldH, u);
-        const maxText = r.w * 0.8;
+        const maxText = r.w * 0.5;
         const tw = c.measure(c.title, titleFont);
         const font = tw > maxText ? { ...titleFont, size: (titleFont.size * maxText) / tw } : titleFont;
-        const ty = r.y + shieldH + u * 1.2 + font.size * 0.85;
-        out += el('text', { x: cx, y: ty, 'text-anchor': 'middle', ...fontAttrs(font), fill: palette.accent }, text(c.title));
-        const half = Math.min(tw, maxText) / 2 + u * 2;
-        out += rule(cx - half, ty - font.size * 0.32, -1, u);
-        out += rule(cx + half, ty - font.size * 0.32, 1, u);
-        if (c.subtitle) {
-          out += el('text', { x: cx, y: ty + u * 0.6 + subFont.size, 'text-anchor': 'middle', ...fontAttrs(subFont), fill: palette.muted }, text(c.subtitle));
-        }
+        const ty = r.y + u * 1.4 + font.size * 0.9;
+        let out = el('text', { x: cx, y: ty, 'text-anchor': 'middle', ...fontAttrs(font), fill: palette.accent }, text(c.title));
+        const half = Math.min(tw, maxText) / 2 + u * 2.4;
+        const longest = Math.max(c.subtitle ? c.measure(c.subtitle, wingFont) : 0, c.measure(drawn, wingFont), years ? c.measure(years, wingFont) : 0);
+        const reach = Math.min(r.w * 0.47, half + Math.max(u * 24, longest + u * 7));
+        const ry = ty - font.size * 0.34;
+        out += rule(cx - half, cx - reach, ry, u);
+        out += rule(cx + half, cx + reach, ry, u);
+        const wing = reach - half - u * 3.5;
+        const wingText = (s: string, side: -1 | 1, below: boolean) => {
+          if (!s) return '';
+          const w = c.measure(s, wingFont);
+          const f = w > wing ? { ...wingFont, size: (wingFont.size * wing) / w } : wingFont;
+          const y = below ? ry + u * 1.3 + f.size * 0.8 : ry - u * 0.85;
+          return el('text', { x: cx + (side * (half + reach)) / 2, y, 'text-anchor': 'middle', ...fontAttrs(f), fill: palette.muted }, text(s));
+        };
+        out += wingText(c.subtitle, -1, false);
+        out += wingText(drawn, 1, false);
+        out += wingText(years, 1, true);
         return out;
       },
     };
@@ -137,21 +150,18 @@ export const heraldic: PosterTheme = {
   footer(c): PageBlock {
     const u = c.page.u;
     const legendFont: FontSpec = { family: SMALL_CAPS, size: u * 1.25, weight: 500, letterSpacing: 0.05 };
-    const capFont: FontSpec = { family: SERIF, size: u * 1.1, style: 'italic' };
     const legend = c.legend.filter((l) => l.key !== '' || c.legend.length > 1);
-    // One row: the families' shields along it, and when and what years the tree was drawn at its right end.
+    // One row: the families' shields along it.
     const height = u * 3.6;
     return {
       height,
       draw(r: Rect) {
         let out = '';
         const y = r.y + u * 1.8;
-        const caption = [c.language.drawn(c.now), c.years ? yearSpan(c.years.from, c.years.to) : ''].filter(Boolean).join(', ');
-        const capW = caption ? c.measure(caption, capFont) : 0;
         if (legend.length) {
           const shieldW = u * 1.5;
           const gap = u * 2.4;
-          const room = r.w - (capW ? capW + gap * 1.5 : 0);
+          const room = r.w;
           const items = legend.map((l) => ({ l, w: shieldW + u * 0.7 + c.measure(l.label, legendFont) }));
           let total = items.reduce((s, i) => s + i.w, 0) + gap * (items.length - 1);
           while (total > room && items.length > 1) total -= items.pop()!.w + gap;
@@ -163,8 +173,6 @@ export const heraldic: PosterTheme = {
             x += w + gap;
           }
         }
-        if (caption)
-          out += el('text', { x: r.x + r.w, y: y + capFont.size * 0.32, 'text-anchor': 'end', ...fontAttrs(capFont), fill: palette.faint }, text(caption));
         return out;
       },
     };
@@ -198,8 +206,8 @@ export const heraldic: PosterTheme = {
         'stroke-width': look.focus ? 1.6 : 1,
         'stroke-dasharray': look.unknown ? UNKNOWN_DASH : undefined,
       }) +
-      // A band in the family colour along the top, like the chief of a shield.
-      el('path', { d: `M${k + 2.5},2.5H${n(w - k - 2.5)}L${n(w - 2.5)},${k + 2.5}V${n(k + 4.5)}H2.5V${k + 2.5}Z`, fill: band, opacity: 0.9 }) +
+      // A thin band in the family colour along the top edge, like the chief of a shield; clear of the sex symbol under it.
+      el('path', { d: `M${k + 1},2.2H${n(w - k - 1)}L${n(w - k + 1.6)},4.8H${k - 1.6}Z`, fill: band, opacity: 0.9 }) +
       (look.unknown ? '' : el('path', { d: `M${k + 2.5},${n(h - 2.5)}H${n(w - k - 2.5)}`, stroke: GOLD, 'stroke-width': 0.8, opacity: 0.9 }))
     );
   },
@@ -312,82 +320,18 @@ function thread(d: string, relation: string): string {
   );
 }
 
-/**
- * The shield over the title, quartered in the colours of the biggest
- * families on the page, with mantling (scrolling leaves) either side and a
- * helm's torse of cord along its top.
- */
-function achievement(c: PosterContext, cx: number, top: number, w: number, h: number, u: number): string {
-  const tinctures = c.legend
-    .filter((l) => l.key !== '')
-    .slice(0, 4)
-    .map((l) => c.theme.tinctures[l.tincture].fill);
-  const fills = tinctures.length ? tinctures : [c.theme.tinctures.azure.fill];
-  const x = cx - w / 2;
-  const id = 'pp-hr-shield';
-  c.def(id, `<clipPath id="${id}"><path d="${shieldPath(w, h)}"/></clipPath>`);
-  let out = `<g transform="translate(${n(x)},${n(top)})">`;
-  // Quarters: one colour fills the whole, two are parted per pale, three or four are quarterly.
-  const quarters: { x: number; y: number; w: number; h: number; fill: string }[] = [];
-  if (fills.length === 1) quarters.push({ x: 0, y: 0, w, h, fill: fills[0] });
-  else if (fills.length === 2) quarters.push({ x: 0, y: 0, w: w / 2, h, fill: fills[0] }, { x: w / 2, y: 0, w: w / 2, h, fill: fills[1] });
-  else {
-    const f = fills.length === 3 ? [fills[0], fills[1], fills[2], fills[0]] : fills;
-    quarters.push(
-      { x: 0, y: 0, w: w / 2, h: h / 2, fill: f[0] },
-      { x: w / 2, y: 0, w: w / 2, h: h / 2, fill: f[1] },
-      { x: 0, y: h / 2, w: w / 2, h: h / 2, fill: f[2] },
-      { x: w / 2, y: h / 2, w: w / 2, h: h / 2, fill: f[3] },
-    );
-  }
-  out += `<g clip-path="url(#${id})">`;
-  for (const q of quarters) out += el('rect', { x: q.x, y: q.y, width: q.w, height: q.h, fill: q.fill });
-  if (quarters.length > 1) {
-    out += el('path', { d: `M${n(w / 2)},0V${n(h)}`, stroke: GOLD, 'stroke-width': u * 0.14 });
-    if (quarters.length === 4) out += el('path', { d: `M0,${n(h / 2)}H${n(w)}`, stroke: GOLD, 'stroke-width': u * 0.14 });
-  }
-  // A sheen across the top left.
-  out += el('path', { d: `M0,0H${n(w * 0.55)}L0,${n(h * 0.5)}Z`, fill: '#ffffff', opacity: 0.08 });
-  out += '</g>';
-  out += el('path', { d: shieldPath(w, h), fill: 'none', stroke: GOLD, 'stroke-width': u * 0.22 });
-  out += el('path', { d: shieldPath(w, h), fill: 'none', stroke: GOLD_DARK, 'stroke-width': u * 0.06 });
-  // The torse: a twist of cord across the top of the shield.
-  out += cord(`M${n(-u * 0.4)},${n(-u * 0.25)}H${n(w + u * 0.4)}`);
-  out += '</g>';
-  // Mantling: scrolls of leaves either side, in the first two colours.
-  out += mantling(cx - w / 2 - u * 0.3, top + h * 0.12, -1, h, fills[0], fills[1] ?? GOLD);
-  out += mantling(cx + w / 2 + u * 0.3, top + h * 0.12, 1, h, fills[0], fills[1] ?? GOLD);
-  return out;
-}
-
-/** A scroll of mantling beside the shield: two curling strokes in the family colours, lined with gold. */
-function mantling(x: number, y: number, dir: number, h: number, a: string, b: string): string {
-  const s = h / 100;
-  const flip = `translate(${n(x)},${n(y)}) scale(${dir * s},${s})`;
-  const stroke = { fill: 'none', 'stroke-linecap': 'round' as const, 'stroke-linejoin': 'round' as const };
+/** A double rule reaching out from the title: a lozenge at the title and a dot at the far end. */
+function rule(inner: number, outer: number, y: number, u: number): string {
+  const dir = outer > inner ? 1 : -1;
+  const from = inner + dir * u * 1.3;
   return (
-    `<g transform="${flip}">` +
-    el('path', { d: 'M0,0C18,-4 34,8 32,26C30,42 12,44 10,58C8,72 26,80 38,70', ...stroke, stroke: a, 'stroke-width': 9 }) +
-    el('path', { d: 'M0,0C18,-4 34,8 32,26C30,42 12,44 10,58C8,72 26,80 38,70', ...stroke, stroke: GOLD, 'stroke-width': 2.2 }) +
-    el('path', { d: 'M2,14C16,18 24,34 16,48C10,58 20,70 30,66', ...stroke, stroke: b, 'stroke-width': 5 }) +
-    el('path', { d: 'M2,14C16,18 24,34 16,48C10,58 20,70 30,66', ...stroke, stroke: GOLD, 'stroke-width': 1.3 }) +
-    el('path', { d: 'M40,70C44,80 38,90 30,92', ...stroke, stroke: a, 'stroke-width': 6 }) +
-    el('path', { d: 'M40,70C44,80 38,90 30,92', ...stroke, stroke: GOLD, 'stroke-width': 1.5 }) +
-    `</g>`
-  );
-}
-
-/** A rule beside the title, ending in a lozenge and a dot. */
-function rule(x: number, y: number, dir: number, u: number): string {
-  const len = u * 9;
-  const end = x + dir * len;
-  return (
-    el('path', { d: `M${n(x)},${n(y)}H${n(end)}`, stroke: GOLD, 'stroke-width': u * 0.1, 'stroke-linecap': 'round' }) +
+    el('path', { d: `M${n(from)},${n(y)}H${n(outer)}`, stroke: GOLD, 'stroke-width': u * 0.12, 'stroke-linecap': 'round' }) +
+    el('path', { d: `M${n(from)},${n(y + u * 0.5)}H${n(outer - dir * u * 2.2)}`, stroke: GOLD, 'stroke-width': u * 0.05, 'stroke-linecap': 'round' }) +
     el('path', {
-      d: `M${n(end)},${n(y - u * 0.6)}L${n(end + dir * u * 0.6)},${n(y)}L${n(end)},${n(y + u * 0.6)}L${n(end - dir * u * 0.6)},${n(y)}Z`,
+      d: `M${n(inner)},${n(y - u * 0.6)}L${n(inner + dir * u * 0.6)},${n(y)}L${n(inner)},${n(y + u * 0.6)}L${n(inner - dir * u * 0.6)},${n(y)}Z`,
       fill: palette.accent,
     }) +
-    el('circle', { cx: end + dir * u * 1.3, cy: y, r: u * 0.2, fill: GOLD })
+    el('circle', { cx: outer, cy: y, r: u * 0.24, fill: GOLD })
   );
 }
 

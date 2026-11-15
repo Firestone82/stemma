@@ -21,7 +21,7 @@ describe('tree behind the chart', () => {
   const index = new TreeIndex(doc);
   const card = (id: string) => layout.cards.find((c) => c.personId === id)!;
 
-  it('grows from the couple: a branch to every relative, leaves above, roots down to their descendants', () => {
+  it('grows from the couple: a branch to every relative, up to the ancestors and down to the descendants, leafy both ways', () => {
     const shape = branchTree(layout, index, ['I11', 'I15'])!;
     expect(shape.wood.every((d) => d.startsWith('M') && d.endsWith('Z'))).toBe(true);
     const wood = [...shape.wood, ...shape.twigs].flatMap(points);
@@ -38,15 +38,16 @@ describe('tree behind the chart', () => {
       const conn = layout.connectors.find((x) => x.familyId === familyId)!;
       expect(wood.some((p) => Math.abs(p.y - conn.barY) < 12 && Math.abs(p.x - conn.stem.x) < 12)).toBe(true);
     }
-    // Roots reach behind the children and grandchildren.
+    // Branches hang down behind the children and grandchildren.
     for (const id of ['I20', 'I21', 'I22', 'I27', 'I28', 'I29']) {
       expect(wood.some((p) => inside(p, card(id)))).toBe(true);
     }
-    // Leaves up among the ancestors, over the oldest generation, and none down among the grandchildren (roots).
+    // Leaves up among the ancestors, over the oldest generation, and down among the descendants too: no bare roots.
     const leaves = shape.foliage.leaves.flat().flatMap(points);
     const top = Math.min(...layout.cards.map((c) => c.y));
     expect(leaves.some((p) => p.y < top)).toBe(true);
-    expect(leaves.every((p) => p.y < card('I27').y)).toBe(true);
+    const children = card('I22');
+    expect(leaves.some((p) => p.y > children.y - layout.cards[0].h)).toBe(true);
     expect(shape.blooms[0].length + shape.blooms[1].length).toBeGreaterThan(5);
   });
 
@@ -78,8 +79,8 @@ describe('tree behind the chart', () => {
     b.person('A', 'Alone');
     const single = b.build();
     const shape = branchTree(computeLayout(single), new TreeIndex(single), ['A'])!;
-    // A trunk with a flare of roots, and a few leafy twigs.
-    expect(shape.wood.length).toBeGreaterThan(3);
+    // A trunk, no roots, and a few leafy twigs.
+    expect(shape.wood.length).toBeGreaterThan(0);
     expect(shape.foliage.leaves.flat().length).toBeGreaterThan(5);
     expect(branchTree(computeLayout(single), new TreeIndex(single), ['missing'])).toBeNull();
   });

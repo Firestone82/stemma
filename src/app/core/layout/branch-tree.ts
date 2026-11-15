@@ -5,10 +5,11 @@
  * a fork and splits to their father and mother, brothers and sisters grow from
  * the same fork as twigs, and the wood thins with every generation it is from
  * the trunk (not with how long a branch is or how many people it carries).
- * Below the couple the trunk spreads into roots that reach their children and
- * grandchildren. Leaves and blossom grow along the branches, more of them the
- * higher they are, so the crown has the shape of the family instead of being
- * one round mass over it.
+ * Below the couple the wood goes on down to their children and grandchildren
+ * as branches too, hanging boughs with leaves and sprigs, never roots: the
+ * family grows out of the couple both ways. Leaves and blossom grow along all
+ * the branches, more of them the higher they are, so the crown has the shape
+ * of the family instead of being one round mass over it.
  *
  * The shape follows the layout, so it always matches the family, and the
  * branches run where the family lines would, so the print needs no other
@@ -22,7 +23,7 @@ import { LayoutCard, LayoutConnector, LayoutResult, Pt } from './layout-types';
 import { cubic, lengths, offsetLine, outline, seeded, tangent } from './organic';
 
 export interface BranchTree {
-  /** Filled outlines: trunk, boughs, twigs and roots. */
+  /** Filled outlines: trunk, boughs and twigs. */
   wood: string[];
   /** Thin twigs drawn under the leaves, so they disappear into them. */
   twigs: string[];
@@ -41,7 +42,7 @@ export interface TreeRoom {
 }
 
 export interface BranchTreeOptions {
-  /** The area the tree may use; twigs and roots stay inside it. Defaults to the chart with some space around it. */
+  /** The area the tree may use; twigs stay inside it. Defaults to the chart with some space around it. */
   room?: TreeRoom;
   /** How leafy the tree is, from 0 (bare wood) to 1. */
   leaves?: number;
@@ -284,7 +285,7 @@ export function branchTree(layout: LayoutResult, index: TreeIndex, focusIds: rea
     const family = index.family(conn.familyId);
     if (!family) continue;
     const partners = family.partners.filter((id) => cardOf.has(id));
-    // The couple's own children and grandchildren are roots, drawn below.
+    // The couple's own children and grandchildren hang from the couple, drawn below.
     if (partners.some((id) => descendants.has(id))) continue;
     const children = conn.drops.filter((d) => cardOf.has(d.childId));
     if (!children.length) continue;
@@ -379,7 +380,10 @@ export function branchTree(layout: LayoutResult, index: TreeIndex, focusIds: rea
   const sway = trunkW * 0.1;
   const crown: Pt = { x: top.x, y: Math.min(...focusCards.map((c) => c.y)) + H * 0.45 };
   const trunkLine = cubic(base, { x: base.x + sway, y: lerp(base.y, crown.y, 0.35) }, { x: base.x - sway, y: lerp(base.y, crown.y, 0.7) }, crown, 16);
-  const trunkWidth = (t: number) => trunkW * (1 + 0.55 * Math.pow(1 - t, 3));
+  // With children below, the trunk is the bough they hang from: it narrows down to where they branch off.
+  // Without, it stands on the ground, a little wider at its foot.
+  const hanging = present.some((id) => index.children(id).some((c) => cardOf.has(c.id)));
+  const trunkWidth = hanging ? (t: number) => lerp(gw(0.25) * 1.3, trunkW, Math.pow(t, 0.8)) : (t: number) => trunkW * (1 + 0.3 * Math.pow(1 - t, 3));
   wood.push(outline(trunkLine, trunkWidth, 0.06, 1));
   bark.push(
     offsetLine(trunkLine, trunkWidth, 0.5, 0.05, 0.8),
@@ -395,11 +399,11 @@ export function branchTree(layout: LayoutResult, index: TreeIndex, focusIds: rea
     addWood(line, trunkW * 0.7, w, hashSeed(card.personId));
   }
 
-  // --- the roots: down to children and grandchildren ---------------------------------
+  // --- hanging branches: down to children and grandchildren ---------------------------
 
   const placed = new Set<string>(present);
 
-  const rootLine = (a: Pt, card: LayoutCard): Pt[] => {
+  const hangingLine = (a: Pt, card: LayoutCard): Pt[] => {
     const entry = { x: card.x + card.w / 2, y: card.y };
     const centre = { x: entry.x, y: card.y + card.h / 2 };
     if (entry.y <= a.y + 4) return cubic(a, a, centre, centre, 8);
@@ -416,13 +420,14 @@ export function branchTree(layout: LayoutResult, index: TreeIndex, focusIds: rea
   const connectorOf = new Map(layout.connectors.map((c) => [c.familyId, c]));
 
   /**
-   * Roots to a family's children on the page, and on to their children. They
-   * start at `from` (`at` generations below the couple) when given: the foot of
-   * the trunk. Otherwise they hang from the middle of the parents, under the
-   * rings between them (under the one parent's card when the other is not on
-   * the page), the way the family lines do.
+   * Branches to a family's children on the page, and on to their children,
+   * with leaves and sprigs like the branches above. They start at `from`
+   * (`at` generations below the couple) when given: the foot of the trunk.
+   * Otherwise they hang from the middle of the parents, under the rings
+   * between them (under the one parent's card when the other is not on the
+   * page), the way the family lines do.
    */
-  const familyRoots = (family: Family, from?: Pt, at = 0): number => {
+  const familyBranches = (family: Family, from?: Pt, at = 0): number => {
     const kids = family.children.map((c) => c.personId).filter((id) => cardOf.has(id) && !placed.has(id));
     if (!kids.length) return 0;
     kids.forEach((id) => placed.add(id));
@@ -440,40 +445,32 @@ export function branchTree(layout: LayoutResult, index: TreeIndex, focusIds: rea
       start = { x: top.x, y: under + clamp(spaceBelow(under) * 0.3, 6, H * 0.4) };
       addWood([top, start], gw(g - 0.25), gw(g), hashSeed(family.id));
     }
+    // Lower in the tree, a little less leafy than the crown, but leafy all the same.
+    const amount = leafiness * clamp(0.75 - (0.25 * g) / maxDepth, 0.5, 0.75);
+    const rnd = seed(`hang:${family.id}`);
+    tuft(start, Math.PI / 2, amount * 0.8, rnd);
     for (const id of kids) {
-      const line = rootLine(start, cardOf.get(id)!);
-      addWood(line, gw(g), gw(Math.max(g, depthOf(id, g + 0.75))), hashSeed(id));
+      const line = hangingLine(start, cardOf.get(id)!);
+      const w0 = gw(g);
+      const w1 = gw(Math.max(g, depthOf(id, g + 0.75)));
+      addWood(line, w0, w1, hashSeed(id));
+      leafy(line, amount, seed(`hang-leaves:${id}`), 0.12, 0.85);
+      sprigsAlong(line, (t) => lerp(w0, w1, t), amount * 0.7, seed(`hang-sprigs:${id}`));
     }
-    for (const id of kids) for (const f of index.partnerFamilies(id)) familyRoots(f);
+    for (const id of kids) for (const f of index.partnerFamilies(id)) familyBranches(f);
     return kids.length;
   };
 
   // The couple's children grow from the foot of the trunk; children of the person in
   // the middle with another partner hang from under the rings of that couple.
-  let rooted = 0;
-  if (couple) rooted += familyRoots(couple, base, 0.25);
+  if (couple) familyBranches(couple, base, 0.25);
   for (const id of present) {
     for (const f of index.partnerFamilies(id)) {
       if (f === couple) continue;
       const other = f.partners.find((p) => p !== id);
       const withPartner = !!other && cardOf.has(other) && connectorOf.has(f.id);
-      rooted += familyRoots(f, withPartner ? undefined : base, 0.25);
+      familyBranches(f, withPartner ? undefined : base, 0.25);
     }
-  }
-  const baseW = trunkWidth(0);
-
-  // Where the trunk meets the ground it flares into a few short roots.
-  const rnd = seed(`flare:${present.join(',')}`);
-  const flares = rooted ? [-1, 1] : [-1, -0.45, 0.45, 1];
-  for (const side of flares) {
-    const angle = Math.PI / 2 - side * (rooted ? 1.25 : 0.95 + rnd() * 0.2);
-    const l = fit(base, angle, S * (rooted ? 0.42 : 0.5) * (0.85 + rnd() * 0.3));
-    if (l === null) continue;
-    const from = { x: base.x + side * baseW * 0.18, y: base.y - baseW * 0.05 };
-    const end = { x: from.x + Math.cos(angle) * l, y: from.y + Math.sin(angle) * l };
-    const line = cubic(from, { x: from.x + side * l * 0.45, y: from.y + l * 0.02 }, { x: end.x - side * l * 0.2, y: end.y - l * 0.12 }, end, 12);
-    const w0 = baseW * (rooted ? 0.42 : 0.38);
-    wood.push(outline(line, (t) => lerp(w0, minW, Math.pow(t, 0.7)), 0.05, side));
   }
 
   // A lone person, with nobody above them: a few leafy twigs so the tree is still a tree.

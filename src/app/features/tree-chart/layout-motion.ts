@@ -4,6 +4,12 @@ import { EMPTY_LAYOUT, anchorShift, easeInOut, lerpLayout } from './tween';
 import { ChartViewport } from './viewport';
 
 const GLIDE_MS = 380;
+/**
+ * More people coming or going than this and the chart changes at once: a
+ * glide redraws every card on every frame, which on a big tree turns into a
+ * stutter (switching the family view, a Relatives step).
+ */
+const MAX_GLIDE_CHANGES = 40;
 
 /**
  * The layout on screen. When the tree changes, the chart glides from the old
@@ -41,7 +47,7 @@ export class LayoutMotion {
     const shift = anchorShift(from, target, [...anchors]);
     const v0 = this.viewport.view();
     this.userMoved = false;
-    if (this.reduceMotion) {
+    if (this.reduceMotion || bigChange(from, target)) {
       this.displayed.set(target);
       this.viewport.view.set({ x: v0.x - shift.x * v0.k, y: v0.y - shift.y * v0.k, k: v0.k });
       return false;
@@ -62,4 +68,12 @@ export class LayoutMotion {
     if (this.frame !== null) cancelAnimationFrame(this.frame);
     this.frame = null;
   }
+}
+
+/** Whether so many people come or go between two layouts that gliding would stutter. */
+function bigChange(from: LayoutResult, to: LayoutResult): boolean {
+  const before = new Set(from.cards.map((c) => c.personId));
+  let changes = 0;
+  for (const c of to.cards) if (!before.delete(c.personId)) changes++;
+  return changes + before.size > MAX_GLIDE_CHANGES;
 }

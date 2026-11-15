@@ -11,15 +11,50 @@
   }
   @if (svg()) {
     <div
-      #sheet
       class="sheet"
+      [class.zoomed]="zoom().k > 1"
+      [class.panning]="panning()"
       [style.--ratio]="ratio()"
       role="img"
       [attr.aria-label]="t('print.previewOf', { summary: summary() })"
       [title]="t('print.clickToHide')"
       (click)="onClick($event)"
       (keydown.enter)="onClick($event)"
-    ></div>
+      (wheel)="onWheel($event)"
+      (dblclick)="onDoubleClick($event)"
+      (pointerdown)="onPointerDown($event)"
+      (pointermove)="onPointerMove($event)"
+      (pointerup)="onPointerUp($event)"
+      (pointercancel)="onPointerUp($event)"
+    >
+      <div #sheet class="lens" [style.transform]="lensTransform()"></div>
+    </div>
+    <div class="zoom" role="group" [attr.aria-label]="t('print.zoom.label')">
+      <button
+        type="button"
+        class="zoom-btn"
+        [attr.aria-label]="t('print.zoom.out')"
+        [title]="t('print.zoom.out')"
+        [disabled]="zoom().k <= 1"
+        (click)="zoomBy(1 / 1.5)"
+      >
+        <stemma-icon name="minus" [size]="15" />
+      </button>
+      <span class="zoom-level">{{ zoomPercent() }}%</span>
+      <button
+        type="button"
+        class="zoom-btn"
+        [attr.aria-label]="t('print.zoom.in')"
+        [title]="t('print.zoom.in')"
+        [disabled]="zoom().k >= maxZoom"
+        (click)="zoomBy(1.5)"
+      >
+        <stemma-icon name="plus" [size]="15" />
+      </button>
+      @if (zoom().k > 1) {
+        <button type="button" class="zoom-btn reset" [title]="t('print.zoom.reset')" (click)="resetZoom()">{{ t('print.zoom.whole') }}</button>
+      }
+    </div>
   } @else {
     <p class="wait">{{ t('print.preparing') }}</p>
   }

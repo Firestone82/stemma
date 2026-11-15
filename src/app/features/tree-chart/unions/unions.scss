@@ -83,3 +83,26 @@
     fill: var(--t-ink);
   }
 }
+
+/* In a family view: the line between a couple takes a family back out; it lights up under the pointer. */
+.cuttable {
+  cursor: pointer;
+
+  &:hover .cut-show {
+    stroke: var(--t-ink);
+  }
+}
+
+.cut-show {
+  fill: none;
+  stroke: transparent;
+  stroke-width: 2.4;
+  stroke-linecap: round;
+}
+
+.cut-hit {
+  fill: none;
+  stroke: transparent;
+  stroke-width: 14;
+  pointer-events: stroke;
+}

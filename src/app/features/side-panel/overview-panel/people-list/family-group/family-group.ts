@@ -7,13 +7,13 @@ export interface FamilyRow {
   name: string;
   dates: string;
   tincture: string;
-  /** Left out of the chart by the Relatives setting. */
+  /** Left out of the chart by the Relatives setting or the family view. */
   offChart?: boolean;
   /** What still has to be filled in, or empty. */
   missing?: string;
 }
 
-/** One family in the people list: its name, which opens and closes the list of its members. */
+/** One family in the people list: its name, which opens and closes the list of its members, and a button to show it alone. */
 @Component({
   selector: 'stemma-family-group',
   imports: [Icon, PersonRow],
@@ -31,6 +31,9 @@ export class FamilyGroupItem {
   readonly countLabel = input('');
   /** Says why a member is greyed out: the chart leaves them out. */
   readonly offChartHint = input('');
+  /** Name of the button that shows this family alone in the family view; no button when empty. */
+  readonly viewLabel = input('');
   readonly toggleOpen = output<void>();
+  readonly view = output<void>();
   readonly pick = output<string>();
 }

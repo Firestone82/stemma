@@ -26,6 +26,8 @@
         [open]="f.open"
         [countLabel]="f.count"
         [offChartHint]="offChartHint()"
+        [viewLabel]="f.viewName ? t(inFamilyView() ? 'familyView.add' : 'familyView.showOnly', { name: f.viewName }) : ''"
+        (view)="viewFamily(f.key)"
         (toggleOpen)="toggle(f.key, f.open)"
         (pick)="open.emit($event)"
       />

@@ -1,0 +1,22 @@
+@for (b of balloons(); track b.balloon.id) {
+  <svg:path class="string" [attr.d]="'M' + b.from.x + ',' + b.from.y + 'L' + b.to.x + ',' + b.to.y" />
+  <svg:g
+    class="balloon"
+    role="button"
+    tabindex="0"
+    [attr.data-kind]="b.balloon.kind"
+    [attr.aria-label]="labels().get(b.balloon.id)"
+    [attr.transform]="'translate(' + b.x + ',' + b.y + ')'"
+    (click)="onPick(b.balloon.id, $event)"
+    (keydown.enter)="onPick(b.balloon.id, $event)"
+    (keydown.space)="onPick(b.balloon.id, $event)"
+    (pointerdown)="$event.stopPropagation()"
+  >
+    <svg:rect class="body" [attr.width]="b.w" [attr.height]="b.h" [attr.rx]="b.h / 2" />
+    @for (t of b.shields; track $index) {
+      <svg:path class="shield" [attr.data-tincture]="t" [attr.d]="shield" [attr.transform]="'translate(' + (8 + $index * 13) + ',' + (b.h / 2 - 6) + ')'" />
+    }
+    <svg:text class="name" [attr.x]="8 + b.shields.length * 13" [attr.y]="b.h / 2" dominant-baseline="central">{{ b.text }}</svg:text>
+    <svg:title>{{ labels().get(b.balloon.id) }}</svg:title>
+  </svg:g>
+}

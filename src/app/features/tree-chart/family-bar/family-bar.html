@@ -1,0 +1,26 @@
+<span class="title"
+  ><stemma-icon name="tree" [size]="17" /><span class="label">{{ t('familyView.bar') }}</span></span
+>
+<ul class="chips">
+  @for (f of families(); track f.key) {
+    <li class="chip">
+      <span class="mini-shield" [attr.data-tincture]="f.tincture"></span>
+      <span class="name">{{ f.label }}</span>
+      @if (families().length > 1) {
+        <button
+          type="button"
+          class="remove"
+          [attr.aria-label]="t('familyView.remove', { name: f.label })"
+          [title]="t('familyView.remove', { name: f.label })"
+          (click)="familyView.remove(f.key)"
+        >
+          <stemma-icon name="close" [size]="12" />
+        </button>
+      }
+    </li>
+  }
+</ul>
+<button type="button" class="whole" (click)="familyView.exit()">
+  <stemma-icon name="people" [size]="16" />
+  <span>{{ t('familyView.wholeTree') }}</span>
+</button>

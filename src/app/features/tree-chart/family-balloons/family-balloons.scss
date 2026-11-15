@@ -1,0 +1,48 @@
+.string {
+  fill: none;
+  stroke: var(--t-faint);
+  stroke-width: 1.2;
+  stroke-dasharray: 3 3;
+}
+
+.balloon {
+  cursor: pointer;
+  outline: none;
+
+  &:hover .body,
+  &:focus-visible .body {
+    stroke: var(--t-ink);
+    stroke-dasharray: none;
+  }
+
+  &:focus-visible .body {
+    stroke-width: 2;
+  }
+}
+
+.body {
+  fill: var(--t-card);
+  stroke: var(--t-line);
+  stroke-width: 1;
+  stroke-dasharray: 3 2;
+  filter: drop-shadow(0 1px 1.5px var(--t-shadow));
+}
+
+.shield {
+  fill: var(--tc, var(--tc-argent));
+  stroke: var(--tc-argent-edge);
+  stroke-width: 0;
+
+  &[data-tincture='argent'] {
+    fill: var(--tc-argent);
+    stroke-width: 0.8;
+  }
+}
+
+.name {
+  fill: var(--t-ink);
+  font-family: var(--font-sans, 'Alegreya Sans', system-ui, sans-serif);
+  font-size: 12.5px;
+  font-weight: 500;
+  pointer-events: none;
+}

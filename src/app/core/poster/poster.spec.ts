@@ -4,7 +4,7 @@ import { TreeIndex } from '../model/tree-index';
 import { DEFAULT_PRINT, Person, PrintSettings, TreeDocument } from '../model/types';
 import { computeLayout } from '../layout/layout';
 import { pdfFromJpeg } from './pdf';
-import { flipLayout, renderPoster } from './poster';
+import { flipLayout, renderPoster, siblingsAround } from './poster';
 import { RELATIVES, relativesOf, relativesSettings, scopeDocument } from './scope';
 import { kinship } from '../kinship/kinship';
 import { POSTER_THEMES, posterTheme } from './themes';
@@ -146,24 +146,42 @@ describe('printed page', () => {
     }
   });
 
-  it('keeps the couple in the middle of the page when asked, however lopsided the family', () => {
+  it('brings the couple towards the middle of the page when asked, without leaving the page empty beside the tree', () => {
     // Ruth has nobody of her own in the tree; Simon's family is all on one side of them.
-    const middleOf = (centered: boolean) => {
+    const placed = (centered: boolean) => {
       const result = renderPoster({ doc, settings: settings({ centerId: 'I14', partnerId: 'I11', centered, theme: 'heirloom' }), measure });
       const dom = new DOMParser().parseFromString(result.svg, 'image/svg+xml');
-      const xs = ['I14', 'I11'].map((id) => {
-        const card = dom.querySelector(`[data-person="${id}"]`)!;
+      const lefts = [...dom.querySelectorAll('[data-person]')].map((card) => {
         const chart = card.closest('g[transform*="scale"]:not([data-person])')!;
         const [, tx, , s] = /translate\(([-\d.]+),([-\d.]+)\) scale\(([-\d.]+)\)/.exec(chart.getAttribute('transform')!)!.map(Number);
         const [, cx] = /translate\(([-\d.]+),/.exec(card.getAttribute('transform')!)!.map(Number);
-        return { left: tx + cx * s, s };
+        return { id: card.getAttribute('data-person')!, left: tx + cx * s, s };
       });
-      const cardW = 178 * xs[0].s;
-      const middle = (Math.min(...xs.map((x) => x.left)) + Math.max(...xs.map((x) => x.left)) + cardW) / 2;
-      return (middle - result.width / 2) / result.width;
+      const s = lefts[0].s;
+      const cardW = 178 * s;
+      const couple = lefts.filter((l) => l.id === 'I14' || l.id === 'I11');
+      const middle = (Math.min(...couple.map((x) => x.left)) + Math.max(...couple.map((x) => x.left)) + cardW) / 2;
+      const span = Math.max(...lefts.map((l) => l.left)) + cardW - Math.min(...lefts.map((l) => l.left));
+      return { off: Math.abs(middle - result.width / 2) / result.width, s, filled: span / result.width };
     };
-    expect(Math.abs(middleOf(true))).toBeLessThan(0.02);
-    expect(Math.abs(middleOf(false))).toBeGreaterThan(0.05);
+    const centred = placed(true);
+    const plain = placed(false);
+    // The cards are as big either way: keeping the couple in the middle never shrinks the tree.
+    expect(centred.s).toBeCloseTo(plain.s, 2);
+    expect(centred.off).toBeLessThanOrEqual(plain.off + 0.001);
+    // The tree reaches across the page, margins aside.
+    expect(centred.filled).toBeGreaterThan(0.8);
+  });
+
+  it('tries the person in the middle at the other places among their brothers and sisters', () => {
+    // Simon is the eldest of three.
+    const orders = siblingsAround(doc, new TreeIndex(doc), 'I11').map((d) => d.families.find((f) => f.id === 'F4')!.children.map((c) => c.personId));
+    expect(orders).toEqual([
+      ['I12', 'I11', 'I13'],
+      ['I12', 'I13', 'I11'],
+    ]);
+    // An only child.
+    expect(siblingsAround(doc, new TreeIndex(doc), 'I22')).toEqual([]);
   });
 
   it('writes relationship names, couples and surnames at birth in the language the tree was saved in', () => {

@@ -46,8 +46,12 @@ export class Unions {
   private readonly i18n = inject(I18n);
 
   readonly layout = input.required<LayoutResult>();
+  /** In a family view of several families: couples whose line can be clicked, with what the click does as the tooltip. */
+  readonly cuts = input<ReadonlyMap<string, string>>(new Map());
   /** A couple was clicked (its family id). */
   readonly pick = output<string>();
+  /** The line between a couple was clicked to take a family out of the view (its family id). */
+  readonly takeOut = output<string>();
 
   protected readonly unions = computed(() => {
     const index = this.store.index();
@@ -90,6 +94,11 @@ export class Unions {
   });
 
   protected readonly lang = computed(() => this.model.language().code);
+
+  protected onCut(familyId: string, event: Event): void {
+    event.stopPropagation();
+    this.takeOut.emit(familyId);
+  }
 
   protected onPick(familyId: string, event: Event): void {
     event.stopPropagation();

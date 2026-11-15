@@ -40,6 +40,7 @@ export class PrintStudio {
   protected readonly t = inject(I18n).t;
 
   private readonly body = viewChild.required<ElementRef<HTMLElement>>('body');
+  private readonly previewPane = viewChild(PrintPreview);
   private readonly bodySize = signal({ width: 0, height: 0 });
 
   /** How wide the page's column is: as wide as the page is at the full height, leaving the settings the rest. */
@@ -65,8 +66,11 @@ export class PrintStudio {
     });
   }
 
-  /** Escape leaves the page, unless a dialog is open over it. */
+  /** Escape leaves the page, unless a dialog is open over it; zoomed into the preview, it first goes back to the whole page. */
   protected onEscape(): void {
-    if (!document.querySelector('dialog[open]')) this.model.close();
+    if (document.querySelector('dialog[open]')) return;
+    const preview = this.previewPane();
+    if (preview?.zoomedIn()) preview.resetZoom();
+    else this.model.close();
   }
 }

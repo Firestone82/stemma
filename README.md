@@ -2,9 +2,9 @@
 
 Angular app for mapping a family and getting a clear family tree drawn and printed for you.
 
-![Angular](https://img.shields.io/badge/Angular-22-red) ![TypeScript](https://img.shields.io/badge/TypeScript-6-blue) ![Node.js](https://img.shields.io/badge/Node.js-22%2B-green) ![Deploy](https://img.shields.io/badge/Deploy-GitHub%20Pages-black)
+![Angular](https://img.shields.io/badge/Angular-22-red) ![TypeScript](https://img.shields.io/badge/TypeScript-6-blue) ![Node.js](https://img.shields.io/badge/Node.js-22%2B-green) ![Deploy](https://img.shields.io/badge/Deploy-GitHub%20Pages-black) ![License](https://img.shields.io/badge/License-MIT-yellow)
 
-**Live demo:** [firestone82.github.io/family-tree](https://firestone82.github.io/family-tree/)
+**Live demo:** [firestone82.github.io/stemma](https://firestone82.github.io/stemma/)
 
 ## About
 
@@ -13,6 +13,7 @@ Stemma lets you add people and how they are related, and lays the chart out for 
 ## Features
 
 - Automatic layout for real families, with manual adjustments saved alongside the tree
+- Family view: one family on its own, with balloons for the families it marries into, to open or add to the view
 - Relationship names to the centred person (great-aunt, sister-in-law, first cousin once removed, ...)
 - Relationship status: married, engaged, partners, separated, divorced, widowed, annulled
 - Twins and multiple births, people with unknown names, unknown parents
@@ -23,6 +24,22 @@ Stemma lets you add people and how they are related, and lays the chart out for 
 - Versioned XML format with schema ([schema/stemma-1.xsd](schema/stemma-1.xsd)) and autosave in the browser
 - Undo/redo, keyboard navigation, English and Czech, mobile layout
 
+## Showcase
+
+![Editor with a person selected](docs/screenshots/editor.jpg)
+
+The family view shows one family at a time. The families it is joined to wait in balloons: open one, or add it to the view.
+
+![Family view](docs/screenshots/family-view.jpg)
+
+The print studio: pick a style, paper size and who is in the middle, then print or export.
+
+![Print studio](docs/screenshots/print-studio.jpg)
+
+| Heirloom | Heraldic | Modern |
+| :---: | :---: | :---: |
+| [![Heirloom poster](docs/screenshots/print-heirloom.jpg)](docs/screenshots/print-heirloom.jpg) | [![Heraldic poster](docs/screenshots/print-heraldic.jpg)](docs/screenshots/print-heraldic.jpg) | [![Modern poster](docs/screenshots/print-modern.jpg)](docs/screenshots/print-modern.jpg) |
+
 ## Requirements
 
 - Node.js 22.22.3+ or 24.15+
@@ -32,8 +49,8 @@ Stemma lets you add people and how they are related, and lays the chart out for 
 
 1. Clone the repository:
    ```bash
-   git clone https://github.com/Firestone82/family-tree.git
-   cd family-tree
+   git clone https://github.com/Firestone82/stemma.git
+   cd stemma
    ```
 
 2. Install dependencies:
@@ -57,4 +74,4 @@ Other scripts: `npm test` (Vitest), `npm run lint` (ESLint), `npm run format` (P
 
 ## License
 
-Provided as-is for personal use.
+[MIT](LICENSE)

@@ -12,7 +12,10 @@ import {
   untracked,
   viewChild,
 } from '@angular/core';
-import { LayoutCard } from '../../core/layout/layout-types';
+import { LayoutCard, LayoutResult } from '../../core/layout/layout-types';
+import { TextMeasurer } from '../../core/services/text-measure';
+import { FONT_SANS } from '../../state/card-metrics';
+import { FamilyView } from '../../state/family-view';
 import { unionMarkerPoint } from '../../core/layout/paths';
 import { TreeStore } from '../../core/store/tree-store';
 import { I18n } from '../../i18n/i18n';
@@ -26,6 +29,9 @@ import { ArrangeBar } from './arrange-bar/arrange-bar';
 import { ArrangeHandles } from './arrange-handles/arrange-handles';
 import { ContextMenu, ContextMenuItem } from './context-menu/context-menu';
 import { FamilyLines } from './family-lines/family-lines';
+import { FamilyBalloons } from './family-balloons/family-balloons';
+import { BalloonText, boundsWithBalloons, placeBalloons } from './family-balloons/place-balloons';
+import { FamilyBar } from './family-bar/family-bar';
 import { Screen, coupleCentre, fitView, floatOver, revealView } from './framing';
 import { GenerationBands } from './generation-bands/generation-bands';
 import { ChartGestures } from './gestures';
@@ -59,6 +65,8 @@ import { ZoomControls } from './zoom-controls/zoom-controls';
     ArrangeHandles,
     ArrangeBar,
     ContextMenu,
+    FamilyBalloons,
+    FamilyBar,
     Icon,
   ],
   templateUrl: './tree-chart.html',
@@ -79,6 +87,8 @@ export class TreeChart {
   protected readonly arrange = inject(ArrangeActions);
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
   private readonly i18n = inject(I18n);
+  private readonly measure = inject(TextMeasurer);
+  protected readonly familyView = inject(FamilyView);
   protected readonly t = this.i18n.t;
 
   /** Space covered by overlays (the bottom sheet on phones), kept clear when fitting. */
@@ -136,6 +146,78 @@ export class TreeChart {
     return u ? unionMarkerPoint(u) : null;
   });
 
+  // -- the family view's balloons -------------------------------------------
+
+  /** In the family view: the chart shows some families, not the whole tree. */
+  protected readonly familyActive = computed(() => this.model.familyKeys().length > 0);
+
+  /** The words and shields on each balloon. */
+  private readonly balloonTexts = computed<ReadonlyMap<string, BalloonText>>(() => {
+    this.measure.fontsVersion();
+    const names = this.model.familyNames();
+    const tinctures = this.model.familyTinctures();
+    const out = new Map<string, BalloonText>();
+    for (const b of this.model.balloons()) {
+      const labels = b.keys.map((k) => names.get(k)?.label ?? k);
+      const text = labels.length <= 2 ? labels.join(', ') : `${labels[0]}, ${labels[1]} +${labels.length - 2}`;
+      out.set(b.id, { text, width: this.measure.width(text, BALLOON_FONT), shields: b.keys.slice(0, 3).map((k) => tinctures.get(k) ?? 'argent') });
+    }
+    return out;
+  });
+
+  /** What each balloon says to a screen reader and in its tooltip. */
+  protected readonly balloonLabels = computed<ReadonlyMap<string, string>>(() => {
+    const index = this.store.index();
+    const names = this.model.familyNames();
+    return new Map(
+      this.model.balloons().map((b) => {
+        const families = this.i18n.list(b.keys.map((k) => names.get(k)?.label ?? k));
+        const name = this.i18n.name(index.person(b.personId));
+        return [b.id, this.t(`familyView.balloon.${b.kind}`, { name, families })];
+      }),
+    );
+  });
+
+  private placeOn(layout: LayoutResult) {
+    const balloons = this.model.balloons();
+    if (!balloons.length) return [];
+    const texts = this.balloonTexts();
+    const index = this.store.index();
+    return placeBalloons(
+      layout,
+      balloons,
+      (b) => texts.get(b.id)!,
+      (familyId) => index.family(familyId)?.partners ?? [],
+    );
+  }
+
+  /** The balloons where they are on screen; while dragging they wait for the drop. */
+  protected readonly placedBalloons = computed(() => (this.drag() ? [] : this.placeOn(this.shown())));
+
+  /** A balloon brings its families onto the chart, with the nearest of them (the father, the first child, the partner) in view. */
+  protected onBalloonPick(id: string): void {
+    if (this.gestures.swallowClick()) return;
+    const balloon = this.model.balloons().find((b) => b.id === id);
+    if (balloon) this.familyView.add(balloon.keys, balloon.people[0]);
+  }
+
+  /** What a click on each line takes out of the family view, as its tooltip (by family id). */
+  protected readonly cutTitles = computed<ReadonlyMap<string, string>>(() => {
+    const names = this.model.familyNames();
+    const label = (keys: readonly string[]) => {
+      const labels = keys.map((k) => names.get(k)?.label ?? k);
+      return labels.length === 1 ? this.t('familyView.remove', { name: labels[0] }) : this.t('familyView.removeMany', { names: this.i18n.list(labels) });
+    };
+    return new Map([...this.model.familyCuts()].map(([familyId, keys]) => [familyId, label(keys)]));
+  });
+
+  /** A line in a family view takes the families it brought in back out. */
+  protected onCut(familyId: string): void {
+    if (this.gestures.swallowClick()) return;
+    const keys = this.model.familyCuts().get(familyId);
+    if (keys) this.familyView.remove(keys);
+  }
+
   /** Where the quick-add buttons float, in screen pixels. */
   protected readonly quickAdd = computed(() => {
     const c = this.selectedCard();
@@ -182,7 +264,7 @@ export class TreeChart {
         firstFit = false;
         return;
       }
-      untracked(() => this.fit(true));
+      untracked(() => this.fit(this.ui.fitAnimated));
     });
     effect(() => {
       const f = this.ui.flash();
@@ -234,7 +316,8 @@ export class TreeChart {
     }
     this.pendingFit = false;
     const gutter = this.model.view().showGenerations ? 40 : 0;
-    this.viewport.go(fitView(this.model.layout().bounds, screen, gutter), animate);
+    const layout = this.model.layout();
+    this.viewport.go(fitView(boundsWithBalloons(layout.bounds, this.placeOn(layout)), screen, gutter), animate);
   }
 
   private centreOnPerson(personId: string): void {
@@ -433,11 +516,15 @@ export class TreeChart {
     const m = this.menu();
     if (!m) return [];
     const t = this.t;
+    const names = this.model.familyNames();
+    const familyName = (key: string) => names.get(key)?.label ?? key;
     if (!m.personId) {
-      return [
+      const items: ContextMenuItem[] = [
         { id: 'add', label: t('overview.addPerson'), icon: 'plus' },
         { id: 'fit', label: t('zoom.fit'), icon: 'fit' },
       ];
+      if (this.familyActive()) items.push({ id: 'whole', label: t('familyView.wholeTree'), icon: 'people', separated: true });
+      return items;
     }
     const index = this.store.index();
     const parentsFull = (index.primaryParentFamily(m.personId)?.partners.length ?? 0) >= 2;
@@ -449,12 +536,19 @@ export class TreeChart {
       { id: 'sibling', label: t('menu.addSibling'), icon: 'sibling' },
     );
     if (m.personId !== this.model.focusId()) items.push({ id: 'centre', label: t('person.centreHere'), icon: 'target', separated: true });
+    // From the whole tree a family view starts with this person's family; in one, it is added.
+    const key = this.model.familyKeyOf().get(m.personId) ?? '';
+    const shown = this.model.familyKeys();
+    if (!shown.includes(key)) {
+      const label = shown.length ? t('familyView.add', { name: familyName(key) }) : t('familyView.showOnly', { name: familyName(key) });
+      items.push({ id: 'family', label, icon: 'tree', separated: m.personId === this.model.focusId() });
+    }
     const hidden = !!index.person(m.personId)?.hiddenFromPrint;
     items.push({
       id: 'print',
       label: t(hidden ? 'person.showOnPrint' : 'person.hideFromPrint'),
       icon: hidden ? 'printer' : 'noPrint',
-      separated: m.personId === this.model.focusId(),
+      separated: m.personId === this.model.focusId() && !items.some((i) => i.id === 'family'),
     });
     items.push({ id: 'delete', label: t('person.delete'), icon: 'trash', danger: true });
     return items;
@@ -480,6 +574,7 @@ export class TreeChart {
     if (!m.personId) {
       if (id === 'add') this.people.addLoosePerson();
       else if (id === 'fit') this.fit(true);
+      else if (id === 'whole') this.familyView.exit();
       return;
     }
     switch (id) {
@@ -501,6 +596,9 @@ export class TreeChart {
         this.people.update(m.personId, { hiddenFromPrint: hidden ? undefined : true }, 'hiddenFromPrint');
         break;
       }
+      case 'family':
+        this.familyView.add(this.model.familyKeyOf().get(m.personId) ?? '', m.personId);
+        break;
       case 'delete':
         this.people.askDelete(m.personId);
         break;
@@ -555,3 +653,5 @@ export class TreeChart {
     return this.model.colors().byPerson.get(personId) ?? 'argent';
   }
 }
+
+const BALLOON_FONT = `500 12.5px ${FONT_SANS}`;

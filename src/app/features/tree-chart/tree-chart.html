@@ -23,9 +23,12 @@
     @if (view.showGenerations) {
       <g stemmaBands [layout]="displayed()"></g>
     }
-    <g stemmaFamilyLines [layout]="shown()"></g>
-    <g stemmaUnions [layout]="shown()" (pick)="onUnionPick($event)"></g>
+    <g stemmaFamilyLines [layout]="shown()" [cuts]="cutTitles()" (takeOut)="onCut($event)"></g>
+    <g stemmaUnions [layout]="shown()" [cuts]="cutTitles()" (pick)="onUnionPick($event)" (takeOut)="onCut($event)"></g>
     <g stemmaPlaceholders [layout]="shown()" (pick)="onPlaceholderPick($event)"></g>
+    @if (familyActive()) {
+      <g stemmaFamilyBalloons [balloons]="placedBalloons()" [labels]="balloonLabels()" (pick)="onBalloonPick($event)"></g>
+    }
 
     <g class="cards">
       @for (c of shown().cards; track c.personId) {
@@ -78,6 +81,12 @@
   </g>
 </svg>
 
+@if (familyView.busy()) {
+  <div class="busy" role="status" aria-live="polite">
+    <span class="note"><span class="spinner" aria-hidden="true"></span>{{ t('familyView.busy') }}</span>
+  </div>
+}
+
 @if (menu(); as m) {
   <stemma-context-menu [x]="m.x" [y]="m.y" [title]="menuTitle()" [items]="menuItems()" (pick)="onMenuPick($event)" (dismiss)="menu.set(null)" />
 }
@@ -98,18 +107,22 @@
 @if (!isEmpty()) {
   <div class="tools" [style.bottom.px]="insetBottom() + 14">
     <stemma-zoom-controls [percent]="zoomPercent()" (zoomIn)="zoom(1.25)" (zoomOut)="zoom(0.8)" (fit)="fit(true)" />
-    <stemma-relatives-filter />
-    <button
-      type="button"
-      class="arrange-pill"
-      [attr.aria-pressed]="ui.arranging()"
-      [attr.aria-label]="t('arrange.title')"
-      [title]="t('arrange.title')"
-      (click)="toggleArrange()"
-    >
-      <stemma-icon name="move" [size]="17" />
-      <span class="label">{{ t('arrange.button') }}</span>
-    </button>
+    @if (familyActive()) {
+      <stemma-family-bar />
+    } @else {
+      <stemma-relatives-filter />
+      <button
+        type="button"
+        class="arrange-pill"
+        [attr.aria-pressed]="ui.arranging()"
+        [attr.aria-label]="t('arrange.title')"
+        [title]="t('arrange.title')"
+        (click)="toggleArrange()"
+      >
+        <stemma-icon name="move" [size]="17" />
+        <span class="label">{{ t('arrange.button') }}</span>
+      </button>
+    }
   </div>
   @if (ui.arranging()) {
     <stemma-arrange-bar />

@@ -79,6 +79,12 @@ export interface PosterResult {
 
 /** A tree is not blown up beyond this on big paper; it would look like a children's book. */
 const MAX_SCALE = 2.1;
+/** How much of the page the tree fills, in the direction that does not decide its size. */
+const FILL = 0.97;
+/** Gaps between families and brothers and sisters grow at most this many times to fill the width. */
+const MAX_SPREAD = 4;
+/** Places among their brothers and sisters tried for the person in the middle. */
+const MAX_SIBLING_TRIES = 4;
 const GUTTER = 64;
 /** Room the sex symbol takes from the first line of a card. */
 const SYMBOL_ROOM = 14;
@@ -171,8 +177,11 @@ export function renderPoster(input: PosterInput): PosterResult {
   // Cards tucked over a corner reach above their row: the lines in the gap above keep clear of them.
   if (settings.compactCouples && !settings.tallGenerations)
     options = { ...options, rowGap: options.rowGap + Math.round(cardHeight * TUCK_SCALE * TUCK_UP * 0.8) };
-  const layoutWith = (o: LayoutOptions) => {
-    const l = computeLayout(doc, o, undefined, widths);
+  // The document laid out: the tree as it is, or (to keep the person in the middle there) with their
+  // brothers and sisters shared out on both sides of them.
+  let laidOut = doc;
+  const layoutWith = (o: LayoutOptions, d: TreeDocument = laidOut) => {
+    const l = computeLayout(d, o, undefined, widths);
     return theme.flow === 'up' ? flipLayout(l) : l;
   };
   let layout = layoutWith(options);
@@ -250,20 +259,20 @@ export function renderPoster(input: PosterInput): PosterResult {
   const picture = settings.showTree ? input.doc.background : undefined;
   const crownPad = settings.showTree && !picture && theme.tree ? cardHeight * 0.7 : 0;
 
-  /** Fits a layout on the page: the content box, the orientation and the scale. */
+  /**
+   * Fits a layout on the page: the content box, the orientation and the
+   * scale. The tree is as big as the page allows, with no empty band beside
+   * it; with the person kept in the middle, the tree is then slid across so
+   * they come as near the middle of the page as that leaves room for.
+   */
   const place = (l: LayoutResult) => {
     const b = l.bounds;
-    // With the couple in the middle, the content is widened to be symmetric around them.
     const left = b.x - gutter;
     const right = b.x + b.w;
     const focusX = focusCenter(l, index, focusIds);
-    const mid = (left + right) / 2;
-    // The couple in the middle of the page costs width when one side of the family is much bigger
-    // than the other; the setting says whether that is worth it.
-    const symmetric = settings.centered && focusX !== undefined;
-    const cx = symmetric ? focusX! : mid;
-    const half = Math.max(cx - left, right - cx, 1);
-    const content: Rect = { x: cx - half, y: b.y - crownPad, w: half * 2, h: Math.max(b.h + unionPad + crownPad, 1) };
+    const centred = settings.centered && focusX !== undefined;
+    const cx = (left + right) / 2;
+    const content: Rect = { x: left, y: b.y - crownPad, w: Math.max(right - left, 1), h: Math.max(b.h + unionPad + crownPad, 1) };
     if (!paper) {
       const u = clamp(Math.max(content.w, content.h) / 110, 8, 22);
       const margin = theme.margin * 100 * u;
@@ -286,6 +295,7 @@ export function renderPoster(input: PosterInput): PosterResult {
         chart,
         anchor: chart.x + chart.w / 2,
         scale: 1,
+        offCentre: 0,
       };
     }
     const portrait = { w: paper.widthMm * PX_PER_MM, h: paper.heightMm * PX_PER_MM };
@@ -305,19 +315,40 @@ export function renderPoster(input: PosterInput): PosterResult {
         const side = legendAt === 'side' ? theme.side?.(ctx, chartH) : undefined;
         if (legendAt === 'side' && !side) continue;
         const chart = { x: margin, y: margin + header.height, w: Math.max(10, w - margin * 2 - (side?.width ?? 0)), h: chartH };
-        // Where `cx` goes across the page: its middle when the couple is kept there (a legend column
-        // beside the tree then leaves less room on its side), otherwise the middle of the chart area.
-        const anchor = symmetric ? w / 2 : chart.x + chart.w / 2;
-        const fitW = Math.min((anchor - chart.x) / Math.max(cx - content.x, 1), (chart.x + chart.w - anchor) / Math.max(content.x + content.w - cx, 1));
-        const scale = Math.min(fitW, chart.h / content.h, MAX_SCALE);
-        if (!best || scale > best.scale * 1.02)
-          best = { cx, content, landscape: land, scale, header, footer, side, legendAt, page: { ...ctx.page }, chart, anchor };
+        const scale = Math.min(chart.w / content.w, chart.h / content.h, MAX_SCALE);
+        // Where the middle of the content goes across the page. Room left over beside the tree (the
+        // height decides its size) lets the person in the middle move towards the middle of the page.
+        const slack = Math.max(0, (chart.w - content.w * scale) / 2);
+        const mid = chart.x + chart.w / 2;
+        const anchor = centred ? clamp(w / 2 - (focusX! - cx) * scale, mid - slack, mid + slack) : mid;
+        const offCentre = centred ? Math.abs(anchor + (focusX! - cx) * scale - w / 2) / w : 0;
+        const better =
+          !best ||
+          scale > best.scale * 1.02 ||
+          // About as big: the one with the person nearer the middle.
+          (scale > best.scale * 0.98 && offCentre < best.offCentre - 0.02);
+        if (better) best = { cx, content, landscape: land, scale, header, footer, side, legendAt, page: { ...ctx.page }, chart, anchor, offCentre };
       }
     }
     return best!;
   };
 
   let placed = place(layout);
+  // Keeping the person in the middle: they may stand elsewhere among their brothers and sisters, when
+  // that brings them nearer the middle of the page without making the cards smaller. A few places at most,
+  // as each is a layout of its own.
+  if (paper && settings.centered && centerId) {
+    const start = placed;
+    for (const shared of siblingsAround(doc, index, centerId).slice(0, MAX_SIBLING_TRIES)) {
+      const trialLayout = layoutWith(options, shared);
+      const trialPlaced = place(trialLayout);
+      if (trialPlaced.scale > start.scale * 0.95 && trialPlaced.offCentre < placed.offCentre - 0.02) {
+        laidOut = shared;
+        layout = trialLayout;
+        placed = trialPlaced;
+      }
+    }
+  }
   // A wide tree on narrow paper: the widest generations are drawn in two
   // tiers, every other card a step lower, as long as that makes the cards bigger.
   // With tall generations asked for, rows are stacked more readily: more of them, for a smaller gain.
@@ -341,16 +372,49 @@ export function renderPoster(input: PosterInput): PosterResult {
       tiers.push(widest);
     }
   }
-  // When the width decides the size (a wide tree, or one side of the family
-  // much bigger than the other), spread the generations out to fill the page.
+  // The tree fills the page: when the width decides the size, the generations
+  // are spread out to the full height; when the height decides it, the
+  // families are spread out to the full width.
   const gaps = new Set(layout.ranks.values()).size - 1;
   if (paper && gaps > 0 && placed.scale < MAX_SCALE) {
-    const room = (placed.chart.h * 0.9) / placed.scale - placed.content.h;
-    const extra = Math.min(room / gaps, options.rowGap * 1.5);
+    const room = (placed.chart.h * FILL) / placed.scale - placed.content.h;
+    const extra = room / gaps;
     if (extra > 12) {
-      options = { ...options, rowGap: options.rowGap + extra };
-      layout = layoutWith(options);
-      placed = place(layout);
+      const trialOptions = { ...options, rowGap: options.rowGap + extra };
+      const trialLayout = layoutWith(trialOptions);
+      const trialPlaced = place(trialLayout);
+      if (trialPlaced.scale >= placed.scale * 0.99) {
+        options = trialOptions;
+        layout = trialLayout;
+        placed = trialPlaced;
+      }
+    }
+  }
+  if (paper && placed.scale < MAX_SCALE) {
+    // Wider gaps make the tree wider by about as much as the gaps already take; a few tries close in on the width wanted.
+    for (let attempt = 0; attempt < 4; attempt++) {
+      const want = (placed.chart.w * FILL) / placed.scale;
+      const missing = want - placed.content.w;
+      if (missing < placed.content.w * 0.02) break;
+      const spread = Math.min(1 + missing / Math.max(gapWidth(layout), 1), MAX_SPREAD / spreadOf(options));
+      if (spread < 1.02) break;
+      const trialOptions = spreadOut(options, spread);
+      const trialLayout = layoutWith(trialOptions);
+      const trialPlaced = place(trialLayout);
+      // Too wide now: the cards would shrink. Halfway is tried next.
+      if (trialPlaced.scale < placed.scale * 0.995) {
+        const halfway = spreadOut(options, 1 + (spread - 1) / 2);
+        const halfLayout = layoutWith(halfway);
+        const halfPlaced = place(halfLayout);
+        if (halfPlaced.scale < placed.scale * 0.995) break;
+        options = halfway;
+        layout = halfLayout;
+        placed = halfPlaced;
+        continue;
+      }
+      options = trialOptions;
+      layout = trialLayout;
+      placed = trialPlaced;
     }
   }
   ctx.layout = layout;
@@ -416,6 +480,8 @@ export function renderPoster(input: PosterInput): PosterResult {
 
 /** A layout fitted on the page: see renderPoster's `place`. */
 interface Placed {
+  /** How far the person in the middle is from the middle of the page, as a share of its width; 0 when that is not asked for. */
+  offCentre: number;
   cx: number;
   content: Rect;
   landscape: boolean;
@@ -830,6 +896,55 @@ function focusCenter(layout: LayoutResult, index: TreeIndex, focusIds: readonly 
   }
   const c = layout.cards.find((x) => x.personId === focusIds[0]);
   return c ? c.x + c.w / 2 : undefined;
+}
+
+/** The gaps between neighbours in a layout's widest row, which spreading the tree out widens. */
+function gapWidth(layout: LayoutResult): number {
+  const rows = new Map<number, LayoutCard[]>();
+  for (const c of layout.cards) {
+    if (c.tuckedOn) continue;
+    const row = rows.get(c.y) ?? [];
+    row.push(c);
+    rows.set(c.y, row);
+  }
+  let widest = 0;
+  for (const row of rows.values()) {
+    const x0 = Math.min(...row.map((c) => c.x));
+    const x1 = Math.max(...row.map((c) => c.x + c.w));
+    const cards = row.reduce((sum, c) => sum + c.w, 0);
+    if (x1 - x0 > widest) widest = Math.max(0, x1 - x0 - cards);
+  }
+  return widest;
+}
+
+/** The gaps the tree is spread out by (see spreadOut), as a share of the comfortable ones. */
+function spreadOf(o: LayoutOptions): number {
+  return o.siblingGap / COMFORTABLE_LAYOUT.siblingGap;
+}
+
+/** The gaps between brothers and sisters, families and separate trees `by` times as wide; partners stay together. */
+function spreadOut(o: LayoutOptions, by: number): LayoutOptions {
+  return { ...o, siblingGap: o.siblingGap * by, familyGap: o.familyGap * by, componentGap: o.componentGap * by };
+}
+
+/**
+ * The ways the person in the middle can stand among their brothers and
+ * sisters other than the way they do: at each other place in the row, the
+ * others in birth order round them, so the tree can spread round them
+ * instead of off to one side.
+ */
+export function siblingsAround(doc: TreeDocument, index: TreeIndex, personId: string): TreeDocument[] {
+  const family = index.primaryParentFamily(personId);
+  if (!family || family.children.length < 2) return [];
+  const self = family.children.find((c) => c.personId === personId)!;
+  const others = family.children.filter((c) => c !== self);
+  const out: TreeDocument[] = [];
+  for (let at = 0; at <= others.length; at++) {
+    const children = [...others.slice(0, at), self, ...others.slice(at)];
+    if (children.every((c, i) => c === family.children[i])) continue;
+    out.push({ ...doc, families: doc.families.map((f) => (f.id === family.id ? { ...f, children } : f)) });
+  }
+  return out;
 }
 
 function focusRect(ctx: PosterContext): Rect | undefined {

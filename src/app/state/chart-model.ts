@@ -1,11 +1,12 @@
 import { Injectable, computed, inject, signal } from '@angular/core';
-import { ColorAssignment, assignColors } from '../core/colors/tinctures';
+import { ColorAssignment, Tincture, assignColors, preferredSpelling } from '../core/colors/tinctures';
 import { Kin, kinship } from '../core/kinship/kinship';
 import { ChartLanguage, chartLanguage, kinLabel, surnameLinesIn } from '../core/lang/language';
 import { computeLayout } from '../core/layout/layout';
 import { tallLayout } from '../core/layout/tiering';
 import { COMFORTABLE_LAYOUT, LayoutOptions, LayoutResult } from '../core/layout/layout-types';
-import { displayName, initials, nameUnknown } from '../core/model/names';
+import { displayName, initials, nameUnknown, surnameKey } from '../core/model/names';
+import { FamilyBalloon, familyBalloons, familyViewScope } from '../core/model/family-view';
 import { isBrokenUp, relationshipStatus } from '../core/model/relationship';
 import { birthGroupOf } from '../core/model/births';
 import { arrangementOf, isArranged } from '../core/model/arrangement';
@@ -19,6 +20,7 @@ import { TextMeasurer } from '../core/services/text-measure';
 import { TreeStore } from '../core/store/tree-store';
 import { I18n } from '../i18n/i18n';
 import { CARD_METRICS, cardFonts } from './card-metrics';
+import { FamilyView } from './family-view';
 
 export interface CardLabel {
   given: string;
@@ -62,6 +64,7 @@ export class ChartModel {
   private readonly store = inject(TreeStore);
   private readonly measure = inject(TextMeasurer);
   private readonly i18n = inject(I18n);
+  private readonly familyView = inject(FamilyView);
 
   readonly view = computed<ViewSettings>(() => this.store.doc().view, { equal: shallowEqual });
   /**
@@ -114,6 +117,8 @@ export class ChartModel {
    * person in the middle and their partner. Undefined when that is everyone.
    */
   private readonly scope = computed<Scope | undefined>(() => {
+    const family = this.familyScope();
+    if (family) return family;
     // As the setting reads: a file's second cousins (branches 3) count as everyone.
     const { branches, inLawFamilies, siblingsOnly } = relativesSettings(relativesOf(this.view()));
     const around = this.around();
@@ -121,7 +126,90 @@ export class ChartModel {
     return scopeDocument(this.store.doc(), this.store.index(), { ...around, branches, inLawFamilies, siblingsOnly });
   });
 
-  /** People the Relatives setting leaves out of the chart. */
+  /** The family each person was born into, as a surnameKey: Šárka née Nováková is a Novák. */
+  readonly familyKeyOf = computed<ReadonlyMap<string, string>>(() => {
+    const births = this.birthSurnames();
+    return new Map(this.store.doc().people.map((p) => [p.id, surnameKey(births.get(p.id) || p.name.surname)]));
+  });
+
+  /** Every family in the tree by key: its name as written (the base form: Novák) and how many were born into it. */
+  readonly familyNames = computed<ReadonlyMap<string, { label: string; count: number }>>(() => {
+    const births = this.birthSurnames();
+    const keyOf = this.familyKeyOf();
+    const groups = new Map<string, { spellings: Map<string, number>; count: number }>();
+    for (const p of this.store.doc().people) {
+      const key = keyOf.get(p.id) ?? '';
+      const raw = (births.get(p.id) || p.name.surname).trim();
+      const g = groups.get(key) ?? { spellings: new Map<string, number>(), count: 0 };
+      if (raw) g.spellings.set(raw, (g.spellings.get(raw) ?? 0) + 1);
+      g.count++;
+      groups.set(key, g);
+    }
+    const out = new Map<string, { label: string; count: number }>();
+    for (const [key, g] of groups) out.set(key, { label: key ? preferredSpelling(g.spellings) : this.i18n.t('overview.noSurname'), count: g.count });
+    return out;
+  });
+
+  /** The colour of a family's shields; families of one person have none of their own. */
+  readonly familyTinctures = computed<ReadonlyMap<string, Tincture>>(
+    () =>
+      new Map(
+        this.colors()
+          .legend.filter((e) => e.key)
+          .map((e) => [e.key, e.tincture]),
+      ),
+  );
+
+  /** The families the family view shows that are in the tree; empty for the whole tree. */
+  readonly familyKeys = computed<readonly string[]>(
+    () => {
+      const names = this.familyNames();
+      return (this.familyView.keys() ?? []).filter((k) => names.has(k));
+    },
+    { equal: (a, b) => a.length === b.length && a.every((k, i) => k === b[i]) },
+  );
+
+  /** The part of the tree the family view shows; undefined for the whole tree. */
+  private readonly familyScope = computed<Scope | undefined>(() => {
+    const keys = this.familyKeys();
+    if (!keys.length) return undefined;
+    const keyOf = this.familyKeyOf();
+    return familyViewScope(this.store.doc(), this.store.index(), new Set(keys), (id) => keyOf.get(id) ?? '', this.focusId());
+  });
+
+  /**
+   * In a family view of more than one family, the families a click on a line
+   * takes back out (by the line's family id): of the families in view among
+   * the people the line joins, the ones added last, with any added together
+   * with them. With one family in view there is nothing to take out.
+   */
+  readonly familyCuts = computed<ReadonlyMap<string, readonly string[]>>(() => {
+    const keys = this.familyKeys();
+    const scope = this.familyScope();
+    if (!scope || keys.length < 2) return new Map();
+    const keyOf = this.familyKeyOf();
+    const batch = new Map(keys.map((k) => [k, this.familyView.batchOf(k)]));
+    const out = new Map<string, readonly string[]>();
+    for (const f of scope.doc.families) {
+      let last = -1;
+      for (const id of [...f.partners, ...f.children.map((c) => c.personId)]) last = Math.max(last, batch.get(keyOf.get(id) ?? '') ?? -1);
+      if (last < 0) continue;
+      const cut = keys.filter((k) => batch.get(k) === last);
+      // Taking out every family would leave nothing to show.
+      if (cut.length < keys.length) out.set(f.id, cut);
+    }
+    return out;
+  });
+
+  /** In the family view, the families left off that the people on the chart are joined to. */
+  readonly balloons = computed<readonly FamilyBalloon[]>(() => {
+    const scope = this.familyScope();
+    if (!scope) return [];
+    const keyOf = this.familyKeyOf();
+    return familyBalloons(this.store.doc(), this.store.index(), scope.people, (id) => keyOf.get(id) ?? '');
+  });
+
+  /** People the Relatives setting (or the family view) leaves out of the chart. */
   readonly hidden = computed<ReadonlySet<string>>(
     () => {
       const scope = this.scope();

@@ -2,11 +2,47 @@
   display: grid;
 }
 
+.row {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+/* Shows the family alone; out of the way until the row is pointed at, always there on touch screens. */
+.view {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--ink-3);
+  cursor: pointer;
+
+  &:hover,
+  &:focus-visible {
+    background: var(--sheet-2);
+    color: var(--ink);
+  }
+
+  @media (hover: hover) {
+    opacity: 0;
+
+    .row:hover &,
+    &:focus-visible {
+      opacity: 1;
+    }
+  }
+}
+
 .head {
   display: flex;
   align-items: center;
   gap: 10px;
-  width: 100%;
+  flex: 1 1 auto;
+  min-width: 0;
   min-height: 40px;
   padding: 4px 8px 4px 4px;
   border: 0;
@@ -69,7 +105,7 @@
   }
 }
 
-/* Someone the chart leaves out (the Relatives setting): still here to open and edit. */
+/* Someone the chart leaves out (the Relatives setting or the family view): still here to open and edit. */
 .off-chart {
   opacity: 0.55;
 }

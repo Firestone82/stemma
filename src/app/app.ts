@@ -10,6 +10,7 @@ import { Toasts } from './features/toasts/toasts';
 import { TopBar } from './features/top-bar/top-bar';
 import { TreeChart } from './features/tree-chart/tree-chart';
 import { DocumentActions } from './state/document-actions';
+import { FamilyView } from './state/family-view';
 import { Shortcuts } from './state/shortcuts';
 import { Theme } from './state/theme';
 import { SurnameRules } from './state/surname-rules';
@@ -37,10 +38,12 @@ export class App {
   protected readonly isEmpty = computed(() => this.store.doc().people.length === 0);
 
   constructor() {
-    // Started with the app, so the light or dark choice applies from the first frame, and #/print opens the studio.
+    // Started with the app, so the light or dark choice applies from the first frame, #/print opens the studio
+    // and #/family/… the family view once the tree is read.
     inject(Theme);
     inject(SurnameRules);
     inject(PrintRoute);
+    inject(FamilyView);
     this.documents.restore();
   }
 }

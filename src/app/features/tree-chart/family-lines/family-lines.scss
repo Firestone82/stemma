@@ -31,3 +31,27 @@
     stroke-width: 2.1;
   }
 }
+
+/* In a family view: the lines that take a family back out light up under the pointer. */
+.cuttable {
+  cursor: pointer;
+
+  &:hover .cut-show {
+    stroke: var(--t-ink);
+  }
+}
+
+.cut-show {
+  fill: none;
+  stroke: transparent;
+  stroke-width: 2.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.cut-hit {
+  fill: none;
+  stroke: transparent;
+  stroke-width: 14;
+  pointer-events: stroke;
+}

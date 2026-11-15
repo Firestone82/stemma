@@ -4,3 +4,12 @@
 @for (p of drops(); track p.key) {
   <svg:path class="link" [class.on-path]="p.onPath" [attr.d]="p.d" [attr.data-relation]="p.relation" />
 }
+@for (c of cuttable(); track c.familyId) {
+  <svg:g class="cuttable" (click)="onCut(c.familyId, $event)">
+    @for (d of c.paths; track $index) {
+      <svg:path class="cut-show" [attr.d]="d" />
+      <svg:path class="cut-hit" [attr.d]="d" />
+    }
+    <svg:title>{{ c.title }}</svg:title>
+  </svg:g>
+}

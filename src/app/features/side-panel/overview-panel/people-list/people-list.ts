@@ -7,6 +7,7 @@ import { I18n } from '../../../../i18n/i18n';
 import { Icon } from '../../../../shared/icon/icon';
 import { missingText } from '../../../../shared/missing';
 import { ChartModel } from '../../../../state/chart-model';
+import { FamilyView } from '../../../../state/family-view';
 import { UiState } from '../../../../state/ui-state';
 import { FamilyGroupItem, FamilyRow } from './family-group/family-group';
 import { groupByFamily } from './family-groups';
@@ -30,6 +31,7 @@ export class PeopleList {
   private readonly model = inject(ChartModel);
   private readonly ui = inject(UiState);
   private readonly i18n = inject(I18n);
+  private readonly familyView = inject(FamilyView);
   protected readonly t = this.i18n.t;
 
   readonly open = output<string>();
@@ -45,6 +47,8 @@ export class PeopleList {
     const familyColors = new Map(colors.legend.map((e) => [e.key, e.tincture]));
     const chosen = this.ui.familyOpen();
     const hidden = this.model.hidden();
+    const names = this.model.familyNames();
+    const shown = this.model.familyKeys();
     const people = this.store.doc().people.filter((p) => !q || searchText(p).includes(q));
     const row = (p: Person): FamilyRow => ({
       id: p.id,
@@ -61,10 +65,16 @@ export class PeopleList {
       members: g.members.map(row),
       count: this.t('overview.people', { count: g.members.length }),
       open: !!q || (chosen.get(g.key) ?? this.openByDefault()),
+      // The family view goes by the family people were born into; a name only married into has nobody to show.
+      viewName: names.has(g.key) && !shown.includes(g.key) ? names.get(g.key)!.label : '',
     }));
   });
 
-  protected readonly offChartHint = computed(() => this.t('relatives.hiddenNote', { level: this.t(`relatives.${relativesOf(this.model.view())}`) }));
+  protected readonly offChartHint = computed(() =>
+    this.model.familyKeys().length
+      ? this.t('familyView.offChart')
+      : this.t('relatives.hiddenNote', { level: this.t(`relatives.${relativesOf(this.model.view())}`) }),
+  );
 
   /** Whether the button offers to open every family (some are closed) or to close them. */
   protected readonly canOpenAll = computed(() => this.families().some((f) => !f.open));
@@ -76,6 +86,13 @@ export class PeopleList {
   protected toggle(key: string, open: boolean): void {
     this.ui.familyOpen.update((m) => new Map(m).set(key, !open));
   }
+
+  /** From the whole tree, a family view of this family; in a family view, this family added to it. */
+  protected viewFamily(key: string): void {
+    this.familyView.add(key);
+  }
+
+  protected readonly inFamilyView = computed(() => this.model.familyKeys().length > 0);
 
   protected setAll(open: boolean): void {
     this.ui.familyOpen.set(new Map(this.families().map((f) => [f.key, open])));
