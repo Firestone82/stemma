@@ -11,6 +11,7 @@ export interface FamilyRow {
   offChart?: boolean;
   /** What still has to be filled in, or empty. */
   missing?: string;
+  problem?: string;
 }
 
 /** One family in the people list: its name, which opens and closes the list of its members, and a button to show it alone. */

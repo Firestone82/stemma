@@ -81,7 +81,7 @@
   </g>
 </svg>
 
-@if (familyView.busy()) {
+@if (chartBusy.busy()) {
   <div class="busy" role="status" aria-live="polite">
     <span class="note"><span class="spinner" aria-hidden="true"></span>{{ t('familyView.busy') }}</span>
   </div>

@@ -5,20 +5,22 @@
  */
 import { GenDate, LifeEvent, Person } from './types';
 
-/** A detail worth filling in: the given name, or the year of birth. */
-export type MissingDetail = 'given' | 'birthYear';
+/** A detail worth filling in: the given name, the year of birth, or the date of death of someone who died. */
+export type MissingDetail = 'given' | 'birthYear' | 'deathDate';
 
 /** People born longer ago than this are taken to have died. */
 export const ASSUMED_DEAD_AFTER_YEARS = 100;
 
 /**
- * The details nobody has filled in for this person. A given name or a year of
- * birth that is ticked as unknown is not missing: it is known not to be known.
+ * The details nobody has filled in for this person. A detail ticked as
+ * unknown is not missing: it is known not to be known. A date of death is only
+ * missing for someone who died, or was born so long ago they must have.
  */
-export function missingDetails(person: Person): MissingDetail[] {
+export function missingDetails(person: Person, now: Date = new Date()): MissingDetail[] {
   const out: MissingDetail[] = [];
   if (!person.name.given.trim() && !person.name.givenUnknown) out.push('given');
   if (!hasDate(person.birth) && !person.birth?.dateUnknown) out.push('birthYear');
+  if ((person.death || bornLongAgo(person.birth?.date, now)) && !hasDate(person.death) && !person.death?.dateUnknown) out.push('deathDate');
   return out;
 }
 

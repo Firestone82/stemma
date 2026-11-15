@@ -21,9 +21,6 @@
       @case ('about') {
         <stemma-about-format (done)="close()" />
       }
-      @case ('photo') {
-        <stemma-photo-crop [personId]="r.personId" [photo]="r.photo" (done)="close()" />
-      }
     }
   }
 </dialog>

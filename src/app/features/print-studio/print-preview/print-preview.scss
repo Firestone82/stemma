@@ -86,9 +86,95 @@
 
 /* The closer look; the page itself is unchanged. */
 .lens {
+  position: relative;
   width: 100%;
   height: 100%;
   transform-origin: 0 0;
+}
+
+.page {
+  width: 100%;
+  height: 100%;
+}
+
+/* The families' names: a box to drag elsewhere and resize, outlined while the pointer is over the page. */
+.legend-box {
+  position: absolute;
+  box-sizing: border-box;
+  border: 1.5px dashed transparent;
+  border-radius: 3px;
+  cursor: move;
+  transition:
+    border-color 120ms,
+    background-color 120ms;
+
+  .sheet:hover &,
+  &.moving {
+    border-color: color-mix(in srgb, var(--focus) 70%, transparent);
+    background: color-mix(in srgb, var(--focus) 6%, transparent);
+  }
+
+  &.moving {
+    background: color-mix(in srgb, var(--focus) 14%, transparent);
+  }
+}
+
+.corner {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  border: 1.5px solid var(--focus);
+  border-radius: 2px;
+  background: #fff;
+  opacity: 0;
+  transition: opacity 120ms;
+
+  .sheet:hover &,
+  .moving & {
+    opacity: 1;
+  }
+
+  &.nw {
+    top: -6px;
+    left: -6px;
+    cursor: nwse-resize;
+  }
+  &.ne {
+    top: -6px;
+    right: -6px;
+    cursor: nesw-resize;
+  }
+  &.sw {
+    bottom: -6px;
+    left: -6px;
+    cursor: nesw-resize;
+  }
+  &.se {
+    right: -6px;
+    bottom: -6px;
+    cursor: nwse-resize;
+  }
+}
+
+.box-reset {
+  position: absolute;
+  top: -11px;
+  right: 12px;
+  display: none;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 1px solid var(--rule);
+  border-radius: 50%;
+  background: var(--sheet);
+  box-shadow: var(--shadow-1);
+  color: var(--ink);
+  cursor: pointer;
+
+  .sheet:hover & {
+    display: grid;
+  }
 }
 
 /* Zoom buttons, over the bottom right corner of the light table. */
@@ -148,7 +234,7 @@
   padding: 0;
   border: 0;
   background: none;
-  color: var(--accent);
+  color: var(--focus);
   font: inherit;
   text-decoration: underline;
   cursor: pointer;
@@ -179,5 +265,51 @@
 @media (max-width: 860px) {
   :host {
     padding: 14px 16px 10px;
+  }
+}
+
+/* The page being drawn again: a note over the one before, which stays until the new one is ready. */
+.drawing {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in srgb, var(--paper) 45%, transparent);
+  cursor: progress;
+}
+
+.note {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 18px;
+  border: 1px solid var(--rule);
+  border-radius: 999px;
+  background: var(--sheet);
+  box-shadow: var(--shadow-2);
+  color: var(--ink);
+  font-weight: 500;
+}
+
+.spinner {
+  width: 18px;
+  height: 18px;
+  border: 2px solid var(--rule);
+  border-top-color: var(--ink);
+  border-radius: 50%;
+  animation: drawing-spin 0.8s linear infinite;
+}
+
+@keyframes drawing-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spinner {
+    animation: none;
   }
 }

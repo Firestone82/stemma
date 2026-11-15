@@ -1,3 +1,13 @@
 :host {
   display: grid;
 }
+
+.range {
+  width: 100%;
+  accent-color: var(--focus);
+}
+
+.value {
+  color: var(--ink-3);
+  font-variant-numeric: tabular-nums;
+}

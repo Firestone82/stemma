@@ -1,0 +1,34 @@
+@if (store.doc().people.length) {
+  <section class="panel-section">
+    <h3>{{ t('checks.title') }}</h3>
+    @if (allGood()) {
+      <p class="ok"><stemma-icon name="check" [size]="16" />{{ t('checks.allGood') }}</p>
+    }
+    @for (g of gaps(); track g.kind) {
+      <details class="gap">
+        <summary>
+          <span class="flag" aria-hidden="true">!</span>
+          <span class="label">{{ g.label }}</span>
+        </summary>
+        <ul class="names">
+          @for (p of g.people; track p.id) {
+            <li>
+              <button type="button" class="link" (click)="open(p.id)">{{ p.name }}</button>
+            </li>
+          }
+        </ul>
+      </details>
+    }
+    @if (problems().length) {
+      <h4 class="problems-title"><stemma-icon name="warning" [size]="15" />{{ t('checks.problems', { count: problems().length }) }}</h4>
+      <ul class="problems">
+        @for (p of problems(); track p.key) {
+          <li>
+            <button type="button" class="problem" (click)="open(p.personId)">{{ p.text }}</button>
+          </li>
+        }
+      </ul>
+    }
+    <p class="hint">{{ t('checks.hint') }}</p>
+  </section>
+}

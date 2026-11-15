@@ -1,3 +1,4 @@
+import { toGedcom } from '../core/gedcom/gedcom';
 import { Injectable, inject } from '@angular/core';
 import { updateMeta, updateView } from '../core/model/operations';
 import { sampleDocument } from '../core/model/sample';
@@ -142,6 +143,24 @@ export class DocumentActions {
     const outcome = await this.files.save(name, xml, 'text/plain');
     if (outcome === 'saved') this.toast.show(this.i18n.t('file.savedAsText', { name }));
     else if (outcome !== 'declined') this.toast.error(this.i18n.t('file.saveUnavailable'));
+  }
+
+  /**
+   * Saves the tree as a GEDCOM file (.ged) for genealogy sites such as
+   * MyHeritage. Where .ged downloads are not allowed, it is saved as .ged.txt
+   * to be renamed.
+   */
+  async exportGedcom(): Promise<void> {
+    this.ui.closeMenu();
+    if (!this.store.doc().people.length) {
+      this.toast.show(this.i18n.t('file.gedcomEmpty'));
+      return;
+    }
+    const filename = safeFilename(this.store.doc().meta.title, 'ged');
+    const name = this.files.canSave(filename) ? filename : `${filename}.txt`;
+    const outcome = await this.files.save(name, toGedcom(this.store.doc(), { filename }), 'text/plain;charset=utf-8');
+    if (outcome === 'saved') this.toast.show(this.i18n.t(name === filename ? 'file.gedcomSaved' : 'file.gedcomSavedAsText', { name }));
+    else if (outcome !== 'declined') this.toast.error(this.i18n.t('file.saveFailed'));
   }
 
   /** True when an .xml download can be offered directly. */

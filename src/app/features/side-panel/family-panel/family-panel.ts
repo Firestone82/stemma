@@ -43,11 +43,6 @@ export class FamilyPanel {
     const names = this.partners().map((p) => p.name);
     return names.length ? this.i18n.list(names) : this.t('familyPanel.noParents');
   });
-
-  protected setNotes(event: Event): void {
-    const notes = (event.target as HTMLTextAreaElement).value;
-    this.families.update(this.family().id, { notes: notes.trim() ? notes : undefined }, 'notes');
-  }
 }
 
 function titleKey(f: Family): MessageKey {

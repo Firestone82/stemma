@@ -1,5 +1,6 @@
 import { ChangeDetectionStrategy, Component, computed, inject } from '@angular/core';
 import { updateView } from '../../../core/model/operations';
+import { ChartBusy } from '../../../state/chart-busy';
 import { Relatives, relativesOf, relativesSettings } from '../../../core/poster/scope';
 import { TreeStore } from '../../../core/store/tree-store';
 import { I18n } from '../../../i18n/i18n';
@@ -27,6 +28,7 @@ export class RelativesFilter {
   protected readonly ui = inject(UiState);
   protected readonly t = inject(I18n).t;
 
+  private readonly busy = inject(ChartBusy);
   protected readonly open = computed(() => this.ui.menu() === 'relatives');
   protected readonly value = computed(() => relativesOf(this.model.view()));
   protected readonly label = computed(() => this.t(`relatives.${this.value()}`));
@@ -36,6 +38,6 @@ export class RelativesFilter {
   protected readonly counts = computed(() => (this.open() ? this.model.relativesCounts() : null));
 
   protected choose(r: Relatives): void {
-    this.store.update((doc) => updateView(doc, relativesSettings(r)));
+    this.busy.run(() => this.store.update((doc) => updateView(doc, relativesSettings(r))));
   }
 }

@@ -256,9 +256,11 @@ export interface PrintSettings {
   /** How big the portraits (and the badges in their place) are, against the style's own size: 1 is as designed. Format 1.5. */
   portraitSize: number;
   /**
-   * Couples without children take the room of one card: the partner who
-   * married in is drawn small over the top right corner of the other's card.
-   * Format 1.6.
+   * Couples take less room: those without children the room of one card,
+   * the partner who married in stacked under the other's card, and in a row
+   * too wide for its couples side by side, those with children too, the line
+   * to the children down the side (in prints; on the chart, the partner is
+   * drawn small over the corner). Format 1.6; with children 1.8.
    */
   compactCouples: boolean;
   /**
@@ -276,7 +278,45 @@ export interface PrintSettings {
   fullDates: boolean;
   /** With `branches` 1: brothers and sisters only (see ViewSettings). Format 1.6. */
   siblingsOnly: boolean;
+  /**
+   * Where the families' names (the legend) go when placed by hand: a box on
+   * the page, as shares of its width and height, which the names are fitted
+   * into. Under or beside the tree as the style has it when not set. Format 1.8.
+   */
+  legendBox?: LegendBox;
+  /**
+   * Generations need not stand in rows: children with no children of their
+   * own hang under each other below their parents, wherever that makes the
+   * cards bigger. Format 1.8.
+   */
+  packFamilies?: boolean;
+  /**
+   * False: cards without the family's emblem (shield, monogram), narrower by
+   * as much; the family shows in the band of its colour along the top of the
+   * card. Format 1.8.
+   */
+  showEmblems?: boolean;
+  /**
+   * The PDF in pieces on sheets of this paper (an id from PAPERS), to be glued
+   * together into one, as two A3 make an A2 (see tileGrid). One sheet when not
+   * set. Format 1.8.
+   */
+  tiles?: string;
+  /** The title and the rest of the page's lettering this many times its usual size (0.5 to 3; 1 when not set). Format 1.8. */
+  titleScale?: number;
+  /** The families' names in the legend this many times their usual size (0.5 to 3; 1 when not set). Format 1.8. */
+  legendScale?: number;
+  /** With `tiles`: the printer prints to the edge of the paper, so the sheets join edge to edge at full size. Format 1.8. */
+  tilesBorderless?: boolean;
   ext?: Extensions;
+}
+
+/** A box on the printed page, its corner and size as shares (0 to 1) of the page's width and height. */
+export interface LegendBox {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
 }
 
 export type PortraitShape = 'round' | 'square' | 'rectangle';

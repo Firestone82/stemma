@@ -24,6 +24,7 @@ import {
   COMFORTABLE_LAYOUT,
   TUCK_BELOW_GAP,
   TUCK_SIDE,
+  STACK_STEM,
   TUCK_OUT,
   TUCK_SCALE,
   TUCK_UP,
@@ -128,6 +129,8 @@ const BRANCH_TRIES = 60;
 const CROSSING_WEIGHT = 3;
 /** How far a line passing a row in two tiers keeps from the cards of the other tier (see tierOverlap). */
 const TIER_MARGIN = 36;
+/** How far the line down a lower column's side keeps from the upper card beside it (see tierOverlap). */
+const SIDE_MARGIN = 16;
 /** Trees up to this many items get the last pass over all pairs of neighbours (see polish). */
 const POLISH_MAX_ITEMS = 300;
 const BAR_SEPARATION = 26;
@@ -467,6 +470,9 @@ class ComponentLayout {
     if (clear) overlap = Math.min(overlap, gap - clear);
     const upper = a.tier < b.tier ? a : b;
     const upperLeft = upper === a;
+    // A lower column of brothers and sisters, its line down its right side: the upper card beside it does not reach
+    // over it (see gap), so the line comes straight down the side instead of stepping across above the column.
+    if (upperLeft === false && this.hasSideLine(a)) return Math.max(0, gap - SIDE_MARGIN);
     for (const e of upper.down) {
       if (e.upper.item !== upper) continue;
       const sx = this.offset(e.upper);
@@ -796,7 +802,17 @@ class ComponentLayout {
       }
     }
     for (const id of this.people) if (!rank.has(id)) rank.set(id, 0);
+    this.settleRanks();
+    // People drawn lower than their generation (see LayoutOptions.sink): their partners and descendants follow.
+    if (this.o.sink?.size) {
+      for (const [id, down] of this.o.sink) if (rank.has(id) && down > 0) rank.set(id, rank.get(id)! + Math.round(down));
+      this.settleRanks();
+    }
+  }
 
+  /** Children below their parents, partners in one row. */
+  private settleRanks(): void {
+    const rank = this.rank;
     this.enforceParentOrder();
     for (let round = 0; round < 8; round++) {
       let changed = false;
@@ -897,8 +913,21 @@ class ComponentLayout {
    * people come down with them.
    */
   private lowerRanks(): void {
-    const lowered = this.lowered;
-    if (!lowered?.size) return;
+    if (!this.lowered?.size) return;
+    // Partners never part: whoever goes down takes their partners in the same row along (a partner stacked under
+    // a card is not in that card's block, so the families tried for lowering may leave them out).
+    const lowered = new Set(this.lowered);
+    const queue = [...lowered];
+    while (queue.length) {
+      const id = queue.pop()!;
+      for (const f of this.index.partnerFamilies(id)) {
+        for (const p of f.partners) {
+          if (lowered.has(p) || !this.rank.has(p) || this.rank.get(p) !== this.rank.get(id)) continue;
+          lowered.add(p);
+          queue.push(p);
+        }
+      }
+    }
     for (const [id, r] of this.rank) this.rank.set(id, 2 * r + (lowered.has(id) ? 1 : 0));
     for (const [familyId, r] of this.placeholderRank) {
       const kids = this.primaryByFamily.get(familyId) ?? [];
@@ -1129,11 +1158,13 @@ class ComponentLayout {
     const hasParents = (id: string) => this.index.parentFamilies(id).some((f) => f.partners.some((p) => inTree.has(p)));
     const youngest = Math.max(...this.people.map((id) => this.rank.get(id) ?? 0));
     for (const id of this.people) {
-      if (this.rank.get(id) === youngest) continue;
+      if (this.rank.get(id) === youngest || this.flatRow(id)) continue;
       const fams = this.index.partnerFamilies(id);
       if (fams.length !== 1) continue;
       const f = fams[0];
-      if (f.partners.length !== 2 || f.children.length) continue;
+      if (f.partners.length !== 2) continue;
+      // Couples with children only stacked under each other, and only when asked (see LayoutOptions.stackParents).
+      if (f.children.length && !this.stackParentsAt(id)) continue;
       const other = f.partners[0] === id ? f.partners[1] : f.partners[0];
       if (!inTree.has(other) || this.rank.get(other) !== this.rank.get(id) || this.index.partnerFamilies(other).length !== 1) continue;
       if (id === this.homeId || other === this.homeId || this.tucked.has(id) || this.tucked.has(other)) continue;
@@ -1147,16 +1178,48 @@ class ComponentLayout {
     this.findStackedSiblings();
   }
 
+  /** In a row where couples with children are stacked (see LayoutOptions.stackParents, stackParentRows). */
+  private stackParentsAt(id: string): boolean {
+    if (!this.o.tuckBelow || this.flatRow(id)) return false;
+    return !!this.o.stackParents || !!this.o.stackParentRows?.has(this.generationRow(this.rank.get(id) ?? -1));
+  }
+
+  /** The partner stacked under `main`'s card, when the two have children: their line runs out to the side (see STACK_STEM). */
+  stackedParents(main: string): boolean {
+    if (!this.o.tuckBelow) return false;
+    for (const [partner, on] of this.tucked) {
+      if (on !== main || this.stackedSiblings.has(partner)) continue;
+      return this.index.partnerFamilies(main).some((f) => f.partners.includes(partner) && f.children.length > 0);
+    }
+    return false;
+  }
+
+  /**
+   * A block whose line comes down its right side from above: the top of a column of brothers and sisters. (A
+   * couple stacked under each other has its side line lower, below the upper tier's cards.)
+   */
+  private hasSideLine(item: Item): boolean {
+    if (item.kind !== 'block' || !this.o.tuckBelow || !item.members.length) return false;
+    const last = item.members[item.members.length - 1];
+    return this.columnTops.has(last);
+  }
+
+  /** In a row where nobody is stacked under another (see LayoutOptions.flatRows). */
+  private flatRow(id: string): boolean {
+    return !!this.o.tuckBelow && !!this.o.flatRows?.has(this.generationRow(this.rank.get(id) ?? -1));
+  }
+
   /**
    * Brothers and sisters with nobody beside or under them (no partner, no
    * children) stand two to a column: every second one under the one before,
    * in birth order, and both hang from a line down their side (see assemble).
-   * Only with cards stacked under each other (tuckBelow); the youngest
-   * generation and the person in the middle stay as they are.
+   * With cards stacked under each other (tuckBelow), in every row, the
+   * youngest generation and rows of couples side by side (flatRows) too, so
+   * the tree is as narrow as it gets; only the person in the middle stays as
+   * they are.
    */
   private findStackedSiblings(): void {
     if (!this.o.tuckBelow) return;
-    const youngest = Math.max(...this.people.map((id) => this.rank.get(id) ?? 0));
     const inTree = new Set(this.people);
     for (const f of this.families) {
       const leaves = f.children
@@ -1165,16 +1228,20 @@ class ComponentLayout {
           (id) =>
             inTree.has(id) &&
             id !== this.homeId &&
-            this.rank.get(id) !== youngest &&
             this.index.primaryParentFamily(id)?.id === f.id &&
             !this.index.partnerFamilies(id).length &&
             !this.tucked.has(id) &&
             ![...this.tucked.values()].includes(id),
         );
-      for (let i = 0; i + 1 < leaves.length; i += 2) {
-        this.tucked.set(leaves[i + 1], leaves[i]);
-        this.stackedSiblings.add(leaves[i + 1]);
-        this.columnTops.add(leaves[i]);
+      // Two to a column among those in the same row (children hung lower stand in rows of their own, see hangLeaves).
+      const byRow = new Map<number, string[]>();
+      for (const id of leaves) byRow.set(this.rank.get(id)!, [...(byRow.get(this.rank.get(id)!) ?? []), id]);
+      for (const row of byRow.values()) {
+        for (let i = 0; i + 1 < row.length; i += 2) {
+          this.tucked.set(row[i + 1], row[i]);
+          this.stackedSiblings.add(row[i + 1]);
+          this.columnTops.add(row[i]);
+        }
       }
     }
   }
@@ -1226,7 +1293,10 @@ class ComponentLayout {
         const members = arrangeBlock(group, adjacency);
         let width = members.reduce((sum, m) => sum + this.widthOf(m), 0) + (members.length - 1) * this.Gp;
         // Room for a tucked card reaching past the last member's right edge.
-        if ([...this.tucked.values()].includes(members[members.length - 1])) width += this.o.tuckBelow ? TUCK_SIDE : Math.round(this.W * TUCK_SCALE * TUCK_OUT);
+        const last = members[members.length - 1];
+        if ([...this.tucked.values()].includes(last)) width += this.o.tuckBelow ? TUCK_SIDE : Math.round(this.W * TUCK_SCALE * TUCK_OUT);
+        // And for the line from a stacked couple's rings, out to the side before it turns down.
+        if (this.stackedParents(last)) width += STACK_STEM;
         const item = this.newItem('block', r, width, this.index.order(group[0]));
         item.members = members;
         for (const m of members) this.blockOf.set(m, item);
@@ -1386,6 +1456,11 @@ class ComponentLayout {
   }
 
   private computeJunctionOffset(item: Item, f: Family): number {
+    // A couple stacked under each other: their rings, and the line to their children, are at the cards' right side (see buildUnion).
+    if (this.o.tuckBelow) {
+      const main = f.partners.find((p) => item.members.includes(p) && f.partners.some((q) => this.tucked.get(q) === p));
+      if (main) return this.memberLeft(item, item.members.indexOf(main)) + this.widthOf(main) + TUCK_SIDE + (this.stackedParents(main) ? STACK_STEM : 0);
+    }
     const g = this.junctionGap(item, f);
     if (g >= 0) return this.memberLeft(item, g) + this.widthOf(item.members[g]) + this.Gp / 2;
     const inBlock = f.partners.filter((p) => item.members.includes(p));
@@ -1408,7 +1483,10 @@ class ComponentLayout {
       if (!known) this.gaps.set(a.uid, (known = new Map()));
       known.set(b.uid, entry);
     }
-    return entry.value - this.tierOverlap(a, b, entry.value, entry.kin);
+    const gap = entry.value - this.tierOverlap(a, b, entry.value, entry.kin);
+    // Beside a lower column of brothers and sisters, the upper card leaves room for the line down the column's side.
+    if (b.tier < a.tier && this.hasSideLine(a)) return Math.max(gap, SIDE_MARGIN + 1);
+    return gap;
   }
 
   /** Gaps between two items, by uid, with how closely related they are; they depend only on who is in the items, which does not change. */
@@ -1969,8 +2047,43 @@ class ComponentLayout {
       this.relax(big ? 60 : 300, 1);
     }
     this.compactTiers(big);
+    this.squeezeRows(big);
     this.straightenLongLines();
     this.crossings = this.countCrossings();
+  }
+
+  /** Where every row has to stay, while rows are drawn inside the widest one (see LayoutOptions.squeeze). */
+  private band?: { lo: number; hi: number };
+
+  /**
+   * Rows that reach further out than the width allowed (see
+   * LayoutOptions.squeeze) are pushed in, and everything settles again inside
+   * it, so the tree is no wider than its widest row needs.
+   */
+  private squeezeRows(big: boolean): void {
+    this.band = undefined;
+    const squeeze = Math.min(1, Math.max(0, this.o.squeeze ?? 0));
+    if (!squeeze) return;
+    let widest = 0;
+    let centre = 0;
+    let tightest = 0;
+    for (const row of this.rows) {
+      if (!row.length) continue;
+      const last = row[row.length - 1];
+      const span = last.x + last.width - row[0].x;
+      let need = last.width;
+      for (let i = 0; i + 1 < row.length; i++) need += row[i].width + this.gap(row[i], row[i + 1]);
+      tightest = Math.max(tightest, need);
+      if (span > widest) {
+        widest = span;
+        centre = row[0].x + span / 2;
+      }
+    }
+    const width = widest - squeeze * Math.max(0, widest - tightest);
+    if (width >= widest - 1) return;
+    this.band = { lo: centre - width / 2, hi: centre + width / 2 };
+    this.relax(big ? 160 : 500, 1.6);
+    this.relax(big ? 60 : 200, 1);
   }
 
   /**
@@ -2120,6 +2233,34 @@ class ComponentLayout {
       const xs = isotonic(target, weight, sep);
       for (let i = 0; i < n; i++) row[i].x = xs[i];
     }
+    // A line that could not move over its child (a card stood in the way): the child moves under the line
+    // instead, when nothing hangs from it and its row has room, so the line comes straight down without a step.
+    for (const row of this.rows) {
+      const n = row.length;
+      const target: number[] = new Array(n);
+      const weight: number[] = new Array(n);
+      const sep: number[] = new Array(n);
+      let any = false;
+      for (let i = 0; i < n; i++) {
+        const item = row[i];
+        const ups = item.up;
+        const leaf =
+          item.kind === 'block' && !item.down.length && ups.length > 0 && ups.every((e) => e.upper.item.kind === 'dummy' && e.lower.kind === 'member');
+        let want = item.x;
+        if (leaf) {
+          let s = 0;
+          for (const e of ups) s += this.ax(e.upper) - this.offset(e.lower);
+          want = s / ups.length;
+        }
+        any ||= leaf && Math.abs(want - item.x) > 0.5;
+        target[i] = want;
+        weight[i] = leaf ? 1 : 1e9;
+        sep[i] = i + 1 < n ? item.width + this.gap(item, row[i + 1]) : 0;
+      }
+      if (!any) continue;
+      const xs = isotonic(target, weight, sep);
+      for (let i = 0; i < n; i++) row[i].x = xs[i];
+    }
   }
 
   private edgesByRank: Edge[][] = [];
@@ -2226,6 +2367,18 @@ class ComponentLayout {
       sep[i] = i + 1 < n ? item.width + this.gap(item, row[i + 1]) : 0;
     }
     const xs = isotonic(target, weight, sep);
+    // Inside the band, if there is one: the whole row moved in, keeping its spacing (see squeezeRows).
+    if (this.band) {
+      let offset = 0;
+      const offs = sep.map((s) => {
+        const o = offset;
+        offset += s;
+        return o;
+      });
+      const lo = this.band.lo;
+      const hi = Math.max(lo, this.band.hi - offs[n - 1] - row[n - 1].width);
+      for (let i = 0; i < n; i++) xs[i] = Math.min(hi, Math.max(lo, xs[i] - offs[i])) + offs[i];
+    }
     let moved = 0;
     for (let i = 0; i < n; i++) {
       moved = Math.max(moved, Math.abs(row[i].x - xs[i]));
@@ -2517,11 +2670,12 @@ function assemble(parts: ComponentLayout[], o: LayoutOptions, moved: Readonly<Re
   for (const part of parts) {
     for (const item of part.items) {
       if (!item.tier) continue;
-      const blockers = part.rows[item.rank]
-        .filter((other) => other !== item && other.tier < item.tier)
-        .map((other) => ({ lo: other.x - TIER_MARGIN, hi: other.x + other.width + TIER_MARGIN }));
-      const free = (x: number) => blockers.every((b) => x <= b.lo || x >= b.hi);
+      const uppers = part.rows[item.rank].filter((other) => other !== item && other.tier < item.tier);
       for (const id of item.members) {
+        // The line down a column's side passes the upper cards closer (see SIDE_MARGIN): it runs past their edge, not between them.
+        const margin = part.columnTops.has(id) ? SIDE_MARGIN : TIER_MARGIN;
+        const blockers = uppers.map((other) => ({ lo: other.x - margin, hi: other.x + other.width + margin }));
+        const free = (x: number) => blockers.every((b) => x <= b.lo + 0.01 || x >= b.hi - 0.01);
         const cx = item.x + part.memberOffset(item, id);
         if (free(cx)) continue;
         const candidates = blockers.flatMap((b) => [b.lo, b.hi]).filter(free);
@@ -2731,6 +2885,17 @@ function assemble(parts: ComponentLayout[], o: LayoutOptions, moved: Readonly<Re
     }
   }
 
+  // How far down each column of brothers and sisters reaches: the middle of its lowest card, by the top card.
+  const columnBottom = new Map<string, number>();
+  for (const c of cards) {
+    if (!c.tuckedOn) continue;
+    columnBottom.set(c.tuckedOn, Math.max(columnBottom.get(c.tuckedOn) ?? 0, c.y + c.h / 2));
+  }
+  // Cards stacked under each other, and those they stand under.
+  const stackedCard = new Set(cards.flatMap((c) => (c.tuckedOn ? [c.personId, c.tuckedOn] : [])));
+  /** Whether a line may run down at `x` from `y1` to `y2` without passing behind a card. */
+  const sideClear = (x: number, y1: number, y2: number) =>
+    cards.every((c) => x <= c.x - LINE_MARGIN || x >= c.x + c.w + LINE_MARGIN || c.y >= y2 || c.y + c.h <= y1);
   for (const part of parts) {
     const bridgesInBlock = new Map<Item, number>();
     const stemOf = new Map<string, { stem: Pt; clearY: number }>();
@@ -2738,28 +2903,63 @@ function assemble(parts: ComponentLayout[], o: LayoutOptions, moved: Readonly<Re
       const union = buildUnion(part, f, cardOf, o, bridgesInBlock, rowY);
       if (!union) continue;
       unions.push(union);
+      // A couple stacked under each other with children: the line runs out from the rings at their side, then down.
+      const outward = union.mode === 'tucked' && union.line.length > 0 && f.partners.some((p) => part.stackedParents(p));
       const stem: Pt =
         union.mode === 'gap' || union.mode === 'bridge'
           ? { x: union.cx, y: union.cy + o.junctionRadius }
           : union.mode === 'none'
             ? { x: union.cx, y: union.cy + H / 2 }
-            : { x: union.cx, y: union.cy };
+            : outward
+              ? { x: union.cx + STACK_STEM, y: union.cy }
+              : { x: union.cx, y: union.cy };
+      const stemFrom: Pt | undefined = outward ? { x: union.cx + o.junctionRadius, y: union.cy } : undefined;
       // The stem of a couple starts between their cards; lines turn towards the children only below the row.
       const clearY = rowY[union.rank] + rowH[union.rank];
       stemOf.set(f.id, { stem, clearY });
       const primary = part.primaryByFamily.get(f.id);
       if (!primary?.length) continue;
       const drops: LayoutDrop[] = [];
+      const barY = lineY(union.rank, `bar:${f.id}`);
       for (const link of primary) {
         const card = cardOf.get(link.childId);
         if (!card) continue;
-        // Brothers and sisters stacked in a column hang from one line down their right side, into each card's edge.
+        // Brothers and sisters stacked in a column hang from one line down their side, into each card's edge.
         const column = part.stackedSiblings.has(link.childId) ? cardOf.get(card.tuckedOn!) : part.columnTops.has(link.childId) ? card : undefined;
-        const sideX = column ? column.x + column.w + TUCK_SIDE : undefined;
-        const target: Pt = sideX !== undefined ? { x: sideX, y: card.y + card.h / 2 } : { x: card.x + card.w / 2, y: card.y };
-        const ends: Pt[] = sideX !== undefined ? [target, { x: card.x + card.w, y: card.y + card.h / 2 }] : [target];
+        const chain = part.chains.get(chainKey(f.id, link.childId));
+        // Where the line comes from: the family's bar, or the last row a long line passes through.
+        const last = chain?.[chain.length - 1];
+        const incoming = last ? last.x + last.width / 2 : stem.x;
+        const fromY = last ? rowY[last.rank] + rowH[last.rank] : barY;
         // Down to a card in the lower tier: through the upper tier where it leaves room, then sideways between the tiers.
-        const entry = entryX.get(part.stackedSiblings.has(link.childId) ? card.tuckedOn! : link.childId);
+        let entry = entryX.get(part.stackedSiblings.has(link.childId) ? card.tuckedOn! : link.childId);
+        const mid = card.y + card.h / 2;
+        // The side the line comes down, when it joins the card there rather than from above.
+        let side: number | undefined;
+        if (column) {
+          // A column's line runs down its right side; down its left side when it comes from the left and there is room.
+          // (Not next to cards stacked under each other: the line down their right side would run close beside it.)
+          const leftX = column.x - TUCK_SIDE;
+          const bottom = columnBottom.get(column.personId) ?? column.y + column.h / 2;
+          const besideStack = cards.some(
+            (c) => stackedCard.has(c.personId) && c.x + c.w > leftX - 2 * TUCK_SIDE - LINE_MARGIN && c.x + c.w <= column.x && c.y < bottom && c.y + c.h > fromY,
+          );
+          side = !last && incoming < column.x + column.w / 2 && !besideStack && sideClear(leftX, fromY, bottom) ? leftX : column.x + column.w + TUCK_SIDE;
+          if (side === leftX) entry = undefined;
+        } else if (!card.tuckedOn && !last && entry !== undefined) {
+          // A line that would step across above the card comes down beside it instead, where there is room, into its side.
+          // (Not a line through rows in between: curved, it could not reach the side without passing behind a card.)
+          const want = entry ?? incoming;
+          const sides = [card.x - TUCK_SIDE, card.x + card.w + TUCK_SIDE]
+            .filter((x) => sideClear(x, fromY, mid))
+            .sort((a, b) => Math.abs(a - want) - Math.abs(b - want));
+          if (sides.length) {
+            side = sides[0];
+            entry = undefined;
+          }
+        }
+        const target: Pt = side !== undefined ? { x: side, y: mid } : { x: card.x + card.w / 2, y: card.y };
+        const ends: Pt[] = side !== undefined ? [target, { x: side < card.x ? card.x : card.x + card.w, y: mid }] : [target];
         // The step runs above the column's top card; the line to a card lower in the column comes down its side.
         const top = column ?? card;
         const step: Pt[] =
@@ -2773,7 +2973,6 @@ function assemble(parts: ComponentLayout[], o: LayoutOptions, moved: Readonly<Re
           entry !== undefined
             ? [{ x: entry, from: rowY[top.rank], to: rowY[top.rank] + H, clearBelow: bandClear(top.rank, entry, target.x) || undefined }]
             : [];
-        const chain = part.chains.get(chainKey(f.id, link.childId));
         if (!chain) {
           drops.push({
             childId: link.childId,
@@ -2810,7 +3009,7 @@ function assemble(parts: ComponentLayout[], o: LayoutOptions, moved: Readonly<Re
         drops.push({ childId: link.childId, relation: link.relation, x: startX, points, through });
       }
       if (drops.length) {
-        connectors.push({ familyId: f.id, stem, clearY, barY: lineY(union.rank, `bar:${f.id}`), drops });
+        connectors.push({ familyId: f.id, stem, ...(stemFrom ? { stemFrom } : {}), clearY, barY, drops });
       }
     }
     for (const link of part.secondary) {

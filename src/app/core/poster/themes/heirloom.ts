@@ -150,22 +150,29 @@ export const heirloom: PosterTheme = {
 
   footer(c): PageBlock {
     const u = c.page.u;
+    const lu = c.page.lu ?? u;
     const legend = legendItems(c);
     const below = c.legendAt === 'below' && legend.length > 0;
     // The families' shields in rows across the foot of the page, unless they are in a column beside the tree.
-    const rows = below ? wrapRows(legend, c.page.w - c.page.margin * 2, LEGEND_GAP * u) : [];
-    const height = u * 1.2 + rows.length * LEGEND_ROW * u;
+    const rows = below ? wrapRows(legend, c.page.w - c.page.margin * 2, LEGEND_GAP * lu) : [];
+    const height = u * 1.2 + rows.length * LEGEND_ROW * lu;
+    const rowW = (row: LegendItem[]) => row.reduce((s, it) => s + it.w, 0) + LEGEND_GAP * lu * (row.length - 1);
     return {
       height,
+      legend(r: Rect) {
+        if (!rows.length) return undefined;
+        const w = Math.max(...rows.map(rowW));
+        return { x: r.x + (r.w - w) / 2, y: r.y + u * 0.6, w, h: rows.length * LEGEND_ROW * lu };
+      },
       draw(r: Rect) {
         let out = '';
         rows.forEach((row, i) => {
-          const total = row.reduce((s, it) => s + it.w, 0) + LEGEND_GAP * u * (row.length - 1);
+          const total = row.reduce((s, it) => s + it.w, 0) + LEGEND_GAP * lu * (row.length - 1);
           let x = r.x + (r.w - total) / 2;
-          const y = r.y + u * 0.6 + (i + 0.5) * LEGEND_ROW * u;
+          const y = r.y + u * 0.6 + (i + 0.5) * LEGEND_ROW * lu;
           for (const it of row) {
             out += legendEntry(c, it, x, y);
-            x += it.w + LEGEND_GAP * u;
+            x += it.w + LEGEND_GAP * lu;
           }
         });
         return out;
@@ -173,26 +180,41 @@ export const heirloom: PosterTheme = {
     };
   },
 
+  legendStyle: {
+    font: { family: SMALL_CAPS, size: 1, weight: 500, letterSpacing: 0.04 },
+    ink: palette.muted,
+    markW: 1.04,
+    markGap: 0.48,
+    mark(c, l, x, y, size) {
+      const w = size * 1.04;
+      const t = c.theme.tinctures[l.tincture];
+      return `<g transform="translate(${n(x)},${n(y - w * 0.59)})">${el('path', { d: shieldPath(w, w * 1.18), fill: t.fill, stroke: t.edge, 'stroke-width': t.edge ? 0.6 : undefined })}</g>`;
+    },
+  },
+
   side(c, height) {
     const u = c.page.u;
+    const lu = c.page.lu ?? u;
     const legend = legendItems(c);
     if (!legend.length) return undefined;
     // A column (or a few) of shields beside the tree, standing on the foot of the chart area.
-    const perColumn = Math.max(1, Math.floor((height - u) / (LEGEND_ROW * u)));
+    const perColumn = Math.max(1, Math.floor((height - lu) / (LEGEND_ROW * lu)));
     const columns: LegendItem[][] = [];
     for (let i = 0; i < legend.length; i += perColumn) columns.push(legend.slice(i, i + perColumn));
     const widths = columns.map((col) => Math.max(...col.map((it) => it.w)));
     const lead = u * 3;
-    const width = lead + widths.reduce((s, w) => s + w, 0) + LEGEND_GAP * u * (columns.length - 1);
+    const width = lead + widths.reduce((s, w) => s + w, 0) + LEGEND_GAP * lu * (columns.length - 1);
+    const tallest = Math.max(...columns.map((col) => col.length)) * LEGEND_ROW * lu;
     return {
       width,
+      legend: (r: Rect) => ({ x: r.x + lead, y: r.y + r.h - tallest, w: width - lead, h: tallest }),
       draw(r: Rect) {
         let out = '';
         let x = r.x + lead;
         columns.forEach((col, i) => {
-          const top = r.y + r.h - col.length * LEGEND_ROW * u;
-          col.forEach((it, j) => (out += legendEntry(c, it, x, top + (j + 0.5) * LEGEND_ROW * u)));
-          x += widths[i] + LEGEND_GAP * u;
+          const top = r.y + r.h - col.length * LEGEND_ROW * lu;
+          col.forEach((it, j) => (out += legendEntry(c, it, x, top + (j + 0.5) * LEGEND_ROW * lu)));
+          x += widths[i] + LEGEND_GAP * lu;
         });
         return out;
       },
@@ -232,7 +254,9 @@ export const heirloom: PosterTheme = {
         'stroke-dasharray': look.unknown ? UNKNOWN_DASH : undefined,
       }) +
       // Someone whose name nobody knows has no inner rule, only the dashed edge.
-      (look.unknown ? '' : el('path', { d: plate(3), fill: 'none', stroke: palette.cardEdge, 'stroke-width': 0.4, opacity: 0.85 }))
+      (look.unknown ? '' : el('path', { d: plate(3), fill: 'none', stroke: palette.cardEdge, 'stroke-width': 0.4, opacity: 0.85 })) +
+      // Without the shields, the family colour in a thin band along the top edge (as Heraldic has).
+      (c.settings.showEmblems === false ? familyBand(c, card, k) : '')
     );
   },
 
@@ -327,7 +351,7 @@ function edgeOrnament(cx: number, y: number, u: number): string {
   return `<g transform="translate(${n(cx)},${n(y)})">${el('path', { d: `M0,${n(-s)}L${n(s)},0L0,${n(s)}L${n(-s)},0Z`, fill: palette.paper, stroke: palette.accent, 'stroke-width': u * 0.1 })}${el('circle', { r: s * 0.32, fill: palette.accent })}</g>`;
 }
 
-/** Space between legend entries side by side, and the height of a row of them, in page units (u). */
+/** Space between legend entries side by side, and the height of a row of them, in the legend's units (lu). */
 const LEGEND_GAP = 2.2;
 const LEGEND_ROW = 2.4;
 
@@ -341,7 +365,7 @@ const legendFont = (u: number): FontSpec => ({ family: SMALL_CAPS, size: u * 1.2
 
 /** The families for the legend; the "other families" entry only next to real ones. */
 function legendItems(c: PosterContext): LegendItem[] {
-  const u = c.page.u;
+  const u = c.page.lu ?? c.page.u;
   return c.legend.filter((l) => l.key !== '' || c.legend.length > 1).map((l) => ({ l, w: u * 1.3 + u * 0.6 + c.measure(l.label, legendFont(u)) }));
 }
 
@@ -365,7 +389,7 @@ function wrapRows(items: readonly LegendItem[], max: number, gap: number): Legen
 
 /** A family's shield and name, the shield's left edge at `x` and the text's middle at `y`. */
 function legendEntry(c: PosterContext, { l }: LegendItem, x: number, y: number): string {
-  const u = c.page.u;
+  const u = c.page.lu ?? c.page.u;
   const shieldW = u * 1.3;
   const font = legendFont(u);
   const t = c.theme.tinctures[l.tincture];
@@ -373,4 +397,16 @@ function legendEntry(c: PosterContext, { l }: LegendItem, x: number, y: number):
     `<g transform="translate(${n(x)},${n(y - shieldW * 0.62)})">${el('path', { d: shieldPath(shieldW, shieldW * 1.18), fill: t.fill, stroke: t.edge, 'stroke-width': t.edge ? 0.6 : undefined })}</g>` +
     el('text', { x: x + shieldW + u * 0.6, y: y + font.size * 0.32, ...fontAttrs(font), fill: palette.muted }, text(l.label))
   );
+}
+
+/**
+ * The family's colour across the top of a card with corners cut `k` deep, in
+ * place of the shield: a strip as deep as the inner rule's margin and a little
+ * more, clear of the sex symbol under it.
+ */
+function familyBand(c: PosterContext, card: LayoutCard, k: number): string {
+  const tincture = c.theme.tinctures[c.colors.get(card.personId) ?? 'argent'];
+  const fill = tincture.fill === c.theme.tinctures.argent.fill ? palette.cardEdge : tincture.fill;
+  const d = 6.5;
+  return el('path', { d: `M${k},0.5H${n(card.w - k)}L${n(card.w - 0.5)},${k}V${d}H0.5V${k}Z`, fill, opacity: 0.92 });
 }

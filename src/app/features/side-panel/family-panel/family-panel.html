@@ -38,10 +38,6 @@
   <stemma-family-children [family]="f" />
 
   <section class="panel-section">
-    <div class="field">
-      <label for="family-notes">{{ t('familyPanel.notes') }}</label>
-      <textarea id="family-notes" class="textarea" [value]="f.notes ?? ''" (input)="setNotes($event)"></textarea>
-    </div>
     <div>
       <button type="button" class="btn danger" (click)="families.remove(f.id)"><stemma-icon name="trash" [size]="16" />{{ t('familyPanel.remove') }}</button>
     </div>

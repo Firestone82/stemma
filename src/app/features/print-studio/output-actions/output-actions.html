@@ -5,7 +5,7 @@
   </button>
 }
 <button type="button" class="btn" [class.primary]="!model.canPrint" (click)="model.output('pdf')" [disabled]="!ready">
-  <stemma-icon name="file" [size]="17" />{{ model.busy() === 'pdf' ? t('print.busy') : 'PDF' }}
+  <stemma-icon name="file" [size]="17" />{{ model.busy() === 'pdf' ? t('print.busy') : pdfLabel() }}
 </button>
 <button type="button" class="btn" (click)="model.output('png')" [disabled]="!ready">
   <stemma-icon name="image" [size]="17" />{{ model.busy() === 'png' ? t('print.busy') : 'PNG' }}

@@ -229,6 +229,133 @@ describe('layout', () => {
     });
   }
 
+  it('draws people lower than their generation on request, with their partners and children, and keeps the lines clean', () => {
+    const doc = wideFamily(4);
+    const plain = computeLayout(doc);
+    const sunk = computeLayout(doc, { ...COMFORTABLE_LAYOUT, sink: new Map([['K1', 1]]) });
+    const rank = (l: LayoutResult, id: string) => l.ranks.get(id)!;
+    expect(rank(plain, 'K1')).toBe(rank(plain, 'K0'));
+    expect(rank(sunk, 'K1')).toBe(rank(sunk, 'K0') + 1);
+    expect(rank(sunk, 'S1')).toBe(rank(sunk, 'K1'));
+    expect(rank(sunk, 'G1a')).toBe(rank(sunk, 'G0a') + 1);
+    expect(sunk.cards.map((c) => c.personId).sort()).toEqual(doc.people.map((p) => p.id).sort());
+    expectNoOverlaps(sunk);
+    expectLinesClearOfCards(sunk);
+    const problems = lineProblems(sunk, partnersIn(doc), true);
+    expect(problems.overlaps + problems.hidden, problems.details.join('; ')).toBe(0);
+  });
+
+  it('draws every row inside the widest one when squeezed, with the lines still clean', () => {
+    const doc = randomFamily(11, 90);
+    const plain = computeLayout(doc);
+    const squeezed = computeLayout(doc, { ...COMFORTABLE_LAYOUT, squeeze: 1 });
+    expect(squeezed.bounds.w).toBeLessThanOrEqual(plain.bounds.w + 0.5);
+    expect(squeezed.cards.map((c) => c.personId).sort()).toEqual(doc.people.map((p) => p.id).sort());
+    expectNoOverlaps(squeezed);
+    expectLinesClearOfCards(squeezed);
+    const problems = lineProblems(squeezed, partnersIn(doc), true);
+    expect(problems.overlaps + problems.hidden, problems.details.join('; ')).toBe(0);
+  });
+
+  it('stands stacked couples side by side again in the rows asked for, brothers and sisters staying stacked', () => {
+    // Three brothers and sisters with nobody beside or under them, one with a family of their own, one with a partner only.
+    const b = new DocBuilder();
+    b.person('GF', 'Grandpa', 'Old', 'male');
+    b.person('GM', 'Grandma', 'Old', 'female');
+    const kids = ['P', 'L1', 'L2', 'L3', 'L4'].map((id, i) => b.person(id, `Kid${i}`, 'Old', i % 2 ? 'female' : 'male', String(1950 + i)));
+    b.family('F0', ['GF', 'GM'], kids);
+    b.person('S', 'Spouse', 'New', 'female');
+    b.person('C1', 'Child1', 'Old');
+    b.person('C2', 'Child2', 'Old');
+    b.family('F1', ['P', 'S'], ['C1', 'C2']);
+    b.person('X', 'Fiance', 'Else', 'male');
+    b.family('F2', ['L4', 'X'], []);
+    const doc = b.build();
+    const options = { ...COMFORTABLE_LAYOUT, compactChildless: true, tuckBelow: true };
+    const stacked = computeLayout(doc, options);
+    const tucked = (l: typeof stacked) => new Map(l.cards.filter((c) => c.tuckedOn).map((c) => [c.personId, c.tuckedOn]));
+    expect(tucked(stacked).get('X')).toBe('L4');
+    expect(tucked(stacked).get('L2')).toBe('L1');
+    const flat = computeLayout(doc, { ...options, flatRows: new Set([stacked.ranks.get('L4')!]) });
+    expect(tucked(flat).has('X')).toBe(false);
+    expect(tucked(flat).get('L2')).toBe('L1');
+    expect(flat.bounds.w).toBeGreaterThan(stacked.bounds.w);
+    expectNoOverlaps(flat);
+  });
+
+  it('stacks brothers and sisters with nobody beside or under them in every generation, the youngest too', () => {
+    const b = new DocBuilder();
+    b.person('F', 'Father', 'Old', 'male');
+    b.person('M', 'Mother', 'Old', 'female');
+    const kids = ['A', 'B', 'C', 'D'].map((id, i) => b.person(id, `Kid${i}`, 'Old', i % 2 ? 'female' : 'male', String(1990 + i)));
+    b.family('F0', ['F', 'M'], kids);
+    const doc = b.build();
+    const l = computeLayout(doc, { ...COMFORTABLE_LAYOUT, compactChildless: true, tuckBelow: true });
+    expect(l.cards.filter((c) => c.tuckedOn).length).toBe(2);
+    expectNoOverlaps(l);
+  });
+
+  it('stacks couples with children on request, their line down the side, and keeps the lines clean', () => {
+    const doc = wideFamily(4);
+    const options = { ...COMFORTABLE_LAYOUT, compactChildless: true, tuckBelow: true };
+    const flat = computeLayout(doc, options);
+    const stacked = computeLayout(doc, { ...options, stackParents: true });
+    expect(flat.cards.some((c) => c.tuckedOn === 'K1')).toBe(false);
+    // Kid1's spouse has no parents in the tree: under Kid1's card.
+    expect(stacked.cards.find((c) => c.personId === 'S1')?.tuckedOn).toBe('K1');
+    expect(stacked.bounds.w).toBeLessThan(flat.bounds.w);
+    const union = stacked.unions.find((u) => u.familyId === 'FK1')!;
+    const k1 = stacked.cards.find((c) => c.personId === 'K1')!;
+    expect(union.cx).toBeGreaterThan(k1.x + k1.w);
+    // The line to the children runs out from the rings, to the right, before it goes down.
+    const connector = stacked.connectors.find((c) => c.familyId === 'FK1')!;
+    expect(connector.stemFrom?.y).toBe(connector.stem.y);
+    expect(connector.stem.x).toBeGreaterThan(union.cx);
+    for (const path of connectorPaths(connector, 'square')) expect(path.d.startsWith(`M${Math.round(connector.stemFrom!.x * 10) / 10},`)).toBe(true);
+    // Only in the rows asked for.
+    const row = stacked.ranks.get('K1')!;
+    const some = computeLayout(doc, { ...options, stackParentRows: new Set([row + 5]) });
+    expect(some.cards.find((c) => c.personId === 'S1')?.tuckedOn).toBeUndefined();
+    const there = computeLayout(doc, { ...options, stackParentRows: new Set([row]) });
+    expect(there.cards.find((c) => c.personId === 'S1')?.tuckedOn).toBe('K1');
+    expectNoOverlaps(stacked);
+    expectLinesClearOfCards(stacked);
+    const problems = lineProblems(stacked, partnersIn(doc), true);
+    expect(problems.overlaps + problems.hidden, problems.details.join('; ')).toBe(0);
+  });
+
+  it('never parts partners: side by side in one row, or one stacked under the other', () => {
+    const stacking = [
+      COMFORTABLE_LAYOUT,
+      { ...COMFORTABLE_LAYOUT, compactChildless: true },
+      { ...COMFORTABLE_LAYOUT, compactChildless: true, tuckBelow: true },
+      { ...COMFORTABLE_LAYOUT, compactChildless: true, tuckBelow: true, stackParents: true },
+    ];
+    for (const [name, make] of Object.entries(fixtures)) {
+      const doc = make();
+      for (const options of stacking) {
+        const result = computeLayout(doc, options);
+        const card = new Map(result.cards.map((c) => [c.personId, c]));
+        for (const f of doc.families) {
+          if (f.partners.length !== 2) continue;
+          const [a, b] = f.partners.map((p) => card.get(p));
+          if (!a || !b || a.tuckedOn === b.personId || b.tuckedOn === a.personId) continue;
+          const where = `${name}: ${f.partners.join(' + ')}`;
+          expect(a.rank, where).toBe(b.rank);
+          // Nobody between them but other partners of theirs.
+          const theirs = new Set(doc.families.filter((g) => g.partners.some((p) => f.partners.includes(p))).flatMap((g) => g.partners));
+          const lo = Math.min(a.x, b.x);
+          const hi = Math.max(a.x, b.x);
+          const between = result.cards.filter((c) => c.rank === a.rank && !c.tuckedOn && c.x > lo && c.x < hi && !theirs.has(c.personId));
+          expect(
+            between.map((c) => c.personId),
+            where,
+          ).toEqual([]);
+        }
+      }
+    }
+  });
+
   it('lays out the sample without crossings, siblings in birth order', () => {
     const doc = fixtures['sample']();
     const result = computeLayout(doc);

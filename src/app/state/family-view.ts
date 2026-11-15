@@ -1,11 +1,9 @@
-import { Injectable, Injector, afterNextRender, computed, effect, inject, signal, untracked } from '@angular/core';
+import { Injectable, computed, effect, inject, signal, untracked } from '@angular/core';
 import { decodeFamilyKeys, encodeFamilyKeys } from '../core/model/family-view';
 import { TreeStore } from '../core/store/tree-store';
 import { PRINT_HASH } from '../features/print-studio/print-route';
+import { ChartBusy } from './chart-busy';
 import { UiState } from './ui-state';
-
-/** Trees bigger than this take a moment to lay out again: a note says so while the chart is busy. */
-const BUSY_FROM = 150;
 
 /** The address of the family view: the app's address with this and the families after it. */
 export const FAMILY_HASH = '#/family/';
@@ -21,7 +19,7 @@ export const FAMILY_HASH = '#/family/';
 export class FamilyView {
   private readonly store = inject(TreeStore);
   private readonly ui = inject(UiState);
-  private readonly injector = inject(Injector);
+  private readonly chart = inject(ChartBusy);
 
   /** The families shown, in the order they were added; null for the whole tree. */
   readonly keys = signal<readonly string[] | null>(null);
@@ -32,8 +30,6 @@ export class FamilyView {
    * have none; their order stands in.
    */
   readonly batches = signal<ReadonlyMap<string, number>>(new Map());
-  /** Set while a big tree is laid out for another view; the chart shows a note instead of freezing silently. */
-  readonly busy = signal(false);
 
   /** Families from the address the app was opened at, waiting for the tree to load. */
   private pending: string[] = [];
@@ -88,7 +84,7 @@ export class FamilyView {
     const keys = (this.keys() ?? []).filter((k) => !out.includes(k));
     const batches = new Map(this.batches());
     for (const k of out) batches.delete(k);
-    this.apply(keys.length ? keys : null, batches, () => this.ui.fit(!this.big()));
+    this.apply(keys.length ? keys : null, batches, () => this.ui.fit(!this.chart.big()));
   }
 
   /** When a family came into the view (see `batches`). */
@@ -99,35 +95,20 @@ export class FamilyView {
   /** Back to the whole tree. */
   exit(): void {
     if (!this.keys()) return;
-    this.apply(null, new Map(), () => this.ui.fit(!this.big()));
+    this.apply(null, new Map(), () => this.ui.fit(!this.chart.big()));
   }
 
   /**
-   * Switches the view. A big tree first shows the busy note: one frame to
+   * Switches the view, behind the busy note for a big tree (see ChartBusy): one frame to
    * paint it, then the work, and the note goes once the chart is drawn.
    */
   private apply(keys: readonly string[] | null, batches: ReadonlyMap<string, number>, then: () => void): void {
     this.ui.closeMenu();
-    if (this.busy()) return;
-    if (!this.big()) {
+    this.chart.run(() => {
       this.batches.set(batches);
       this.keys.set(keys);
       then();
-      return;
-    }
-    this.busy.set(true);
-    requestAnimationFrame(() =>
-      setTimeout(() => {
-        this.batches.set(batches);
-        this.keys.set(keys);
-        then();
-        afterNextRender(() => this.busy.set(false), { injector: this.injector });
-      }),
-    );
-  }
-
-  private big(): boolean {
-    return this.store.doc().people.length > BUSY_FROM;
+    });
   }
 
   private after(personId: string | undefined): void {
@@ -137,7 +118,7 @@ export class FamilyView {
       this.ui.focus(personId);
       this.ui.highlight(personId);
     } else {
-      this.ui.fit(!this.big());
+      this.ui.fit(!this.chart.big());
     }
   }
 

@@ -23,6 +23,7 @@
           [dates]="m.dates"
           [tincture]="m.tincture"
           [missing]="m.missing ?? ''"
+          [problem]="m.problem ?? ''"
           [attr.title]="m.offChart ? offChartHint() : null"
           (click)="pick.emit(m.id)"
         ></button>

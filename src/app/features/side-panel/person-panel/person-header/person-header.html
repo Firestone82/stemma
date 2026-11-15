@@ -1,9 +1,5 @@
 @let p = person();
-@if (p.photo) {
-  <img class="photo" [src]="p.photo" alt="" [attr.data-tincture]="tincture()" />
-} @else {
-  <span class="shield" [attr.data-tincture]="tincture()" aria-hidden="true">{{ initials() }}</span>
-}
+<span class="shield" [attr.data-tincture]="tincture()" aria-hidden="true">{{ initials() }}</span>
 <div class="grow">
   <h2>{{ name() }}</h2>
   @if (subline()) {

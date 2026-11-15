@@ -7,8 +7,8 @@
   <span class="mini-shield" [attr.data-tincture]="tincture()"></span>
 }
 <span class="name">{{ name() }}</span>
-@if (missing()) {
-  <span class="missing-flag" role="img" [attr.aria-label]="missing()" [attr.title]="missing()">!</span>
+@if (missing() || problem()) {
+  <span class="missing-flag" [class.problem]="!!problem()" role="img" [attr.aria-label]="flagText()" [attr.title]="flagText()">!</span>
 }
 @if (tag()) {
   <span class="tag">{{ tag() }}</span>

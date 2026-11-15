@@ -312,6 +312,21 @@
     <xs:attribute name="fullDates" type="xs:boolean" default="false"/>
     <!-- 1.6: with branches="1", brothers and sisters only, without aunts, uncles, nieces and nephews. -->
     <xs:attribute name="siblingsOnly" type="xs:boolean" default="false"/>
+    <!-- 1.8: the families' names placed by hand: "x y w h", shares of the page's width and height. -->
+    <xs:attribute name="legendBox" type="xs:string"/>
+    <!-- 1.8: generations need not stand in rows: whole branches drawn lower where that makes the cards bigger. -->
+    <xs:attribute name="packFamilies" type="xs:boolean" default="false"/>
+    <!-- 1.8: false: cards without the family's emblem; the colour band on the card shows the family. -->
+    <xs:attribute name="showEmblems" type="xs:boolean" default="true"/>
+    <!-- Read as compactCouples="true" (a setting of its own while 1.8 was being made); not written. -->
+    <xs:attribute name="stackCouples" type="xs:boolean" default="false"/>
+    <!-- 1.8: the PDF in pieces on sheets of this paper (A4, A3, ...), to be glued together. -->
+    <xs:attribute name="tiles" type="xs:string"/>
+    <!-- 1.8: with tiles: the printer prints to the edge, so the sheets join edge to edge at full size. -->
+    <xs:attribute name="tilesBorderless" type="xs:boolean" default="false"/>
+    <!-- 1.8: the title and the page's lettering, and the families' names, this many times their usual size (0.5 to 3). -->
+    <xs:attribute name="titleScale" type="xs:decimal"/>
+    <xs:attribute name="legendScale" type="xs:decimal"/>
     <xs:anyAttribute namespace="##other" processContents="lax"/>
   </xs:complexType>
 

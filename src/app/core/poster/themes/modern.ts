@@ -90,52 +90,76 @@ export const modern: PosterTheme = {
 
   header(c): PageBlock {
     const u = c.page.u;
+    const lu = c.page.lu ?? u;
     const titleFont: FontSpec = { family: SANS, size: u * 4.8, weight: 700, letterSpacing: -0.015 };
     const subFont: FontSpec = { family: SANS, size: u * 1.6, weight: 400 };
-    const legendFont: FontSpec = { family: SANS, size: u * 1.2, weight: 500 };
-    const height = titleFont.size * 1.05 + u * 0.9 + (c.subtitle ? subFont.size + u * 0.5 : 0) + u * 3.2;
+    const legendFont: FontSpec = { family: SANS, size: lu * 1.2, weight: 500 };
+    const titleHeight = titleFont.size * 1.05 + u * 0.9 + (c.subtitle ? subFont.size + u * 0.5 : 0) + u * 3.2;
+    // The legend as chips on the right, in up to two rows; the title takes what is left.
+    const chipH = legendFont.size * 1.9;
+    const items = (c.legendAt === 'free' ? [] : c.legend).map((l) => ({ l, w: chipH * 0.55 + lu * 0.9 + c.measure(l.label, legendFont) + lu * 1.1 }));
+    const chips = (width: number) => {
+      const rowW = Math.min(
+        width * 0.45,
+        items.reduce((s, i) => s + i.w + lu * 0.7, 0),
+      );
+      const rows: (typeof items)[] = [[]];
+      let used = 0;
+      for (const it of items) {
+        if (used + it.w > rowW && rows[rows.length - 1].length) {
+          if (rows.length === 2) break;
+          rows.push([]);
+          used = 0;
+        }
+        rows[rows.length - 1].push(it);
+        used += it.w + lu * 0.7;
+      }
+      return { rowW, rows };
+    };
+    // As high as the title, or the two rows of chips beside it when the families' names are bigger.
+    const height = Math.max(titleHeight, items.length ? u * 0.6 + 2 * chipH + lu * 0.6 + u * 1.5 : 0);
     return {
       height,
+      legend(r: Rect) {
+        if (!items.length) return undefined;
+        const { rows } = chips(r.w);
+        const w = Math.max(...rows.map((row) => row.reduce((s, it) => s + it.w, 0) + lu * 0.7 * (row.length - 1)));
+        return { x: r.x + r.w - w, y: r.y + u * 0.3, w, h: rows.length * chipH + (rows.length - 1) * lu * 0.6 };
+      },
       draw(r: Rect) {
-        // The legend as chips on the right, in up to two rows; the title takes what is left.
-        const chipH = legendFont.size * 1.9;
-        const items = c.legend.map((l) => ({ l, w: chipH * 0.55 + u * 0.9 + c.measure(l.label, legendFont) + u * 1.1 }));
-        const rowW = Math.min(
-          r.w * 0.45,
-          items.reduce((s, i) => s + i.w + u * 0.7, 0),
-        );
-        const rows: (typeof items)[] = [[]];
-        let used = 0;
-        for (const it of items) {
-          if (used + it.w > rowW && rows[rows.length - 1].length) {
-            if (rows.length === 2) break;
-            rows.push([]);
-            used = 0;
-          }
-          rows[rows.length - 1].push(it);
-          used += it.w + u * 0.7;
-        }
+        const { rowW, rows } = chips(r.w);
         let out = '';
         rows.forEach((row, ri) => {
           let x = r.x + r.w;
-          const y = r.y + u * 0.3 + ri * (chipH + u * 0.6);
+          const y = r.y + u * 0.3 + ri * (chipH + lu * 0.6);
           for (const it of [...row].reverse()) {
             x -= it.w;
             const t = c.theme.tinctures[it.l.tincture];
-            out += el('rect', { x, y, width: it.w, height: chipH, rx: chipH / 2, fill: '#ffffff', stroke: palette.cardEdge, 'stroke-width': u * 0.06 });
-            out += el('circle', { cx: x + u * 1.1 + chipH * 0.1, cy: y + chipH / 2, r: chipH * 0.22, fill: t.fill });
+            out += el('rect', { x, y, width: it.w, height: chipH, rx: chipH / 2, fill: '#ffffff', stroke: palette.cardEdge, 'stroke-width': lu * 0.06 });
+            out += el('circle', { cx: x + lu * 1.1 + chipH * 0.1, cy: y + chipH / 2, r: chipH * 0.22, fill: t.fill });
             out += el(
               'text',
-              { x: x + chipH * 0.55 + u * 1.3, y: y + chipH / 2 + legendFont.size * 0.35, ...fontAttrs(legendFont), fill: palette.ink },
+              { x: x + chipH * 0.55 + lu * 1.3, y: y + chipH / 2 + legendFont.size * 0.35, ...fontAttrs(legendFont), fill: palette.ink },
               text(it.l.label),
             );
-            x -= u * 0.7;
+            x -= lu * 0.7;
           }
         });
         const titleMax = r.w - (items.length ? rowW + u * 4 : 0);
-        out += el('rect', { x: r.x, y: r.y + u * 0.4, width: u * 0.7, height: titleFont.size * 0.78, rx: u * 0.2, fill: palette.accent });
         const tx = r.x + u * 1.9;
-        out += el('text', { x: tx, y: r.y + titleFont.size * 0.82, ...fontAttrs(titleFont), fill: palette.ink }, text(c.fit(c.title, titleFont, titleMax)));
+        // A title too long for its room (bigger on request) gets smaller, down to half; shortened only past that.
+        const tw = c.measure(c.title, titleFont);
+        const room = titleMax - u * 1.9;
+        const font = tw > room ? { ...titleFont, size: titleFont.size * Math.max(0.5, room / tw) } : titleFont;
+        out += el('rect', {
+          x: r.x,
+          y: r.y + u * 0.4 + (titleFont.size - font.size) * 0.82,
+          width: u * 0.7,
+          height: font.size * 0.78,
+          rx: u * 0.2,
+          fill: palette.accent,
+        });
+        out += el('text', { x: tx, y: r.y + titleFont.size * 0.82, ...fontAttrs(font), fill: palette.ink }, text(c.fit(c.title, font, room)));
         if (c.subtitle) {
           out += el(
             'text',
@@ -164,6 +188,16 @@ export const modern: PosterTheme = {
     };
   },
 
+  legendStyle: {
+    font: { family: SANS, size: 1, weight: 500 },
+    ink: palette.ink,
+    markW: 0.84,
+    markGap: 0.5,
+    mark(c, l, x, y, size) {
+      return el('circle', { cx: x + size * 0.42, cy: y, r: size * 0.42, fill: c.theme.tinctures[l.tincture].fill });
+    },
+  },
+
   cardShape(c, card: LayoutCard, look: CardLook) {
     const r = modern.card.radius;
     const tincture = c.theme.tinctures[c.colors.get(card.personId) ?? 'argent'];
@@ -173,7 +207,7 @@ export const modern: PosterTheme = {
     // A monogram in the family colour, square or round as the portraits are (a photo takes its place).
     const top = c.settings.portraitAlign === 'top' ? Math.min(c.card.top, (card.h - b.size) / 2) : (card.h - b.size) / 2;
     const monogram =
-      person?.photo && c.settings.showPhotos
+      (person?.photo && c.settings.showPhotos) || c.settings.showEmblems === false
         ? ''
         : `<g transform="translate(${n(b.x)},${n(top)})">` +
           el('rect', { width: b.size, height: b.size, rx: c.settings.portrait === 'round' ? b.size / 2 : b.size * 0.3, fill: tincture.fill }) +
@@ -195,7 +229,12 @@ export const modern: PosterTheme = {
         'stroke-width': look.focus ? 2 : 1,
         'stroke-dasharray': look.unknown ? UNKNOWN_DASH : undefined,
         filter: look.unknown ? undefined : 'url(#pp-md-shadow)',
-      }) + monogram
+      }) +
+      monogram +
+      // Without monograms, the family colour in a thin band along the top edge.
+      (c.settings.showEmblems === false
+        ? el('rect', { x: Math.max(r, 4), y: 1.5, width: card.w - Math.max(r, 4) * 2, height: 3, rx: 1.5, fill: tincture.fill })
+        : '')
     );
   },
 

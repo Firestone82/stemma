@@ -23,8 +23,35 @@
   </div>
 </div>
 <div class="field">
+  <label for="print-tiles">{{ t('print.tiles') }}</label>
+  <select id="print-tiles" class="select" (change)="setTiles($event)">
+    <option value="" [selected]="!s.tiles">{{ t('print.tiles.one') }}</option>
+    @for (p of sheets(); track p.id) {
+      <option [value]="p.id" [selected]="s.tiles?.toLowerCase() === p.id.toLowerCase()">{{ p.label }}</option>
+    }
+  </select>
+  @if (s.tiles) {
+    <stemma-switch [checked]="!!s.tilesBorderless" (checkedChange)="model.set({ tilesBorderless: $event || undefined })">{{
+      t('print.tiles.borderless')
+    }}</stemma-switch>
+  }
+  @if (model.tilesNote(); as note) {
+    <p class="hint">{{ note }}</p>
+  }
+</div>
+<div class="field">
   <label for="print-title">{{ t('print.titleField') }}</label>
   <input id="print-title" class="input" autocomplete="off" [value]="s.title ?? ''" [placeholder]="treeTitle()" (input)="setText('title', $event)" />
+</div>
+<div class="grid-2">
+  @for (s of sizes(); track s.key) {
+    <div class="field">
+      <label [for]="'print-' + s.key">
+        {{ t(s.label) }} <span class="value">{{ s.percent }} %</span>
+      </label>
+      <input type="range" class="range" [id]="'print-' + s.key" min="50" max="300" step="10" [value]="s.percent" (change)="setSize(s.key, $event)" />
+    </div>
+  }
 </div>
 <div class="field">
   <label for="print-subtitle">{{ t('print.subtitle') }}</label>

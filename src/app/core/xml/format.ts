@@ -14,7 +14,7 @@ export const XML_NAMESPACE = 'urn:stemma:family-tree';
 export const ROOT_ELEMENT = 'familyTree';
 
 export const APP_NAME = 'Stemma';
-export const APP_VERSION = '1.7.0';
+export const APP_VERSION = '1.8.0';
 
 export interface FormatVersion {
   major: number;
@@ -39,8 +39,14 @@ export interface FormatVersion {
  *      childlessOutside to both, no longer used.
  * 1.7  Adds givenUnknown on <name> and dateUnknown on events: nobody knows the
  *      given name or the date, so they are not gaps to fill in.
+ * 1.8  Adds legendBox to <print>: the families' names placed by hand on the
+ *      page; packFamilies: generations need not stand in rows; and
+ *      showEmblems: cards without the family's emblem; and tiles and
+ *      tilesBorderless: the PDF in pieces on smaller sheets; titleScale and
+ *      legendScale: the page's lettering and the families' names bigger or
+ *      smaller.
  */
-export const CURRENT_FORMAT: FormatVersion = { major: 1, minor: 7 };
+export const CURRENT_FORMAT: FormatVersion = { major: 1, minor: 8 };
 
 export function formatVersionString(v: FormatVersion = CURRENT_FORMAT): string {
   return `${v.major}.${v.minor}`;

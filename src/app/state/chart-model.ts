@@ -13,6 +13,7 @@ import { arrangementOf, isArranged } from '../core/model/arrangement';
 import { birthSurname } from '../core/model/surnames';
 import { diedAtBirth } from '../core/model/completeness';
 import { missingText } from '../shared/missing';
+import { DataChecks } from './data-checks';
 import { RELATIVES, Relatives, Scope, ScopeOptions, relativesOf, relativesSettings, scopeDocument } from '../core/poster/scope';
 import { TreeIndex } from '../core/model/tree-index';
 import { Sex, TreeDocument, ViewSettings } from '../core/model/types';
@@ -33,7 +34,6 @@ export interface CardLabel {
   initials: string;
   /** Full name and dates, for tooltips and screen readers. */
   title: string;
-  photo?: string;
   sex: Sex;
   deceased: boolean;
   /** Nobody knows the given name: the card says "Unknown" and is drawn dashed. */
@@ -44,6 +44,8 @@ export interface CardLabel {
   diedAtBirth: boolean;
   /** What still has to be filled in ("To fill in: year of birth"); empty when nothing. Flagged on the card. */
   missing: string;
+  /** Dates on this person's record that cannot be right (see DataChecks), one a line; empty when none. */
+  problem: string;
 }
 
 /** Room the sex symbol takes from the first line of a card, and the focus mark from the last. */
@@ -65,6 +67,7 @@ export class ChartModel {
   private readonly measure = inject(TextMeasurer);
   private readonly i18n = inject(I18n);
   private readonly familyView = inject(FamilyView);
+  private readonly checks = inject(DataChecks);
 
   readonly view = computed<ViewSettings>(() => this.store.doc().view, { equal: shallowEqual });
   /**
@@ -246,7 +249,7 @@ export class ChartModel {
     equal: (a, b) => a.key === b.key,
   });
 
-  private previous?: { result: LayoutResult; loadId: number };
+  private previous?: { result: LayoutResult; loadId: number; people: ReadonlySet<string> };
 
   /** The widest generations in two tiers, so a wide tree does not run so far to the sides. */
   private readonly tall = computed(() => this.view().tallGenerations);
@@ -255,10 +258,14 @@ export class ChartModel {
     const s = this.structure();
     const options = this.options();
     const prev = this.previous;
-    // Where the layout itself put everyone, without the moves made by hand, so its order stays put.
-    const hint = prev && prev.loadId === s.loadId ? prev.result.hint : undefined;
+    // Where the layout itself put everyone, without the moves made by hand, so its order stays put. Only
+    // while the chart shows about the same people: a layout of part of the tree (a family view, a nearer
+    // Relatives step) says nothing of where everyone else goes, and following it for the whole tree
+    // leaves families split up with their lines running behind other cards.
+    const people = new Set(s.doc.people.map((p) => p.id));
+    const hint = prev && prev.loadId === s.loadId && newcomers(people, prev.people) <= MAX_NEWCOMERS ? prev.result.hint : undefined;
     const result = this.tall() ? tallLayout(s.doc, options, hint, this.cardWidths()) : computeLayout(s.doc, options, hint, this.cardWidths());
-    this.previous = { result, loadId: s.loadId };
+    this.previous = { result, loadId: s.loadId, people };
     return result;
   });
 
@@ -338,6 +345,7 @@ export class ChartModel {
     const cardWidth = this.options().cardWidth;
     // The sex symbol takes the top right corner, the focus mark the bottom right.
     const top = view.showSex ? CORNER_ROOM : 0;
+    const problems = this.checks.byPerson();
     const out = new Map<string, CardLabel>();
     for (const p of doc.people) {
       const width = (widths.get(p.id) ?? cardWidth) - m.textX - m.padRight;
@@ -358,12 +366,12 @@ export class ChartModel {
         kin: relation ? this.measure.fit(relation, fonts.kin, width - top, m.kin.size * m.kin.spacing) : '',
         initials: initials(p),
         title,
-        photo: view.showPhotos ? p.photo : undefined,
         sex: p.sex,
         deceased: !!p.death,
         hiddenFromPrint: !!p.hiddenFromPrint,
         diedAtBirth: !!p.death && diedAtBirth(p),
         missing: missingText(this.i18n, p),
+        problem: problems.get(p.id) ?? '',
         unknown,
       });
     }
@@ -436,4 +444,13 @@ function structureOf(doc: TreeDocument, loadId: number): { key: string; doc: Tre
   if (isArranged(doc)) reduced.arrangement = arrangement;
   const key = JSON.stringify([loadId, people.map((p) => p.id), families, reduced.arrangement ?? null]);
   return { key, doc: reduced, loadId };
+}
+
+/** People added to the tree at once (pasted, imported) up to this many keep the chart's order; more and it is laid out afresh. */
+const MAX_NEWCOMERS = 3;
+
+function newcomers(now: ReadonlySet<string>, before: ReadonlySet<string>): number {
+  let n = 0;
+  for (const id of now) if (!before.has(id)) n++;
+  return n;
 }

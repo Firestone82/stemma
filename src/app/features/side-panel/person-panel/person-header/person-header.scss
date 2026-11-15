@@ -51,12 +51,3 @@
     color: var(--ink);
   }
 }
-
-.photo {
-  flex: none;
-  width: 44px;
-  height: 44px;
-  border-radius: 50%;
-  object-fit: cover;
-  box-shadow: 0 0 0 2px var(--tc, var(--rule-2));
-}

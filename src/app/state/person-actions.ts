@@ -26,6 +26,7 @@ import { relativesOf, relativesSettings } from '../core/poster/scope';
 import { ToastService } from '../core/services/toast';
 import { TreeStore } from '../core/store/tree-store';
 import { I18n } from '../i18n/i18n';
+import { ChartBusy } from './chart-busy';
 import { ChartModel } from './chart-model';
 import { Relation, UiState } from './ui-state';
 
@@ -46,6 +47,7 @@ export class PersonActions {
   private readonly toast = inject(ToastService);
   private readonly i18n = inject(I18n);
   private readonly model = inject(ChartModel);
+  private readonly busy = inject(ChartBusy);
 
   addLoosePerson(draft: PersonDraft = {}): string {
     const { personId } = this.store.apply((doc) => addPerson(doc, draft));
@@ -109,8 +111,10 @@ export class PersonActions {
 
   /** Shows the whole tree on the chart (the Relatives setting at Everyone), and opens `personId`. */
   showEveryone(personId?: string): void {
-    this.store.update((doc) => updateView(doc, relativesSettings('everyone')));
-    if (personId) this.select(personId);
+    this.busy.run(() => {
+      this.store.update((doc) => updateView(doc, relativesSettings('everyone')));
+      if (personId) this.select(personId);
+    });
   }
 
   select(personId: string): void {

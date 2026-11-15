@@ -20,6 +20,7 @@ import {
   FamilyEnd,
   GenDate,
   LINE_STYLE_VALUES,
+  LegendBox,
   LifeEvent,
   ORIENTATION_VALUES,
   PORTRAIT_ALIGN_VALUES,
@@ -125,6 +126,14 @@ const KNOWN = {
       'childlessOutside',
       'fullDates',
       'siblingsOnly',
+      'legendBox',
+      'packFamilies',
+      'showEmblems',
+      'stackCouples',
+      'tiles',
+      'tilesBorderless',
+      'titleScale',
+      'legendScale',
     ],
     elements: [],
   },
@@ -344,6 +353,19 @@ class Reader {
     print.childlessOutside = boolAttr(el, 'childlessOutside', DEFAULT_PRINT.childlessOutside);
     print.fullDates = boolAttr(el, 'fullDates', DEFAULT_PRINT.fullDates);
     print.siblingsOnly = boolAttr(el, 'siblingsOnly', DEFAULT_PRINT.siblingsOnly);
+    const box = parseLegendBox(el.getAttribute('legendBox'));
+    if (box) print.legendBox = box;
+    if (boolAttr(el, 'packFamilies', false)) print.packFamilies = true;
+    if (!boolAttr(el, 'showEmblems', true)) print.showEmblems = false;
+    // Couples with children stacked were a setting of their own while 1.8 was being made: now part of compactCouples.
+    if (boolAttr(el, 'stackCouples', false)) print.compactCouples = true;
+    const tiles = el.getAttribute('tiles')?.trim();
+    if (tiles) print.tiles = tiles;
+    if (boolAttr(el, 'tilesBorderless', false)) print.tilesBorderless = true;
+    for (const key of ['titleScale', 'legendScale'] as const) {
+      const value = Number(el.getAttribute(key));
+      if (el.hasAttribute(key) && Number.isFinite(value) && value > 0) print[key] = Math.min(3, Math.max(0.5, value));
+    }
     setExt(print, captureExt(el, KNOWN.print));
     return print;
   }
@@ -787,4 +809,14 @@ function setExt(target: { ext?: Extensions }, ext: Extensions | undefined): void
 
 function plural(n: number, one: string, many: string): string {
   return `${n} ${n === 1 ? one : many}`;
+}
+
+/** "x y w h" as shares of the page; anything else is ignored. */
+export function parseLegendBox(text: string | null): LegendBox | undefined {
+  const parts = (text ?? '').trim().split(/\s+/).map(Number);
+  if (parts.length !== 4 || parts.some((v) => !Number.isFinite(v))) return undefined;
+  const [x, y, w, h] = parts;
+  if (w <= 0 || h <= 0) return undefined;
+  const c = (v: number) => Math.min(1, Math.max(0, v));
+  return { x: c(x), y: c(y), w: Math.min(c(w), 1 - c(x)), h: Math.min(c(h), 1 - c(y)) };
 }

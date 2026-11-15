@@ -9,6 +9,7 @@ import { PersonActions } from '../../../state/person-actions';
 import { UiState } from '../../../state/ui-state';
 import { ColourLegend } from './colour-legend/colour-legend';
 import { PeopleList } from './people-list/people-list';
+import { TreeChecks } from './tree-checks/tree-checks';
 
 const TIPS: readonly MessageKey[] = [
   'overview.tip.select',
@@ -21,10 +22,10 @@ const TIPS: readonly MessageKey[] = [
   'overview.tip.save',
 ];
 
-/** The tree as a whole: its name and description, everyone in it, the colours, and tips. */
+/** The tree as a whole: its name and description, what it lacks or gets wrong, everyone in it, the colours, and tips. */
 @Component({
   selector: 'stemma-overview-panel',
-  imports: [Icon, PeopleList, ColourLegend],
+  imports: [Icon, PeopleList, ColourLegend, TreeChecks],
   templateUrl: './overview-panel.html',
   styleUrl: './overview-panel.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,

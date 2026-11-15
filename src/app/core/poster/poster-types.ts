@@ -118,12 +118,28 @@ export interface Rect {
 export interface PageBlock {
   height: number;
   draw(rect: Rect): string;
+  /** Where in `rect` the block draws the families' names, if it does. */
+  legend?(rect: Rect): Rect | undefined;
 }
 
 /** A column of the page beside the tree (the legend, when the page has more room at the side). */
 export interface SideBlock {
   width: number;
   draw(rect: Rect): string;
+  /** Where in `rect` the families' names are. */
+  legend?(rect: Rect): Rect | undefined;
+}
+
+/** How a style draws one family in the legend, for a legend in a box placed by hand. */
+export interface LegendStyle {
+  /** The label's font; its size is replaced with the size the box allows. */
+  font: FontSpec;
+  ink: string;
+  /** The mark's width and the space after it, as shares of the font size. */
+  markW: number;
+  markGap: number;
+  /** The family's mark (shield, dot), its left edge at `x`, its middle at `y`, for text `size` big. */
+  mark(c: PosterContext, entry: LegendEntry, x: number, y: number, size: number): string;
 }
 
 /** Text already fitted to a card. */
@@ -152,8 +168,14 @@ export interface PosterContext {
   page: {
     w: number;
     h: number;
-    /** 1% of the page's shorter side; decorations scale with it. */
+    /**
+     * The unit of the page's lettering and decorations: 1% of the page's
+     * shorter side, or less on a page full of small cards (in proportion to
+     * the names on them), times the title size asked for (PrintSettings.titleScale).
+     */
     u: number;
+    /** The same for the families' names in the legend (PrintSettings.legendScale); `u` when not set. */
+    lu?: number;
     /** Space between the paper's edge and the content. */
     margin: number;
   };
@@ -164,8 +186,10 @@ export interface PosterContext {
   /**
    * Where the legend goes: under the tree, or in a column beside it (for styles
    * with `side`). The page is laid out both ways and the one with bigger cards wins.
+   * 'free' when it is in a box placed by hand (PrintSettings.legendBox), which
+   * the header, footer and side leave it out for.
    */
-  legendAt: 'below' | 'side';
+  legendAt: 'below' | 'side' | 'free';
   kin: ReadonlyMap<string, Kin>;
   texts: ReadonlyMap<string, CardText>;
   /** Which optional lines the cards have. */
@@ -214,6 +238,8 @@ export interface PosterTheme {
   background(c: PosterContext): string;
   header(c: PosterContext): PageBlock;
   footer(c: PosterContext): PageBlock;
+  /** The families' names in a box placed by hand. */
+  legendStyle: LegendStyle;
   /**
    * The legend as a column beside the tree, for when that leaves the cards
    * bigger than a row under it; `height` is how tall the column may be.

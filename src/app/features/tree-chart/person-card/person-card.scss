@@ -128,11 +128,6 @@
   letter-spacing: 0.02em;
 }
 
-.photo-ring {
-  fill: var(--tc);
-  stroke: var(--tc-edge, none);
-}
-
 $tinctures: 'azure', 'gules', 'vert', 'purpure', 'or', 'tenne', 'sanguine', 'celeste', 'sable', 'teal', 'rose', 'olive', 'cendree', 'brunatre';
 
 @each $name in $tinctures {
@@ -177,12 +172,16 @@ $tinctures: 'azure', 'gules', 'vert', 'purpure', 'or', 'tenne', 'sanguine', 'cel
   stroke-width: 0.9;
 }
 
-/* Something still to fill in (a first name, a year of birth). */
+/* Something still to fill in (a first name, a year of birth); red for dates that cannot be right. */
 .missing-flag {
   circle {
     fill: #d4851b;
     stroke: var(--t-card);
     stroke-width: 1.5;
+  }
+
+  &.problem circle {
+    fill: #c0392b;
   }
 
   path {

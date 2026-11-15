@@ -1,7 +1,6 @@
 import { Injectable, computed, inject, signal } from '@angular/core';
 import { Notice } from '../core/model/notice';
 import { TreeStore } from '../core/store/tree-store';
-import { PickedPhoto } from '../shared/photo';
 
 export type Relation = 'parent' | 'partner' | 'child' | 'sibling';
 
@@ -18,9 +17,7 @@ export type DialogRequest =
   | { kind: 'import-report'; title: string; notes: Notice[]; upgrades: Notice[] }
   | { kind: 'newer-version'; notice: Notice; xml: string; name: string }
   | { kind: 'xml'; xml: string; filename: string }
-  | { kind: 'about' }
-  /** Placing a picked picture before it becomes the person's portrait. */
-  | { kind: 'photo'; personId: string; photo: PickedPhoto };
+  | { kind: 'about' };
 
 export type MenuName = 'file' | 'appearance' | 'relatives';
 

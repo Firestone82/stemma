@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, input } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, input } from '@angular/core';
 import { Icon } from '../icon/icon';
 
 /**
@@ -23,6 +23,9 @@ export class PersonRow {
   readonly icon = input<string>();
   /** What still has to be filled in; shown as a small flag with this as its tooltip. */
   readonly missing = input('');
+  /** Dates that cannot be right: the flag turns red, with this in its tooltip. */
+  readonly problem = input('');
+  protected readonly flagText = computed(() => [this.problem(), this.missing()].filter(Boolean).join('\n'));
   /** A number in front, for children in birth order. */
   readonly ordinal = input<number>();
 }

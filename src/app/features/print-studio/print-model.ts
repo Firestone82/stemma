@@ -5,8 +5,9 @@ import { isBrokenUp, relationshipStatus } from '../../core/model/relationship';
 import { DEFAULT_PRINT, PrintSettings, effectivePrint } from '../../core/model/types';
 import { PAPERS, PX_PER_MM } from '../../core/poster/paper';
 import { escapeText } from '../../core/xml/xml-writer';
-import { pdfFromJpeg } from '../../core/poster/pdf';
-import { PosterResult, renderPoster } from '../../core/poster/poster';
+import { pdfFromJpeg, pdfPages, tilePages } from '../../core/poster/pdf';
+import { TileGrid, tileGrid } from '../../core/poster/tiles';
+import { PosterInput, PosterResult, renderPoster } from '../../core/poster/poster';
 import { RELATIVES, Relatives, relativesSettings, scopeDocument } from '../../core/poster/scope';
 import { POSTER_THEMES } from '../../core/poster/themes';
 import { FileIo, safeFilename } from '../../core/services/file-io';
@@ -19,6 +20,9 @@ import { STATUS_LABEL } from '../../i18n/labels';
 import { UiState } from '../../state/ui-state';
 
 export type PrintOutput = 'print' | 'pdf' | 'png' | 'svg';
+
+/** Trees up to this many people have their page drawn at once; bigger ones behind a note (see PrintModel.drawing). */
+const DRAW_AT_ONCE = 60;
 
 /** Resolution for PNG and PDF files of paper sizes. */
 const PRINT_DPI = 200;
@@ -44,31 +48,71 @@ export class PrintModel {
 
   readonly settings = computed<PrintSettings>(() => ({ ...DEFAULT_PRINT, ...effectivePrint(this.store.doc()) }));
 
-  /** The page, drawn only while the studio is open and the fonts can be measured. */
-  readonly poster = computed<PosterResult | null>(() => {
+  /** What the page is drawn from, only while the studio is open and the fonts can be measured. */
+  private readonly request = computed<PosterInput | null>(() => {
     if (!this.ui.printOpen() || !this.fontsReady()) return null;
     this.measure.fontsVersion();
     const doc = this.store.doc();
     if (!doc.people.length) return null;
     // The words on the page are in the app's language.
-    return renderPoster({
+    return {
       doc,
       settings: this.settings(),
       language: this.i18n.code(),
       measure: (t, f) => this.measure.width(t, f),
       omit: new Set(this.ui.printOmitted()),
-    });
+    };
   });
+
+  /** The page as last drawn. */
+  readonly poster = signal<PosterResult | null>(null);
+  /**
+   * Set while a big tree's page is drawn again: the page before stays, with a
+   * note over it, one frame drawn before the work, so the studio says it is
+   * working instead of freezing silently.
+   */
+  readonly drawing = signal(false);
+  private drawn = 0;
 
   /** How many people were clicked away from this print. */
   readonly omittedCount = computed(() => this.ui.printOmitted().length);
 
   constructor() {
+    effect(() => {
+      const request = this.request();
+      untracked(() => this.draw(request));
+    });
     // Another tree: nobody is left out of its prints yet.
     effect(() => {
       this.store.loadId();
       untracked(() => this.ui.printOmitted.set([]));
     });
+  }
+
+  private draw(request: PosterInput | null): void {
+    const turn = ++this.drawn;
+    if (!request) {
+      this.poster.set(null);
+      this.drawing.set(false);
+      return;
+    }
+    // A small tree is drawn at once; a big one after the note has been shown, the latest settings only.
+    if (request.doc.people.length <= DRAW_AT_ONCE) {
+      this.poster.set(renderPoster(request));
+      this.drawing.set(false);
+      return;
+    }
+    this.drawing.set(true);
+    requestAnimationFrame(() =>
+      setTimeout(() => {
+        if (turn !== this.drawn) return;
+        try {
+          this.poster.set(renderPoster(request));
+        } finally {
+          if (turn === this.drawn) this.drawing.set(false);
+        }
+      }),
+    );
   }
 
   /** Leaves a person out of this print (a click on their card); the person in the middle stays. */
@@ -157,12 +201,46 @@ export class PrintModel {
     return `${size}. ${people}.`;
   });
 
+  /** The sheets the PDF comes out on when it is printed in pieces (see PrintSettings.tiles), or null for one. */
+  readonly tiles = computed<TileGrid | null>(() => {
+    const p = this.poster();
+    const sheet = this.settings().tiles;
+    if (!p || !sheet) return null;
+    const mm = this.posterMm(p);
+    return tileGrid(mm.w, mm.h, sheet, !!this.settings().tilesBorderless);
+  });
+
+  /** "The PDF comes out on 4 sheets of A3 landscape (2 × 2)…", or nothing when it is one sheet. */
+  readonly tilesNote = computed(() => {
+    const g = this.tiles();
+    if (!g) return '';
+    const t = this.i18n.t;
+    const mm = this.posterMm(this.poster()!);
+    const sheets = t('print.tiles.sheets', {
+      count: g.tiles.length,
+      sheet: g.sheet.label,
+      orientation: t(g.landscape ? 'print.orientation.landscape' : 'print.orientation.portrait').toLocaleLowerCase(this.i18n.locale().intl),
+      cols: g.cols,
+      rows: g.rows,
+    });
+    const size = { w: Math.round(mm.w * g.scale), h: Math.round(mm.h * g.scale), percent: Math.round(g.scale * 100), overlap: g.overlap };
+    const result = g.scale > 0.995 ? t('print.tiles.full', size) : g.margin ? t('print.tiles.smaller', size) : t('print.tiles.smallerOverlap', size);
+    return `${sheets} ${result} ${t('print.tiles.glue', size)}`;
+  });
+
+  private posterMm(p: Pick<PosterResult, 'paper' | 'width' | 'height'>): { w: number; h: number } {
+    return p.paper ? { w: p.paper.widthMm, h: p.paper.heightMm } : { w: p.width / PX_PER_MM, h: p.height / PX_PER_MM };
+  }
+
   /** How big the names come out on paper, with a warning when they are too small to read. */
   readonly sizeNote = computed(() => {
     const p = this.poster();
     if (!p?.paper) return null;
     const pt = Math.round(p.namePt * 10) / 10;
-    return pt < 6 ? { warn: true, text: this.i18n.t('print.nameSizeSmall', { pt }) } : { warn: false, text: this.i18n.t('print.nameSize', { pt }) };
+    const card = { w: Math.round(p.cardMm.w), h: Math.round(p.cardMm.h) };
+    return pt < 6
+      ? { warn: true, text: this.i18n.t('print.nameSizeSmall', { pt, ...card }) }
+      : { warn: false, text: this.i18n.t('print.nameSize', { pt, ...card }) };
   });
 
   paperLabel(): string {
@@ -233,7 +311,14 @@ export class PrintModel {
       } else {
         const jpeg = new Uint8Array(await (await this.exporter.toBlob(canvas, 'image/jpeg', 0.92)).arrayBuffer());
         const pt = 72 / 96;
-        await this.save(safeFilename(base, 'pdf'), pdfFromJpeg(jpeg, size.w, size.h, p.width * pt, p.height * pt, base), 'application/pdf');
+        const grid = this.tiles();
+        if (grid) {
+          const mm = this.posterMm(p);
+          const name = `${base} ${grid.tiles.length}x ${grid.sheet.label}`;
+          await this.save(safeFilename(name, 'pdf'), pdfPages(jpeg, size.w, size.h, tilePages(grid, mm.w, mm.h), base), 'application/pdf');
+        } else {
+          await this.save(safeFilename(base, 'pdf'), pdfFromJpeg(jpeg, size.w, size.h, p.width * pt, p.height * pt, base), 'application/pdf');
+        }
       }
     } catch {
       this.toast.error(this.i18n.t('print.failed'));

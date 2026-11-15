@@ -66,6 +66,8 @@ export interface PosterResult {
   paper?: { widthMm: number; heightMm: number; landscape: boolean };
   /** The size names print at, in points. */
   namePt: number;
+  /** How big one card comes out on paper, in millimetres (a card stretched for a long name may be wider). */
+  cardMm: { w: number; h: number };
   /** People on the page, and in the whole tree. */
   people: number;
   total: number;
@@ -73,12 +75,31 @@ export interface PosterResult {
   centerId?: string;
   partnerId?: string;
   theme: PosterTheme;
+  /**
+   * Where the families' names are on the page, as shares of its width and
+   * height; `free` when placed by hand (PrintSettings.legendBox).
+   */
+  legend?: { x: number; y: number; w: number; h: number; free: boolean };
   /** All text on the page, for embedding font subsets. */
   text: string;
 }
 
 /** A tree is not blown up beyond this on big paper; it would look like a children's book. */
 const MAX_SCALE = 2.1;
+/** How many layouts packing the families together may try (see packBranches). */
+const PACK_TRIES = 10;
+/** The page's unit of lettering (PosterContext.page.u) at most this share of the names' size on the cards: the title about three times as big as the names. */
+const LETTERING = 0.75;
+/** How hard rows are drawn in towards the middle (see LayoutOptions.squeeze). */
+const SQUEEZES = [0.5, 1];
+/** How many rows of stacked cards may be tried side by side (see renderPoster). */
+const MAX_FLAT_TRIES = 14;
+/** How many rows of couples may be stacked one after another (see renderPoster). */
+const MAX_STACK_ROUNDS = 6;
+/** More rows than any tree has: every row, for rows to leave as they are. */
+const MAX_ROWS = 400;
+/** What every print's cards are, whatever the settings say (see renderPoster). */
+const PRINTED_CARDS: Partial<PrintSettings> = { showPhotos: false, showRelationships: false, portrait: 'round', portraitAlign: 'middle', portraitSize: 1 };
 /** How much of the page the tree fills, in the direction that does not decide its size. */
 const FILL = 0.97;
 /** Gaps between families and brothers and sisters grow at most this many times to fill the width. */
@@ -87,13 +108,20 @@ const MAX_SPREAD = 4;
 const MAX_SIBLING_TRIES = 4;
 const GUTTER = 64;
 /** Room the sex symbol takes from the first line of a card. */
-const SYMBOL_ROOM = 14;
+const SYMBOL_ROOM = 20;
+/** The sex symbol's size, and how far its middle is from the card's top and right edges. */
+const SYMBOL_SIZE = 15;
+const SYMBOL_INSET = 16.5;
 /** A card grows at most to this many times its width to fit a relationship name; beyond, the name is shortened. */
 const MAX_CARD_STRETCH = 2;
 const DASH: Record<string, string> = { adopted: '5 4', foster: '1.2 3.6', step: '9 4', unknown: '2 4' };
 
 export function renderPoster(input: PosterInput): PosterResult {
-  const settings: PrintSettings = { ...DEFAULT_PRINT, ...(input.settings ?? effectivePrint(input.doc)) };
+  // Prints have no portraits (at print size they are too small to make out) and no relationship names; the
+  // shields and monograms stand in the middle of the cards. Those settings are kept in the file, unused.
+  const asked: PrintSettings = { ...DEFAULT_PRINT, ...(input.settings ?? effectivePrint(input.doc)), ...PRINTED_CARDS };
+  // With families packed together the rows are no longer generations: no numbers beside them.
+  const settings: PrintSettings = asked.packFamilies ? { ...asked, showGenerations: false } : asked;
   const theme = posterTheme(settings.theme);
   const language = chartLanguage(input.language ?? input.doc.view.language);
   const now = input.now ?? new Date();
@@ -140,13 +168,17 @@ export function renderPoster(input: PosterInput): PosterResult {
   // place) can be made bigger; the text then starts further right and the card is wider by as much.
   const portraitScale = clamp(settings.portraitSize || 1, 0.5, 3);
   const grown = Math.round((portraitScale - 1) * theme.card.badge.size);
+  // Without emblems the text starts where the emblem did, and the card is narrower by as much.
+  const emblemRoom = settings.showEmblems === false ? theme.card.textX - theme.card.badge.x : 0;
   const card: PosterCardStyle = {
     ...theme.card,
-    width: theme.card.width + grown,
-    textX: theme.card.textX + grown,
-    photoRadius: theme.card.photoRadius * portraitScale,
+    width: theme.card.width + grown - emblemRoom,
+    textX: theme.card.textX + grown - emblemRoom,
+    // No portraits on prints: they take no room either.
+    photoRadius: settings.showPhotos ? theme.card.photoRadius * portraitScale : 0,
     badge: {
       ...theme.card.badge,
+      kind: emblemRoom ? 'none' : theme.card.badge.kind,
       size: theme.card.badge.size * portraitScale,
       font: { ...theme.card.badge.font, size: theme.card.badge.font.size * Math.sqrt(portraitScale) },
     },
@@ -171,12 +203,13 @@ export function renderPoster(input: PosterInput): PosterResult {
     ...theme.spacing,
     cardWidth: card.width,
     cardHeight,
+    // Compact couples: childless ones stacked, and in rows too wide for them side by side, those with children too
+    // (worked out below), which needs cards stacked under each other.
     compactChildless: settings.compactCouples,
-    tuckBelow: settings.tallGenerations,
+    tuckBelow: settings.tallGenerations || settings.compactCouples,
   };
   // Cards tucked over a corner reach above their row: the lines in the gap above keep clear of them.
-  if (settings.compactCouples && !settings.tallGenerations)
-    options = { ...options, rowGap: options.rowGap + Math.round(cardHeight * TUCK_SCALE * TUCK_UP * 0.8) };
+  if (options.compactChildless && !options.tuckBelow) options = { ...options, rowGap: options.rowGap + Math.round(cardHeight * TUCK_SCALE * TUCK_UP * 0.8) };
   // The document laid out: the tree as it is, or (to keep the person in the middle there) with their
   // brothers and sisters shared out on both sides of them.
   let laidOut = doc;
@@ -184,6 +217,11 @@ export function renderPoster(input: PosterInput): PosterResult {
     const l = computeLayout(d, o, undefined, widths);
     return theme.flow === 'up' ? flipLayout(l) : l;
   };
+  // Stacking only where asked for, at first: on paper without tall generations, in no row at all (rows
+  // where it makes the cards bigger are found below). Laid out to fit, the childless are always stacked.
+  if (settings.compactCouples && !settings.tallGenerations && paperSize(settings.paper)) {
+    options = { ...options, flatRows: new Set(Array.from({ length: MAX_ROWS }, (_, r) => r)) };
+  }
   let layout = layoutWith(options);
 
   const texts = new Map<string, CardText>();
@@ -265,7 +303,11 @@ export function renderPoster(input: PosterInput): PosterResult {
    * it; with the person kept in the middle, the tree is then slid across so
    * they come as near the middle of the page as that leaves room for.
    */
-  const place = (l: LayoutResult) => {
+  const freeLegend = !!settings.legendBox;
+  // The page's lettering and the families' names as big as asked for (see PrintSettings.titleScale, legendScale).
+  const titleScale = clamp(settings.titleScale ?? 1, 0.5, 3);
+  const legendScale = clamp(settings.legendScale ?? 1, 0.5, 3);
+  const placeWith = (l: LayoutResult, uCap: number): Placed => {
     const b = l.bounds;
     const left = b.x - gutter;
     const right = b.x + b.w;
@@ -274,10 +316,10 @@ export function renderPoster(input: PosterInput): PosterResult {
     const cx = (left + right) / 2;
     const content: Rect = { x: left, y: b.y - crownPad, w: Math.max(right - left, 1), h: Math.max(b.h + unionPad + crownPad, 1) };
     if (!paper) {
-      const u = clamp(Math.max(content.w, content.h) / 110, 8, 22);
-      const margin = theme.margin * 100 * u;
-      ctx.page = { w: content.w + margin * 2, h: 0, u, margin };
-      ctx.legendAt = 'below';
+      const base = clamp(Math.max(content.w, content.h) / 110, 8, 22);
+      const margin = theme.margin * 100 * base;
+      ctx.page = { w: content.w + margin * 2, h: 0, u: base * titleScale, lu: base * legendScale, margin };
+      ctx.legendAt = freeLegend ? 'free' : 'below';
       const header = theme.header(ctx);
       const footer = theme.footer(ctx);
       ctx.page.h = content.h + margin * 2 + header.height + footer.height;
@@ -289,7 +331,7 @@ export function renderPoster(input: PosterInput): PosterResult {
         header,
         footer,
         side: undefined,
-        legendAt: 'below' as const,
+        legendAt: ctx.legendAt,
         landscape: false,
         page,
         chart,
@@ -303,11 +345,13 @@ export function renderPoster(input: PosterInput): PosterResult {
     let best: Placed | undefined;
     for (const land of candidates) {
       // The legend under the tree, or (for styles that can) in a column beside it: whichever leaves the cards bigger.
-      for (const legendAt of theme.side ? (['below', 'side'] as const) : (['below'] as const)) {
+      const legendPlaces = freeLegend ? (['free'] as const) : theme.side ? (['below', 'side'] as const) : (['below'] as const);
+      for (const legendAt of legendPlaces) {
         const w = land ? portrait.h : portrait.w;
         const h = land ? portrait.w : portrait.h;
         const margin = theme.margin * Math.min(w, h);
-        ctx.page = { w, h, u: Math.min(w, h) / 100, margin };
+        const base = Math.min(Math.min(w, h) / 100, uCap);
+        ctx.page = { w, h, u: base * titleScale, lu: base * legendScale, margin };
         ctx.legendAt = legendAt;
         const header = theme.header(ctx);
         const footer = theme.footer(ctx);
@@ -332,8 +376,46 @@ export function renderPoster(input: PosterInput): PosterResult {
     }
     return best!;
   };
+  // The title, the legend and the rest of the page's lettering in proportion to the names on the cards, not
+  // only to the paper: on a big sheet full of small cards they would otherwise dwarf the tree. Smaller
+  // lettering leaves the tree more room, so the cards grow a little and the lettering with them.
+  const place = (l: LayoutResult): Placed => {
+    let placed = placeWith(l, Infinity);
+    if (!paper) return placed;
+    for (let round = 0; round < 3; round++) {
+      const cap = LETTERING * card.given.size * placed.scale;
+      if (cap >= (placed.page.u / titleScale) * 0.98) break;
+      placed = placeWith(l, cap);
+    }
+    return placed;
+  };
 
   let placed = place(layout);
+  // Rows too wide to stand side by side: their couples with children stacked under each other, the line to
+  // the children out at the side (see LayoutOptions.stackParents), the widest row first, as long as the width
+  // decides the size and the cards get bigger.
+  if (paper && settings.compactCouples) {
+    const widthDecides = (p: Placed) => p.chart.w / p.content.w <= p.chart.h / p.content.h + 1e-9;
+    const stackedRows = new Set<number>();
+    for (let round = 0; round < MAX_STACK_ROUNDS && widthDecides(placed) && placed.scale < MAX_SCALE; round++) {
+      let found: PackTry | undefined;
+      // The widest row; the next one only when stacking that one does not help.
+      for (const row of rowsByWidth(layout)
+        .filter((r) => !stackedRows.has(r))
+        .slice(0, 2)) {
+        if (found) break;
+        const flatRows = new Set(options.flatRows ?? []);
+        flatRows.delete(row);
+        const trialOptions = { ...options, flatRows, stackParentRows: new Set([...stackedRows, row]) };
+        const trialLayout = layoutWith(trialOptions);
+        const trialPlaced = place(trialLayout);
+        if (trialPlaced.scale > (found ?? { placed }).placed.scale * 1.01) found = { options: trialOptions, layout: trialLayout, placed: trialPlaced };
+      }
+      if (!found) break;
+      ({ options, layout, placed } = found);
+      for (const r of options.stackParentRows ?? []) stackedRows.add(r);
+    }
+  }
   // Keeping the person in the middle: they may stand elsewhere among their brothers and sisters, when
   // that brings them nearer the middle of the page without making the cards smaller. A few places at most,
   // as each is a layout of its own.
@@ -370,6 +452,66 @@ export function renderPoster(input: PosterInput): PosterResult {
       if (!wide || widest === undefined) break;
       if (!tryTiers({ ...options, tierGenerations: [...tiers, widest] })) break;
       tiers.push(widest);
+    }
+  }
+  // No empty corners: rows drawn inside the widest one, parents then not always right over their children
+  // (see LayoutOptions.squeeze), as little as gives the biggest cards, for the straightest lines.
+  const squeezed = (from: PackTry): PackTry => {
+    let best = from;
+    for (const squeeze of SQUEEZES) {
+      const trialOptions = { ...from.options, squeeze };
+      const trialLayout = layoutWith(trialOptions);
+      const trialPlaced = place(trialLayout);
+      if (trialPlaced.scale > best.placed.scale * 1.01) best = { options: trialOptions, layout: trialLayout, placed: trialPlaced };
+    }
+    return best;
+  };
+  const widthBound = (p: Placed) => p.chart.w / p.content.w <= p.chart.h / p.content.h + 1e-9;
+  if (paper && placed.scale < MAX_SCALE) {
+    const unpacked: PackTry = { options, layout, placed };
+    let best = squeezed(unpacked);
+    // Generations not in rows: whole branches drawn a row lower, wherever that lets the families beside them
+    // spread out and so makes the cards bigger (see packBranches), then drawn in as above. Only when the
+    // width still decides the size: hanging branches lower makes the tree taller.
+    if (settings.packFamilies && best.placed.scale < MAX_SCALE && widthBound(best.placed)) {
+      const packed = packBranches(
+        doc,
+        rootIds,
+        layout,
+        (sink) => {
+          const trialOptions = { ...options, sink };
+          const trialLayout = layoutWith(trialOptions);
+          return { options: trialOptions, layout: trialLayout, placed: place(trialLayout) };
+        },
+        placed.scale,
+      );
+      if (packed) {
+        const packedIn = squeezed(packed);
+        if (packedIn.placed.scale > best.placed.scale * 1.01) best = packedIn;
+      }
+    }
+    ({ options, layout, placed } = best);
+  }
+  // Room to spare across the page (the height decides the size, as with narrower cards without emblems):
+  // rows with cards stacked under each other are laid out side by side again, lower and wider, where that
+  // makes the cards bigger, those with most stacked cards first.
+  if (paper && options.tuckBelow && placed.scale < MAX_SCALE && !widthBound(placed)) {
+    const stacked = new Map<number, number>();
+    // (Couples only: brothers and sisters with nobody beside or under them stay stacked, the tree as narrow as it gets.)
+    const couple = (a: string, b: string) => index.partnerFamilies(a).some((f) => f.partners.includes(b));
+    for (const c of layout.cards) {
+      const row = layout.ranks.get(c.personId);
+      if (c.tuckedOn && row !== undefined && couple(c.personId, c.tuckedOn)) stacked.set(row, (stacked.get(row) ?? 0) + 1);
+    }
+    for (const [row] of [...stacked].sort((a, b) => b[1] - a[1] || a[0] - b[0]).slice(0, MAX_FLAT_TRIES)) {
+      const trialOptions = { ...options, flatRows: new Set([...(options.flatRows ?? []), row]) };
+      const trialLayout = layoutWith(trialOptions);
+      const trialPlaced = place(trialLayout);
+      if (trialPlaced.scale <= placed.scale * 1.01) continue;
+      options = trialOptions;
+      layout = trialLayout;
+      placed = trialPlaced;
+      if (widthBound(placed)) break;
     }
   }
   // The tree fills the page: when the width decides the size, the generations
@@ -432,12 +574,22 @@ export function renderPoster(input: PosterInput): PosterResult {
   // The space between header and footer, in the chart's own units: the tree may fill it.
   const room: TreeRoom = { x: (ctx.chart.x - tx) / s, y: (ctx.chart.y - ty) / s, w: ctx.chart.w / s, h: ctx.chart.h / s };
 
+  const headerRect = { x: margin, y: margin, w: ctx.page.w - margin * 2, h: header.height };
+  const footerRect = { x: margin, y: ctx.page.h - margin - footer.height, w: ctx.page.w - margin * 2, h: footer.height };
+  const sideRect = side && { x: ctx.chart.x + ctx.chart.w, y: ctx.chart.y, w: side.width, h: ctx.chart.h };
+  // The box with the families' names: placed by hand, or where the style put them (for the preview to offer moving it).
+  const box = settings.legendBox;
+  const legendRect: Rect | undefined = box
+    ? { x: box.x * ctx.page.w, y: box.y * ctx.page.h, w: box.w * ctx.page.w, h: box.h * ctx.page.h }
+    : (sideRect && side?.legend?.(sideRect)) || footer.legend?.(footerRect) || header.legend?.(headerRect);
+
   const body = [
     theme.background(ctx),
-    header.draw({ x: margin, y: margin, w: ctx.page.w - margin * 2, h: header.height }),
+    header.draw(headerRect),
     `<g transform="translate(${n(tx)},${n(ty)}) scale(${n(s)})">${drawChart(ctx, gutter, room)}</g>`,
-    footer.draw({ x: margin, y: ctx.page.h - margin - footer.height, w: ctx.page.w - margin * 2, h: footer.height }),
-    side?.draw({ x: ctx.chart.x + ctx.chart.w, y: ctx.chart.y, w: side.width, h: ctx.chart.h }) ?? '',
+    footer.draw(footerRect),
+    (sideRect && side?.draw(sideRect)) ?? '',
+    box && legendRect ? drawLegendBox(ctx, legendRect) : '',
     theme.overlay?.(ctx) ?? '',
   ].join('');
 
@@ -465,6 +617,7 @@ export function renderPoster(input: PosterInput): PosterResult {
     height: H,
     paper: paper ? { widthMm: W / PX_PER_MM, heightMm: H / PX_PER_MM, landscape } : undefined,
     namePt: card.given.size * s * 0.75,
+    cardMm: { w: (card.width * s) / PX_PER_MM, h: (cardHeight * s) / PX_PER_MM },
     people: doc.people.length,
     total: input.doc.people.length,
     generations,
@@ -472,7 +625,132 @@ export function renderPoster(input: PosterInput): PosterResult {
     partnerId,
     theme,
     text: allText,
+    legend: legendRect && { x: legendRect.x / W, y: legendRect.y / H, w: legendRect.w / W, h: legendRect.h / H, free: !!box },
   };
+}
+
+/** The families' names fitted into a box: as many columns as make the names biggest, the whole lot centred in it. */
+function drawLegendBox(ctx: PosterContext, box: Rect): string {
+  const entries = ctx.legend.filter((l) => l.key !== '' || ctx.legend.length > 1);
+  if (!entries.length) return '';
+  const style = ctx.theme.legendStyle;
+  const REF = 100;
+  // Widths at text 1 unit big: mark, space, label.
+  const widths = entries.map((l) => style.markW + style.markGap + ctx.measure(l.label, { ...style.font, size: REF }) / REF);
+  const ROW = 1.9;
+  const COL_GAP = 1.6;
+  let best = { size: 0, columns: 1, colW: [] as number[] };
+  for (let columns = 1; columns <= entries.length; columns++) {
+    const rows = Math.ceil(entries.length / columns);
+    const colW = Array.from({ length: columns }, (_, c) => Math.max(0, ...widths.slice(c * rows, (c + 1) * rows)));
+    const size = Math.min(box.h / (rows * ROW), box.w / (colW.reduce((a, b) => a + b, 0) + COL_GAP * (columns - 1)));
+    if (size > best.size) best = { size, columns, colW };
+  }
+  const size = Math.min(best.size, ctx.page.u * 8);
+  const rows = Math.ceil(entries.length / best.columns);
+  const totalW = (best.colW.reduce((a, b) => a + b, 0) + COL_GAP * (best.columns - 1)) * size;
+  const font = { ...style.font, size };
+  let out = '';
+  let x = box.x + (box.w - totalW) / 2;
+  const top = box.y + (box.h - rows * ROW * size) / 2;
+  best.colW.forEach((w, c) => {
+    entries.slice(c * rows, (c + 1) * rows).forEach((l, r) => {
+      const y = top + (r + 0.5) * ROW * size;
+      out += style.mark(ctx, l, x, y, size);
+      out += el('text', { x: x + (style.markW + style.markGap) * size, y: y + size * 0.34, ...fontAttrs(font), fill: style.ink }, text(l.label));
+    });
+    x += (w + COL_GAP) * size;
+  });
+  return `<g class="pp-legend">${out}</g>`;
+}
+
+// ---------------------------------------------------------------------------
+// families packed together
+
+interface PackTry {
+  options: LayoutOptions;
+  layout: LayoutResult;
+  placed: Placed;
+}
+
+/**
+ * Generations not in rows (PrintSettings.packFamilies): the children of one
+ * family, with everyone below them, drawn a row lower than their generation,
+ * so that the families beside them can spread out above or beside them and
+ * the tree gets narrower. The families in the widest row are tried one at a
+ * time, the best kept, and the same again for what is then the widest row,
+ * as long as the cards get bigger. The direct line of the person in the
+ * middle stays in its rows.
+ */
+function packBranches(
+  doc: TreeDocument,
+  direct: ReadonlySet<string>,
+  start: LayoutResult,
+  layoutWith: (sink: ReadonlyMap<string, number>) => PackTry,
+  startScale: number,
+): PackTry | undefined {
+  const inTree = new Set(doc.people.map((p) => p.id));
+  // Each family's children in the tree, for families of children who may go lower.
+  const groups = doc.families
+    .map((f) => f.children.map((c) => c.personId).filter((id) => inTree.has(id)))
+    .filter((kids) => kids.length && !kids.some((id) => direct.has(id)));
+  let best: PackTry | undefined;
+  let bestScale = startScale;
+  let layout = start;
+  const sink = new Map<string, number>();
+  let tries = 0;
+  for (let round = 0; round < 4 && tries < PACK_TRIES; round++) {
+    const row = widestRank(layout);
+    if (row === undefined) break;
+    const candidates = groups.filter((kids) => kids.some((id) => layout.ranks.get(id) === row) && !kids.some((id) => sink.has(id)));
+    let found: { tried: PackTry; kids: string[] } | undefined;
+    for (const kids of candidates) {
+      if (tries++ >= PACK_TRIES) break;
+      const trial = new Map(sink);
+      for (const id of kids) trial.set(id, 1);
+      const tried = layoutWith(trial);
+      if (tried.placed.scale > bestScale * 1.01) {
+        bestScale = tried.placed.scale;
+        found = { tried, kids };
+      }
+    }
+    if (!found) break;
+    for (const id of found.kids) sink.set(id, 1);
+    best = found.tried;
+    layout = best.layout;
+  }
+  return best;
+}
+
+/** The rows, the widest first (as LayoutResult.ranks numbers them). */
+function rowsByWidth(layout: LayoutResult): number[] {
+  const span = new Map<number, { lo: number; hi: number }>();
+  for (const c of layout.cards) {
+    const rank = layout.ranks.get(c.personId) ?? c.rank;
+    const s = span.get(rank) ?? { lo: Infinity, hi: -Infinity };
+    span.set(rank, { lo: Math.min(s.lo, c.x), hi: Math.max(s.hi, c.x + c.w) });
+  }
+  return [...span].sort((a, b) => b[1].hi - b[1].lo - (a[1].hi - a[1].lo)).map(([r]) => r);
+}
+
+/** The row whose cards reach the furthest from one end to the other. */
+function widestRank(layout: LayoutResult): number | undefined {
+  const span = new Map<number, { lo: number; hi: number }>();
+  for (const c of layout.cards) {
+    // Rows as LayoutResult.ranks numbers them (card ranks count the extra rows between generations too).
+    const rank = layout.ranks.get(c.personId) ?? c.rank;
+    const s = span.get(rank) ?? { lo: Infinity, hi: -Infinity };
+    span.set(rank, { lo: Math.min(s.lo, c.x), hi: Math.max(s.hi, c.x + c.w) });
+  }
+  let widest: number | undefined;
+  let width = 0;
+  for (const [rank, s] of span) {
+    if (s.hi - s.lo > width) {
+      width = s.hi - s.lo;
+      widest = rank;
+    }
+  }
+  return widest;
 }
 
 // ---------------------------------------------------------------------------
@@ -489,7 +767,7 @@ interface Placed {
   header: PageBlock;
   footer: PageBlock;
   side: SideBlock | undefined;
-  legendAt: 'below' | 'side';
+  legendAt: PosterContext['legendAt'];
   page: PosterContext['page'];
   chart: Rect;
   /** Where the content's `cx` is put across the page. */
@@ -624,11 +902,11 @@ function drawCard(ctx: PosterContext, at: LayoutCard, covered = false): string {
   }
   // The sex symbol in the top right corner, unless a partner's card lies there.
   if (settings.showSex && !covered) {
-    const d = sexSymbolPath(person.sex, 11);
+    const d = sexSymbolPath(person.sex, SYMBOL_SIZE);
     const color = person.sex === 'male' ? pal.male : person.sex === 'female' ? pal.female : pal.kin;
     if (d)
       parts.push(
-        `<path transform="translate(${n(c.w - 12)},12)" d="${d}" fill="none" stroke="${color}" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>`,
+        `<path transform="translate(${n(c.w - SYMBOL_INSET)},${SYMBOL_INSET})" d="${d}" fill="none" stroke="${color}" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>`,
       );
   }
 
@@ -855,7 +1133,8 @@ export function cardHeightFor(theme: PosterTheme, lines: CardLines, card: Poster
   let y = c.top + specs[0].size * 0.74;
   for (const s of specs.slice(1)) y += s.step;
   // At least as high as the portrait (an upright one is taller than wide) or badge, with a little room.
-  const portrait = Math.max(c.photoRadius * 2 * PORTRAIT_ASPECT, c.badge.kind === 'shield' ? c.badge.size * 1.18 : c.badge.size) + 12;
+  const badge = c.badge.kind === 'shield' ? c.badge.size * 1.18 : c.badge.kind === 'none' ? 0 : c.badge.size;
+  const portrait = Math.max(c.photoRadius * 2 * PORTRAIT_ASPECT, badge) + 12;
   return Math.round(Math.max(y + c.bottom, portrait));
 }
 

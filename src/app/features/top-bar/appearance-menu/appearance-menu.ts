@@ -1,5 +1,6 @@
 import { ChangeDetectionStrategy, Component, computed, inject, input } from '@angular/core';
 import { updateView } from '../../../core/model/operations';
+import { ChartBusy } from '../../../state/chart-busy';
 import { ViewSettings } from '../../../core/model/types';
 import { TreeStore } from '../../../core/store/tree-store';
 import { I18n } from '../../../i18n/i18n';
@@ -27,6 +28,7 @@ export class AppearanceMenu {
   private readonly store = inject(TreeStore);
   private readonly model = inject(ChartModel);
   protected readonly ui = inject(UiState);
+  private readonly busy = inject(ChartBusy);
   protected readonly t = inject(I18n).t;
 
   /** Only the icon on the button (narrow screens). */
@@ -36,6 +38,7 @@ export class AppearanceMenu {
   protected readonly view = this.model.view;
 
   protected set(patch: Partial<ViewSettings>): void {
-    this.store.update((doc) => updateView(doc, patch));
+    // Most settings change the cards, and so the whole layout: behind the busy note for a big tree.
+    this.busy.run(() => this.store.update((doc) => updateView(doc, patch)));
   }
 }

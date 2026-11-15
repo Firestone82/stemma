@@ -2,7 +2,7 @@ import { sampleDocument } from '../model/sample';
 import { DEFAULT_PRINT, DEFAULT_VIEW, TreeDocument } from '../model/types';
 import { CURRENT_FORMAT } from './format';
 import { XmlMigration } from './migrations';
-import { parseTree, XmlFormatError } from './parser';
+import { parseLegendBox, parseTree, XmlFormatError } from './parser';
 import { serializeTree } from './serializer';
 import { SAVED_BY_1_0 } from './fixtures/saved-by-1-0';
 
@@ -96,6 +96,32 @@ describe('XML format', () => {
       expect(serializeTree(doc)).toMatch(/<print [^>]*tallGenerations="true"[^>]*showHidden="true" siblingsOnly="true"/);
       expect(serializeTree(doc)).toMatch(/<view [^>]*tallGenerations="true" siblingsOnly="true"/);
       expect(roundTrip(doc)).toEqual(doc);
+    });
+  });
+
+  describe('format 1.8', () => {
+    it("round-trips the families' names placed by hand, and ignores a box that makes no sense", () => {
+      const doc = sampleDocument(new Date('2026-01-01T00:00:00Z'));
+      expect(serializeTree(doc)).not.toMatch(/legendBox/);
+      doc.print = { ...DEFAULT_PRINT, packFamilies: true, showEmblems: false, legendBox: { x: 0.05, y: 0.8, w: 0.3, h: 0.12 } };
+      expect(serializeTree(doc)).toMatch(/<print [^>]*packFamilies="true" showEmblems="false" legendBox="0.05 0.8 0.3 0.12"/);
+      expect(roundTrip(doc)).toEqual(doc);
+      expect(parseLegendBox('0.9 0.9 0.5 0.5')).toEqual({ x: 0.9, y: 0.9, w: expect.closeTo(0.1), h: expect.closeTo(0.1) });
+      expect(parseLegendBox('1 2 3')).toBeUndefined();
+      expect(parseLegendBox('0 0 0 0.2')).toBeUndefined();
+    });
+
+    it('round-trips the sizes of the title and the family names, and reads stacked couples as compact ones', () => {
+      const doc = sampleDocument(new Date('2026-01-01T00:00:00Z'));
+      expect(serializeTree(doc)).not.toMatch(/titleScale|legendScale/);
+      doc.print = { ...DEFAULT_PRINT, titleScale: 1.6, legendScale: 2 };
+      expect(serializeTree(doc)).toMatch(/<print [^>]*titleScale="1.6" legendScale="2"/);
+      expect(roundTrip(doc)).toEqual(doc);
+      const xml = serializeTree(doc).replace(/titleScale="1.6"/, 'titleScale="9" stackCouples="true"');
+      const read = parseTree(xml).doc.print!;
+      expect(read.titleScale).toBe(3);
+      expect(read.compactCouples).toBe(true);
+      expect(serializeTree({ ...doc, print: read })).not.toMatch(/stackCouples/);
     });
   });
 
@@ -243,7 +269,7 @@ describe('XML format', () => {
 
   describe('compatibility between versions', () => {
     const newerMinor = `<?xml version="1.0" encoding="UTF-8"?>
-<familyTree xmlns="${NS}" xmlns:x="urn:example:other" formatVersion="1.8" generator="Stemma 1.9.0" x:origin="import" futureRootAttr="yes">
+<familyTree xmlns="${NS}" xmlns:x="urn:example:other" formatVersion="1.9" generator="Stemma 1.10.0" x:origin="import" futureRootAttr="yes">
   <meta>
     <title>Future file</title>
     <colour>teal</colour>
@@ -277,7 +303,7 @@ describe('XML format', () => {
     it('reads a file from a newer minor version and says so', () => {
       const result = parseTree(newerMinor);
       expect(result.fromNewerVersion).toBe(true);
-      expect(result.fileVersion).toBe('1.8');
+      expect(result.fileVersion).toBe('1.9');
       expect(result.warnings.some((w) => w.code === 'xml.newer-minor' && w.text.includes('newer version'))).toBe(true);
       expect(result.doc.people[0].name.given).toBe('Ada');
       expect(result.doc.view.lines).toBe('curved');
@@ -330,7 +356,7 @@ describe('XML format', () => {
     });
 
     it('refuses a newer major version unless forced', () => {
-      const newer = newerMinor.replace('formatVersion="1.8"', 'formatVersion="2.0"');
+      const newer = newerMinor.replace('formatVersion="1.9"', 'formatVersion="2.0"');
       expect(() => parseTree(newer)).toThrow(XmlFormatError);
       try {
         parseTree(newer);

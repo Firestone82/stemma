@@ -19,11 +19,14 @@
         [summary]="model.summary()"
         [note]="model.sizeNote()"
         [omitted]="model.omittedCount()"
+        [drawing]="model.drawing()"
         [canPopOut]="preview.available()"
         [popOutFailed]="preview.failed()"
         (popOut)="preview.open()"
         (pick)="model.omit($event)"
         (restore)="model.restoreOmitted()"
+        [legend]="model.poster()?.legend ?? null"
+        (legendMove)="model.set({ legendBox: $event ?? undefined })"
       />
     }
 

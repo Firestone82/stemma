@@ -149,33 +149,60 @@ export const heraldic: PosterTheme = {
 
   footer(c): PageBlock {
     const u = c.page.u;
-    const legendFont: FontSpec = { family: SMALL_CAPS, size: u * 1.25, weight: 500, letterSpacing: 0.05 };
-    const legend = c.legend.filter((l) => l.key !== '' || c.legend.length > 1);
-    // One row: the families' shields along it.
-    const height = u * 3.6;
+    const lu = c.page.lu ?? u;
+    const legendFont: FontSpec = { family: SMALL_CAPS, size: lu * 1.25, weight: 500, letterSpacing: 0.05 };
+    const legend = c.legendAt === 'free' ? [] : c.legend.filter((l) => l.key !== '' || c.legend.length > 1);
+    const shieldW = lu * 1.5;
+    const gap = lu * 2.4;
+    const rowH = lu * 2.4;
+    const items = legend.map((l) => ({ l, w: shieldW + lu * 0.7 + c.measure(l.label, legendFont) }));
+    // The families' shields in rows along the foot, as many as they need; just a margin when they are elsewhere.
+    const rows: (typeof items)[] = [];
+    let used = Infinity;
+    const room = c.page.w - c.page.margin * 2;
+    for (const it of items) {
+      if (used + gap + it.w > room) {
+        rows.push([]);
+        used = -gap;
+      }
+      rows[rows.length - 1].push(it);
+      used += gap + it.w;
+    }
+    const rowW = (row: typeof items) => row.reduce((s, i) => s + i.w, 0) + gap * (row.length - 1);
+    const height = rows.length ? u * 1.2 + rows.length * rowH : u * 0.6;
     return {
       height,
+      legend(r: Rect) {
+        if (!rows.length) return undefined;
+        return { x: r.x, y: r.y + u * 0.6, w: Math.min(r.w, Math.max(...rows.map(rowW))), h: rows.length * rowH };
+      },
       draw(r: Rect) {
         let out = '';
-        const y = r.y + u * 1.8;
-        if (legend.length) {
-          const shieldW = u * 1.5;
-          const gap = u * 2.4;
-          const room = r.w;
-          const items = legend.map((l) => ({ l, w: shieldW + u * 0.7 + c.measure(l.label, legendFont) }));
-          let total = items.reduce((s, i) => s + i.w, 0) + gap * (items.length - 1);
-          while (total > room && items.length > 1) total -= items.pop()!.w + gap;
+        rows.forEach((row, i) => {
+          const y = r.y + u * 0.6 + (i + 0.5) * rowH;
           let x = r.x;
-          for (const { l, w } of items) {
+          for (const { l, w } of row) {
             const t = c.theme.tinctures[l.tincture];
             out += `<g transform="translate(${n(x)},${n(y - shieldW * 0.62)})">${el('path', { d: shieldPath(shieldW, shieldW * 1.18), fill: t.fill, stroke: GOLD_DARK, 'stroke-width': 0.7 })}</g>`;
-            out += el('text', { x: x + shieldW + u * 0.7, y: y + legendFont.size * 0.32, ...fontAttrs(legendFont), fill: palette.muted }, text(l.label));
+            out += el('text', { x: x + shieldW + lu * 0.7, y: y + legendFont.size * 0.32, ...fontAttrs(legendFont), fill: palette.muted }, text(l.label));
             x += w + gap;
           }
-        }
+        });
         return out;
       },
     };
+  },
+
+  legendStyle: {
+    font: { family: SMALL_CAPS, size: 1, weight: 500, letterSpacing: 0.05 },
+    ink: palette.muted,
+    markW: 1.2,
+    markGap: 0.56,
+    mark(c, l, x, y, size) {
+      const w = size * 1.2;
+      const t = c.theme.tinctures[l.tincture];
+      return `<g transform="translate(${n(x)},${n(y - w * 0.59)})">${el('path', { d: shieldPath(w, w * 1.18), fill: t.fill, stroke: GOLD_DARK, 'stroke-width': 0.7 })}</g>`;
+    },
   },
 
   overlay(c) {
@@ -207,7 +234,15 @@ export const heraldic: PosterTheme = {
         'stroke-dasharray': look.unknown ? UNKNOWN_DASH : undefined,
       }) +
       // A thin band in the family colour along the top edge, like the chief of a shield; clear of the sex symbol under it.
-      el('path', { d: `M${k + 1},2.2H${n(w - k - 1)}L${n(w - k + 1.6)},4.8H${k - 1.6}Z`, fill: band, opacity: 0.9 }) +
+      // Without the shields it is the only mark of the family, and a little deeper.
+      el('path', {
+        d:
+          c.settings.showEmblems === false
+            ? `M${k + 0.5},2H${n(w - k - 0.5)}L${n(w - k + 3.5)},6.8H${k - 3.5}Z`
+            : `M${k + 1},2.2H${n(w - k - 1)}L${n(w - k + 1.6)},4.8H${k - 1.6}Z`,
+        fill: band,
+        opacity: 0.9,
+      }) +
       (look.unknown ? '' : el('path', { d: `M${k + 2.5},${n(h - 2.5)}H${n(w - k - 2.5)}`, stroke: GOLD, 'stroke-width': 0.8, opacity: 0.9 }))
     );
   },

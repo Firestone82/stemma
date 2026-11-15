@@ -48,6 +48,35 @@ export interface LayoutOptions {
    * one card and the row grows downwards instead.
    */
   tuckBelow?: boolean;
+  /**
+   * Generations need not stand in rows: these people, with their partners and
+   * everyone below them, are drawn this many rows lower than their
+   * generation, so that a neighbouring family's children can spread out
+   * beside or above them. Prints use this to make a wide tree narrower.
+   */
+  sink?: ReadonlyMap<string, number>;
+  /**
+   * Draws every row inside the width the widest one needs, from 0 (as wide as
+   * the rows came out) to 1 (as narrow as the widest row can be drawn): rows
+   * that reach further out are pushed in, and the rest settle around them, so
+   * parents need not stand right over their children. Prints use this to
+   * leave no empty corners.
+   */
+  squeeze?: number;
+  /**
+   * With tuckBelow: rows (as LayoutResult.ranks numbers them) where no partner is stacked under another's
+   * card; couples stand side by side there, so the row is lower and wider (brothers and sisters with
+   * nobody beside them stay stacked all the same). Prints use this where the page has room across.
+   */
+  flatRows?: ReadonlySet<number>;
+  /**
+   * With tuckBelow: couples with children are stacked too, the partner under
+   * the card, and the line to their children comes down the side of the two
+   * cards from the rings between them; the tree is narrower, its rows deeper.
+   */
+  stackParents?: boolean;
+  /** With tuckBelow: couples with children stacked only in these rows (as LayoutResult.ranks numbers them). */
+  stackParentRows?: ReadonlySet<number>;
 }
 
 /** Space between the two tiers of a row drawn in two tiers (see LayoutOptions.tierGenerations). */
@@ -62,7 +91,9 @@ export const TUCK_UP = 0.62;
 /** Space between a card and the partner's card stacked under it (see LayoutOptions.tuckBelow). */
 export const TUCK_BELOW_GAP = 8;
 /** How far the line joining a card and the partner's card stacked under it runs out past their right edge. */
-export const TUCK_SIDE = 12;
+export const TUCK_SIDE = 18;
+/** How far out from a stacked couple's rings the line to their children runs before it turns down. */
+export const STACK_STEM = 14;
 
 export const COMFORTABLE_LAYOUT: LayoutOptions = {
   cardWidth: 188,
@@ -136,9 +167,11 @@ export interface LayoutDrop {
   x: number;
   /**
    * Points after the bar; the last one is where the line meets the child's
-   * card: the top centre, or, for brothers and sisters stacked in a column
-   * (see LayoutCard.tuckedOn), the middle of its right edge, reached from the
-   * line down the column's side.
+   * card: the top centre, or the middle of a side edge, reached from a line
+   * down beside the card: for brothers and sisters stacked in a column (see
+   * LayoutCard.tuckedOn) the column's right side, or its left when the line
+   * comes from the left and there is room; for a child the line would
+   * otherwise reach by stepping across above it, the nearer free side.
    */
   points: Pt[];
   /**
@@ -168,6 +201,12 @@ export interface LayoutPass {
 export interface LayoutConnector {
   familyId: string;
   stem: Pt;
+  /**
+   * Where the line starts when that is not straight above the stem: the rings
+   * of a couple stacked under each other, at their side, from which the line
+   * runs out sideways to the stem before it goes down (see LayoutOptions.stackParents).
+   */
+  stemFrom?: Pt;
   /** Where the parents' row ends below the stem. A line that turns only past it cannot run behind a card in that row. */
   clearY: number;
   barY: number;

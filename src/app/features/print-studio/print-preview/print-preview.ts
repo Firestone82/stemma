@@ -1,4 +1,5 @@
 import { ChangeDetectionStrategy, Component, ElementRef, computed, effect, inject, input, output, signal, untracked, viewChild } from '@angular/core';
+import { LegendBox } from '../../../core/model/types';
 import { I18n } from '../../../i18n/i18n';
 import { Icon } from '../../../shared/icon/icon';
 
@@ -7,7 +8,9 @@ import { Icon } from '../../../shared/icon/icon';
  * itself, so it uses the fonts the app has already loaded. A button opens it
  * in a window of its own. The preview can be zoomed into for a closer look
  * (the wheel, a double click, the buttons) and dragged about while zoomed;
- * that changes nothing on the print.
+ * that changes nothing on the print. The families' names sit in a box that
+ * can be dragged elsewhere on the page and resized by its corners; the names
+ * are fitted to it.
  */
 @Component({
   selector: 'stemma-print-preview',
@@ -35,7 +38,23 @@ export class PrintPreview {
   readonly pick = output<string>();
   /** People left out of this print by clicking, if any, with how to bring them back. */
   readonly omitted = input(0);
+  /** The page is being drawn again: a note over the one shown before (see PrintModel.drawing). */
+  readonly drawing = input(false);
   readonly restore = output<void>();
+  /** Where the families' names are, as shares of the page (see PosterResult.legend). */
+  readonly legend = input<(LegendBox & { free: boolean }) | null>(null);
+  /** The names' box moved or resized by hand; null to put them back where the style has them. */
+  readonly legendMove = output<LegendBox | null>();
+
+  protected readonly corners = ['nw', 'ne', 'sw', 'se'] as const;
+  /** The box while it is being dragged, before the page is drawn again with it. */
+  private readonly boxDraft = signal<LegendBox | null>(null);
+  protected readonly legendShown = computed(() => {
+    const draft = this.boxDraft();
+    const at = this.legend();
+    return draft ? { ...draft, free: true } : at;
+  });
+  protected boxDrag: { id: number; what: 'move' | Corner; x: number; y: number; start: LegendBox; moved: boolean } | null = null;
 
   protected readonly maxZoom = MAX_ZOOM;
   /** The closer look: the page `k` times bigger, moved by `x`, `y` pixels of the sheet. */
@@ -105,6 +124,52 @@ export class PrintPreview {
     this.panning.set(false);
   }
 
+  protected onBoxDown(event: PointerEvent, what: 'move' | Corner): void {
+    const at = this.legend();
+    if (event.button !== 0 || !at || this.boxDrag) return;
+    event.stopPropagation();
+    event.preventDefault();
+    const box = event.currentTarget instanceof HTMLElement ? event.currentTarget.closest('.legend-box') : null;
+    box?.setPointerCapture(event.pointerId);
+    this.boxDrag = { id: event.pointerId, what, x: event.clientX, y: event.clientY, start: { x: at.x, y: at.y, w: at.w, h: at.h }, moved: false };
+  }
+
+  protected onBoxMove(event: PointerEvent): void {
+    const d = this.boxDrag;
+    const sheet = this.sheetBox();
+    if (!d || d.id !== event.pointerId || !sheet) return;
+    event.stopPropagation();
+    // Pointer travel as shares of the page, however far it is zoomed in.
+    const k = this.zoom().k;
+    const dx = (event.clientX - d.x) / (sheet.width * k);
+    const dy = (event.clientY - d.y) / (sheet.height * k);
+    if (!d.moved && Math.hypot(event.clientX - d.x, event.clientY - d.y) < 3) return;
+    d.moved = true;
+    this.boxDraft.set(movedBox(d.start, d.what, dx, dy));
+  }
+
+  protected onBoxUp(event: PointerEvent): void {
+    const d = this.boxDrag;
+    if (!d || d.id !== event.pointerId) return;
+    event.stopPropagation();
+    this.boxDrag = null;
+    const draft = this.boxDraft();
+    if (d.moved && draft) this.legendMove.emit(draft);
+    else this.boxDraft.set(null);
+  }
+
+  /** Arrow keys move the box a little; with Shift they make it bigger or smaller. */
+  protected onBoxKey(event: KeyboardEvent): void {
+    const at = this.legend();
+    const step = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }[event.key];
+    if (!at || !step) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const d = 0.01;
+    const start = { x: at.x, y: at.y, w: at.w, h: at.h };
+    this.legendMove.emit(movedBox(start, event.shiftKey ? 'se' : 'move', step[0] * d, step[1] * d));
+  }
+
   /** Zooms by `factor` keeping the point under (`cx`, `cy`) on screen still. */
   private zoomAt(factor: number, cx: number, cy: number): void {
     const box = this.sheetBox();
@@ -128,7 +193,7 @@ export class PrintPreview {
   }
 
   private sheetBox(): DOMRect | undefined {
-    return this.sheet()?.nativeElement.parentElement?.getBoundingClientRect();
+    return this.sheet()?.nativeElement.parentElement?.parentElement?.getBoundingClientRect();
   }
 
   /** Which card a click landed on, if any. */
@@ -151,6 +216,10 @@ export class PrintPreview {
       const svg = this.svg();
       const host = this.sheet()?.nativeElement;
       if (host) host.innerHTML = svg ?? '';
+      // The page drawn with the box where it was dropped: the box follows the page again.
+      untracked(() => {
+        if (!this.boxDrag) this.boxDraft.set(null);
+      });
     });
     // Another paper or orientation is another page: back to the whole of it.
     effect(() => {
@@ -162,3 +231,22 @@ export class PrintPreview {
 
 /** How far the preview zooms in. */
 const MAX_ZOOM = 8;
+
+type Corner = 'nw' | 'ne' | 'sw' | 'se';
+
+/** The smallest the names' box can be made, as a share of the page. */
+const MIN_BOX = 0.04;
+
+/** `start` moved, or one corner of it dragged, by `dx`, `dy` (shares of the page), kept on the page. */
+export function movedBox(start: LegendBox, what: 'move' | Corner, dx: number, dy: number): LegendBox {
+  const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
+  if (what === 'move') return { ...start, x: clamp(start.x + dx, 0, 1 - start.w), y: clamp(start.y + dy, 0, 1 - start.h) };
+  let { x, y } = start;
+  let right = start.x + start.w;
+  let bottom = start.y + start.h;
+  if (what === 'nw' || what === 'sw') x = clamp(x + dx, 0, right - MIN_BOX);
+  else right = clamp(right + dx, x + MIN_BOX, 1);
+  if (what === 'nw' || what === 'ne') y = clamp(y + dy, 0, bottom - MIN_BOX);
+  else bottom = clamp(bottom + dy, y + MIN_BOX, 1);
+  return { x, y, w: right - x, h: bottom - y };
+}

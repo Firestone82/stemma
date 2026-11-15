@@ -124,6 +124,26 @@ const SNAP = 3;
 
 /** The lines from a family down to each child (twins get a line each, like any other child). */
 export function connectorPaths(c: LayoutConnector, style: LineStyle, radius = 10): DropPath[] {
+  const paths = connectorPathsFromStem(c, style, radius);
+  if (!c.stemFrom) return paths;
+  // Out from the rings at a stacked couple's side to the stem first (see LayoutConnector.stemFrom).
+  const from = c.stemFrom;
+  return paths.map((p) =>
+    style === 'square'
+      ? {
+          ...p,
+          d:
+            `M${r1(from.x)},${r1(from.y)}` +
+            p.d.replace(
+              /^M[-\d.]+,[-\d.]+/,
+              `L${r1(c.stem.x - Math.min(radius, 6))},${r1(c.stem.y)}Q${r1(c.stem.x)},${r1(c.stem.y)} ${r1(c.stem.x)},${r1(c.stem.y + Math.min(radius, 6))}`,
+            ),
+        }
+      : { ...p, d: `M${r1(from.x)},${r1(from.y)}L` + p.d.slice(1) },
+  );
+}
+
+function connectorPathsFromStem(c: LayoutConnector, style: LineStyle, radius: number): DropPath[] {
   const single = c.drops.length === 1;
   return c.drops.map((drop) => {
     const target = drop.points[drop.points.length - 1];

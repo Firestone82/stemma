@@ -6,6 +6,7 @@ import { TreeStore } from '../../../../core/store/tree-store';
 import { I18n } from '../../../../i18n/i18n';
 import { Icon } from '../../../../shared/icon/icon';
 import { missingText } from '../../../../shared/missing';
+import { DataChecks } from '../../../../state/data-checks';
 import { ChartModel } from '../../../../state/chart-model';
 import { FamilyView } from '../../../../state/family-view';
 import { UiState } from '../../../../state/ui-state';
@@ -31,6 +32,7 @@ export class PeopleList {
   private readonly model = inject(ChartModel);
   private readonly ui = inject(UiState);
   private readonly i18n = inject(I18n);
+  private readonly checks = inject(DataChecks);
   private readonly familyView = inject(FamilyView);
   protected readonly t = this.i18n.t;
 
@@ -50,6 +52,7 @@ export class PeopleList {
     const names = this.model.familyNames();
     const shown = this.model.familyKeys();
     const people = this.store.doc().people.filter((p) => !q || searchText(p).includes(q));
+    const problems = this.checks.byPerson();
     const row = (p: Person): FamilyRow => ({
       id: p.id,
       name: this.i18n.sortName(p),
@@ -57,6 +60,7 @@ export class PeopleList {
       tincture: colors.byPerson.get(p.id) ?? 'argent',
       offChart: hidden.has(p.id),
       missing: missingText(this.i18n, p),
+      problem: problems.get(p.id) ?? '',
     });
     return groupByFamily(people, this.i18n.compare).map((g) => ({
       key: g.key,

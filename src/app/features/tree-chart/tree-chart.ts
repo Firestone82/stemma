@@ -22,6 +22,7 @@ import { I18n } from '../../i18n/i18n';
 import { Icon } from '../../shared/icon/icon';
 import { ArrangeActions } from '../../state/arrange-actions';
 import { ChartModel } from '../../state/chart-model';
+import { ChartBusy } from '../../state/chart-busy';
 import { PersonActions } from '../../state/person-actions';
 import { Relation, UiState } from '../../state/ui-state';
 import { ArrangeDrag, DRAG_START, blockOf, lowestLineMove, previewLayout } from './arrange';
@@ -89,6 +90,7 @@ export class TreeChart {
   private readonly i18n = inject(I18n);
   private readonly measure = inject(TextMeasurer);
   protected readonly familyView = inject(FamilyView);
+  protected readonly chartBusy = inject(ChartBusy);
   protected readonly t = this.i18n.t;
 
   /** Space covered by overlays (the bottom sheet on phones), kept clear when fitting. */

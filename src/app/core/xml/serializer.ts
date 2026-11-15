@@ -190,6 +190,13 @@ function writePrint(w: XmlWriter, p: PrintSettings): void {
     ['childlessOutside', p.childlessOutside ? 'true' : undefined],
     ['fullDates', p.fullDates ? 'true' : undefined],
     ['siblingsOnly', p.siblingsOnly ? 'true' : undefined],
+    ['packFamilies', p.packFamilies ? 'true' : undefined],
+    ['showEmblems', p.showEmblems === false ? 'false' : undefined],
+    ['tiles', p.tiles || undefined],
+    ['tilesBorderless', p.tilesBorderless ? 'true' : undefined],
+    ['titleScale', p.titleScale && p.titleScale !== 1 ? String(Math.round(p.titleScale * 100) / 100) : undefined],
+    ['legendScale', p.legendScale && p.legendScale !== 1 ? String(Math.round(p.legendScale * 100) / 100) : undefined],
+    ['legendBox', p.legendBox ? [p.legendBox.x, p.legendBox.y, p.legendBox.w, p.legendBox.h].map((v) => Number(v.toFixed(4))).join(' ') : undefined],
     ...extAttrs(p.ext),
   ];
   if (p.ext?.elements?.length) {

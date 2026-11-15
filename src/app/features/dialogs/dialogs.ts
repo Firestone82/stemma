@@ -5,13 +5,12 @@ import { ConfirmDelete } from './confirm-delete/confirm-delete';
 import { ConfirmNew } from './confirm-new/confirm-new';
 import { ImportReport } from './import-report/import-report';
 import { NewerVersion } from './newer-version/newer-version';
-import { PhotoCrop } from './photo-crop/photo-crop';
 import { XmlExport } from './xml-export/xml-export';
 
 /** The one modal dialog of the app; what it shows comes from UiState.dialog. */
 @Component({
   selector: 'stemma-dialogs',
-  imports: [ConfirmDelete, ConfirmNew, ImportReport, NewerVersion, XmlExport, AboutFormat, PhotoCrop],
+  imports: [ConfirmDelete, ConfirmNew, ImportReport, NewerVersion, XmlExport, AboutFormat],
   templateUrl: './dialogs.html',
   styleUrl: './dialogs.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,

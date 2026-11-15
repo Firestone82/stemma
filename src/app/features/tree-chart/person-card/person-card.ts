@@ -74,8 +74,6 @@ export class PersonCard {
     const m = this.metrics();
     return `translate(${m.shield.x},${round((this.card().h - m.shield.h) / 2)})`;
   });
-  protected readonly badgeX = computed(() => this.metrics().shield.x + this.metrics().shield.w / 2);
-  protected readonly clipId = computed(() => `photo-${this.card().personId}`);
   protected readonly sexSymbol = computed(() => (this.showSex() ? sexSymbolPath(this.label().sex, 11) : ''));
   protected readonly symbolTransform = computed(() => `translate(${round(this.card().w - 12)},12)`);
   protected readonly focusTransform = computed(() => `translate(${round(this.card().w - 13)},${round(this.card().h - 13)})`);

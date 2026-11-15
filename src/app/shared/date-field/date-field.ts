@@ -5,9 +5,10 @@ import { I18n } from '../../i18n/i18n';
 
 /**
  * A date box that accepts the many ways people write dates ("17.5.1923",
- * "May 1923", "17. května 1923", "abt 1900", "before 1850") and says how it read
- * them, in numbers at the right of the box ("17. 5. 1923"). A stored date is shown
- * in numbers too, without month names.
+ * "May 1923", "17. května 1923", "abt 1900", "before 1850"). The date is kept in
+ * the box in numbers ("17. 5. 1923") and written out with the month's name at
+ * the right of it ("17. května 1923"), as typed and as stored, so a slip in
+ * day or month shows at once.
  */
 @Component({
   selector: 'stemma-date-field',
@@ -39,12 +40,12 @@ export class DateField {
     return parsed && !parsed.value ? { text: this.t('date.keptAsText'), warn: true } : null;
   });
 
-  /** How a typed date was read, in numbers, at the right of the box; nothing when it reads as typed. */
+  /** The date written out, at the right of the box: as it is being typed, or as stored; nothing when that says no more than the box. */
   protected readonly reading = computed(() => {
-    const parsed = this.parsed();
-    if (!parsed?.value) return '';
-    const numeric = this.i18n.dates().numericDate(parsed);
-    return numeric.replace(/\s/g, '') === this.text().trim().replace(/\s/g, '') ? '' : numeric;
+    const date = this.typed() ? this.parsed() : this.value();
+    if (!date?.value) return '';
+    const words = this.i18n.dates().fullDate(date);
+    return words.replace(/\s/g, '') === this.text().trim().replace(/\s/g, '') ? '' : words;
   });
 
   constructor() {
