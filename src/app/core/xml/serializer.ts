@@ -194,6 +194,7 @@ function writePrint(w: XmlWriter, p: PrintSettings): void {
             .join(' ')
         : undefined,
     ],
+    ['added', p.added?.length ? p.added.join(' ') : undefined],
     ['tiles', p.tiles || undefined],
     ['tilesBorderless', p.tilesBorderless ? 'true' : undefined],
     ['titleSize', p.titleSize ? String(Math.round(p.titleSize * 100) / 100) : undefined],

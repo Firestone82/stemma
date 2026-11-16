@@ -291,6 +291,11 @@ export interface PrintSettings extends CardSettings {
    * is 188 wide). The lines to a moved card follow it.
    */
   moves?: Readonly<Record<string, { x: number; y: number }>>;
+  /**
+   * People brought onto the print by hand, by id, from a card's menu (its parents, brothers and sisters, whole
+   * family), whatever the reach above leaves out: the parents of a former partner, say.
+   */
+  added?: readonly string[];
   /** How each couple stands, as a word at their marker: "married", "divorced". */
   unionText: boolean;
   /**

@@ -25,13 +25,13 @@
 @if (l.dates) {
   <svg:text class="dates" [attr.font-size]="d.dates.size" [attr.x]="d.textX" [attr.y]="y.dates">{{ l.dates }}</svg:text>
 }
-@if (ribbons() && l.deceased) {
-  <svg:path class="mourning" [class.at-birth]="l.diedAtBirth" [attr.d]="d.ribbon">
+@if (mourning()) {
+  <svg:path class="mourning" [class.at-birth]="l.diedAtBirth" [attr.d]="ribbon()">
     <svg:title>{{ l.diedAtBirth ? t('card.diedAtBirth') : t('card.deceased') }}</svg:title>
   </svg:path>
 }
 @if (l.hiddenFromPrint && !c.ghost) {
-  <svg:g class="no-print-mark" [attr.transform]="'translate(' + (c.w - 30) + ',4)'">
+  <svg:g class="no-print-mark" [attr.transform]="'translate(' + (c.w - (mourning() ? 30 + d.ribbonBand.to : 30)) + ',4)'">
     <svg:title>{{ t('person.hiddenFromPrint') }}</svg:title>
     <svg:path
       d="M4.2 5.1V2.4h6v2.7M4.2 10.2H3a.9.9 0 0 1-.9-.9V6a.9.9 0 0 1 .9-.9h8.4a.9.9 0 0 1 .9.9v3.3a.9.9 0 0 1-.9.9h-1.2M4.2 8.4h6V12h-6zM2.1 2.1l10.2 10.2"

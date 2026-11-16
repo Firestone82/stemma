@@ -56,6 +56,25 @@ export class UiState {
     this.omitRedo.set([]);
   }
 
+  /**
+   * People brought back onto the print (from a card's menu): no longer left out. Each click that left people
+   * out keeps the others it left out, for undo.
+   */
+  keepInPrint(ids: readonly string[]): void {
+    const keep = new Set(ids);
+    const all = this.printOmitted();
+    if (!all.some((id) => keep.has(id))) return;
+    let at = 0;
+    const steps = this.omitSteps().map((step) => {
+      const ids = all.slice(at, at + step.count);
+      at += step.count;
+      return { ...step, count: ids.filter((id) => !keep.has(id)).length };
+    });
+    this.printOmitted.set(all.filter((id) => !keep.has(id)));
+    this.omitSteps.set(steps.filter((step) => step.count > 0));
+    this.omitRedo.set([]);
+  }
+
   /** Everyone back in the print; nothing left to undo or redo there. */
   clearPrintOmitted(): void {
     this.printOmitted.set([]);

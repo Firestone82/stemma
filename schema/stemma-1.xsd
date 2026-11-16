@@ -308,6 +308,8 @@
     <xs:attribute name="titleAt" type="xs:string"/>
     <!-- 1.9: cards moved by hand: "I12:30,-14.5 I40:0,66", each a person and how far right and down from where the layout puts the card, in the layout's units (a card is about 190 wide). -->
     <xs:attribute name="moves" type="xs:string"/>
+    <!-- 1.9: people brought onto the print by hand, whatever the reach leaves out: "I12 I13 I40", their ids. -->
+    <xs:attribute name="added" type="xs:string"/>
     <xs:attribute name="ancestors" type="t:Reach" default="all"/>
     <xs:attribute name="descendants" type="t:Reach" default="all"/>
     <xs:attribute name="branches" type="t:Reach" default="all"/>

@@ -44,6 +44,10 @@ export class PrintPreview {
   readonly moved = input(0);
   /** All of them back where the layout has them. */
   readonly unmove = output<void>();
+  /** How many people have been brought onto the print by hand (from a card's menu). */
+  readonly added = input(0);
+  /** Nobody brought onto it by hand any more. */
+  readonly unadd = output<void>();
   /** The lines from parents to children, whole (see PosterResult.lines). */
   readonly lines = input<readonly ChildLine[]>([]);
   /** A click on a line: every child who hangs on that stretch of it, with the family the line belongs to. */

@@ -186,13 +186,14 @@ describe('XML format', () => {
         unionText: true,
         titleAt: { x: 0.25, y: 0.9 },
         moves: { I7: { x: 30, y: -14.5 }, I12: { x: 0, y: 66 } },
+        added: ['I14', 'I3'],
       };
       const xml = serializeTree(doc);
-      expect(xml).toMatch(/<print [^>]*tight="true" unionText="true" titleAt="0.25 0.9" moves="I7:30,-14.5 I12:0,66"/);
+      expect(xml).toMatch(/<print [^>]*tight="true" unionText="true" titleAt="0.25 0.9" moves="I7:30,-14.5 I12:0,66" added="I14 I3"/);
       expect(roundTrip(doc)).toEqual(doc);
       // None of it is written for a print left as it comes, and what is not a place is dropped.
       doc.print = { ...DEFAULT_PRINT };
-      expect(serializeTree(doc)).not.toMatch(/tight|unionText|titleAt|moves/);
+      expect(serializeTree(doc)).not.toMatch(/tight|unionText|titleAt|moves|added/);
       const odd = parseTree(xml.replace('I12:0,66', 'I12:left,66').replace('titleAt="0.25 0.9"', 'titleAt="2 x"')).doc.print!;
       expect(odd.moves).toEqual({ I7: { x: 30, y: -14.5 } });
       expect(odd.titleAt).toBeUndefined();

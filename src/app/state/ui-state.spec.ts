@@ -76,4 +76,16 @@ describe('undo and redo in the print studio', () => {
     expect(ui.printOmitted()).toEqual([]);
     expect(paper()).not.toBe('A2');
   });
+
+  it('brings people back onto the print from a card menu, and undo still goes back through the clicks as they were', () => {
+    ui.omitFromPrint(['I29']);
+    ui.omitFromPrint(['I20', 'I25']);
+    ui.omitFromPrint(['I27']);
+    ui.keepInPrint(['I25', 'I27']);
+    expect(ui.printOmitted()).toEqual(['I29', 'I20']);
+    ui.undoInPrint();
+    expect(ui.printOmitted()).toEqual(['I29']);
+    ui.undoInPrint();
+    expect(ui.printOmitted()).toEqual([]);
+  });
 });

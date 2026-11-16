@@ -116,15 +116,19 @@ describe('the printed page', () => {
       .map((m) => ({ x: Number(m[2]), y: Number(m[3]) }));
     const inside = others.filter((o) => o.x < x + w && o.x + p.cardUnits.w > x && o.y < y + h && o.y + p.cardUnits.h > y);
     expect(inside).toEqual([]);
-    // The lines from their parents end on the frame: none comes down past its top onto their cards.
+    // The lines from their parents run through the frame onto their cards.
     for (const child of ['I11', 'I15']) {
       const d = new RegExp(`d="([^"]+)"[^>]*data-child="${child}"`).exec(p.svg)?.[1] ?? '';
-      const ys = [...d.matchAll(/[ML,V]\s*(-?[\d.]+)(?=[^\d.]|$)/g)];
       expect(d).not.toBe('');
       const last = Number(/(-?[\d.]+)$/.exec(d)![1]);
-      expect(last).toBeCloseTo(y, 1);
-      expect(ys.length).toBeGreaterThan(0);
+      expect(last).toBeCloseTo(card(child).y, 1);
+      expect(last).toBeGreaterThan(y + 1);
     }
+    // The crown on the frame stands clear of where the lines come in.
+    const crown = /<path d="M([-\d.]+),[-\d.]+L[-\d.]+,[-\d.]+L[-\d.]+,[-\d.]+L([-\d.]+),/.exec(p.svg.slice(p.svg.indexOf('focus-frame')))!;
+    const crownX = Number(crown[2]);
+    for (const l of p.lines.filter((l) => l.childId === 'I11' || l.childId === 'I15'))
+      expect(Math.abs(l.points[l.points.length - 1].x - crownX)).toBeGreaterThan(12);
   });
 
   it('draws the lines heavier and the marks between partners bigger when asked', () => {

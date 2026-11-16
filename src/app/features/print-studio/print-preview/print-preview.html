@@ -134,6 +134,12 @@
       <button type="button" class="link" (click)="restore.emit()">{{ t('print.omittedRestore') }}</button>
     </span>
   }
+  @if (added(); as count) {
+    <span class="omitted">
+      {{ t('print.addedPeople', { count }) }}
+      <button type="button" class="link" (click)="unadd.emit()">{{ t('print.unaddAll') }}</button>
+    </span>
+  }
   @if (moved(); as count) {
     <span class="omitted">
       {{ t('print.movedCards', { count }) }}

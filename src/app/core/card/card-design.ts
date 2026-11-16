@@ -60,9 +60,10 @@ export interface CardDesign {
   birthStep: number;
   /** The badge for a mistake, half over the top right corner: its middle and radius. */
   badge: { x: number; y: number; r: number; mark: string };
-  /** The band across the top left corner of someone who has died. */
-  ribbon: string;
-  /** Where the band runs: between the lines x + y = from and x + y = to, from the card's top edge to its left. */
+  /**
+   * The band across the top right corner of someone who has died (see ribbonPath): it runs between the lines
+   * at `from` and at `to` from that corner, measured along the top edge and down the right edge alike.
+   */
   ribbonBand: { from: number; to: number };
 }
 
@@ -120,7 +121,7 @@ export function cardDesign(parts: CardParts, letters = 1): CardDesign {
   const shieldW = 26;
   const textX = parts.emblem ? shieldX + shieldW + 10 : accent + 13;
   const a = Math.max(9, height * 0.2);
-  const b = Math.max(5, height * 0.11);
+  const b = Math.max(7, height * 0.155);
   return {
     width,
     height,
@@ -146,9 +147,14 @@ export function cardDesign(parts: CardParts, letters = 1): CardDesign {
     spare: parts.birthName ? r2(birthStep / 2) : 0,
     birthStep,
     badge: { x: width - 3, y: 3, r: 7.5, mark: 'M0,-3.9V0.9M0,3.3V3.5' },
-    ribbon: `M0,${r2(a)}L${r2(a)},0H${r2(a + b)}L0,${r2(a + b)}Z`,
     ribbonBand: { from: r2(a), to: r2(a + b) },
   };
+}
+
+/** The band across the top right corner of a card `w` wide, for someone who has died (see CardDesign.ribbonBand). */
+export function ribbonPath(d: Pick<CardDesign, 'ribbonBand'>, w: number): string {
+  const { from, to } = d.ribbonBand;
+  return `M${r2(w - from)},0L${r2(w)},${r2(from)}V${r2(to)}L${r2(w - to)},0Z`;
 }
 
 /** The lines a card has, with what it says on them, placed: every baseline as it is on this card. */

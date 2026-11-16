@@ -36,6 +36,12 @@ export interface ScopeOptions {
    * Defaults to false.
    */
   nearFormerPartner?: boolean;
+  /**
+   * People brought onto this print by hand (see PrintSettings.added), whatever the settings above leave out:
+   * the parents of a former partner the person in the middle still knows, say. Those left out (`omit`) and
+   * those hidden from prints (unless `showHidden`) still stay off.
+   */
+  added?: ReadonlySet<string>;
 }
 
 export interface Scope {
@@ -135,6 +141,8 @@ export function scopeDocument(doc: TreeDocument, index: TreeIndex, options: Scop
     if (couple && isBrokenUp(relationshipStatus(couple))) keepNearFormerPartner(index, included, options.centerId, options.partnerId);
   }
 
+  for (const id of options.added ?? []) if (index.person(id) && !hidden(id)) included.add(id);
+
   const families: Family[] = [];
   for (const f of doc.families) {
     const partners = f.partners.filter((p) => included.has(p));
@@ -154,6 +162,33 @@ export function scopeDocument(doc: TreeDocument, index: TreeIndex, options: Scop
     },
     people: included,
   };
+}
+
+/** What can be brought onto a print from a person's card (see relativesToAdd). */
+export const ADDABLE = ['parents', 'siblings', 'family'] as const;
+export type Addable = (typeof ADDABLE)[number];
+
+/**
+ * The people a card's menu brings onto a print, about `personId`: their parents; their brothers and sisters,
+ * with the parents they share (so the lines between them have somewhere to go); or their whole family, which
+ * is those and the partners and children of each of them, the person's own too. The person themselves is not
+ * among them. In the order of the tree's families.
+ */
+export function relativesToAdd(index: TreeIndex, personId: string, what: Addable): string[] {
+  const out = new Set<string>();
+  const parentFamilies = index.parentFamilies(personId);
+  for (const f of parentFamilies) for (const p of f.partners) out.add(p);
+  if (what !== 'parents') for (const f of parentFamilies) for (const c of f.children) out.add(c.personId);
+  if (what === 'family') {
+    const siblings = [personId, ...parentFamilies.flatMap((f) => f.children.map((c) => c.personId))];
+    for (const id of siblings)
+      for (const f of index.partnerFamilies(id)) {
+        for (const p of f.partners) out.add(p);
+        for (const c of f.children) out.add(c.personId);
+      }
+  }
+  out.delete(personId);
+  return [...out].filter((id) => !!index.person(id));
 }
 
 /**

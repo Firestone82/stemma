@@ -7,6 +7,8 @@ import { CentreOptions } from './centre-options/centre-options';
 import { NamesOptions } from './names-options/names-options';
 import { OutputActions } from './output-actions/output-actions';
 import { PaperOptions } from './paper-options/paper-options';
+import { Addable } from '../../core/poster/scope';
+import { MessageKey } from '../../i18n/locales';
 import { PrintModel } from './print-model';
 import { BoxesPlaced, PrintPreview, placedSettings } from './print-preview/print-preview';
 import { PreviewWindow } from './preview-window/preview-window';
@@ -20,7 +22,7 @@ const PREVIEW_PAD_X = 56;
 const PREVIEW_PAD_Y = 24 + 14 + 12 + 22;
 /** About how big a card's menu is, to keep it on the screen. */
 const MENU_W = 280;
-const MENU_H = 290;
+const MENU_H = 400;
 
 /**
  * Print and export, as a page of its own (at #/print, see PrintRoute) in
@@ -72,7 +74,7 @@ export class PrintStudio {
   }
 
   /** Escape leaves the page, unless a dialog is open over it; zoomed into the preview, it first goes back to the whole page. */
-  /** The menu of a card in the page (right click): who it is, and leaving them out. */
+  /** The menu of a card in the page (right click): who it is, bringing their family onto the print, and leaving them out. */
   protected readonly menu = signal<{ id: string; name: string; x: number; y: number } | null>(null);
 
   protected openMenu(at: { personId: string; x: number; y: number }): void {
@@ -103,6 +105,30 @@ export class PrintStudio {
     const m = this.menu();
     return !!m && !!this.model.settings().moves?.[m.id];
   });
+
+  /** Who each of the menu's choices would bring onto the print, with how many; none when it would bring nobody. */
+  protected readonly menuAdd = computed(() => {
+    const m = this.menu();
+    if (!m) return [];
+    const ids = this.model.addable(m.id);
+    const labels: Record<Addable, MessageKey> = { parents: 'print.menu.addParents', siblings: 'print.menu.addSiblings', family: 'print.menu.addFamily' };
+    // A choice that brings no more than the one before it is left out.
+    const seen = new Set<string>();
+    return (['parents', 'siblings', 'family'] as const)
+      .map((what) => {
+        const count = ids[what].length;
+        const more = ids[what].some((id) => !seen.has(id));
+        for (const id of ids[what]) seen.add(id);
+        return { what, label: labels[what], count, more };
+      })
+      .filter((c) => c.count > 0 && c.more);
+  });
+
+  protected add(what: Addable): void {
+    const m = this.menu();
+    this.menu.set(null);
+    if (m) this.model.add(m.id, what);
+  }
 
   protected unmove(): void {
     const m = this.menu();

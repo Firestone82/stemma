@@ -3,7 +3,7 @@
  * the sheet with cards as big as the paper allows, in the Heritage style. The result is a standalone SVG
  * string; exporting turns it into PNG or PDF.
  */
-import { CardDesign, CardParts, GHOST_DASH, LARGE_TEXT, UNKNOWN_DASH, accentOf, cardDesign, cardLines } from '../card/card-design';
+import { CardDesign, CardParts, GHOST_DASH, LARGE_TEXT, UNKNOWN_DASH, accentOf, cardDesign, cardLines, ribbonPath } from '../card/card-design';
 import { LegendEntry, Tincture, assignColors } from '../colors/tinctures';
 import { chartLanguage, surnameLinesIn } from '../lang/language';
 import { Layouter } from '../layout/engine';
@@ -24,7 +24,7 @@ import { GOLD, LETTERING, MARGIN, SERIF, heritage, palette, tinctures } from './
 import { drawMark } from './marks';
 import { PX_PER_MM, paperSize } from './paper';
 import { FontSpec, PageBlock, PosterContext, Rect } from './poster-types';
-import { scopeDocument } from './scope';
+import { ScopeOptions, scopeDocument } from './scope';
 import { cssFont, el, fontAttrs, n, text } from './svg';
 
 export interface PosterInput {
@@ -104,6 +104,9 @@ export interface NamesStyle {
 
 /** Round the couple the page is drawn around: how far their frame stands from their cards, in the layout's units. */
 const COUPLE_PAD = 8;
+/** How far a line coming down onto the couple keeps from the middle of the crown on their frame, and how far the crown moves aside for it. */
+const CROWN_CLEAR = 13;
+const CROWN_STEP = 26;
 /** How much heavier the lines are, and how much bigger the marks between partners, with PrintSettings.strongLines. */
 const STRONG_LINES = 1.7;
 const STRONG_MARKS = 1.3;
@@ -190,6 +193,23 @@ export function renderPoster(input: PosterInput): PosterResult {
   return finish(posterSteps(input));
 }
 
+/** What part of the tree a print with these settings shows, around `centerId` (and `partnerId`): see scopeDocument. */
+export function scopeOptions(settings: PrintSettings, centerId: string, partnerId: string | undefined, omit?: ReadonlySet<string>): ScopeOptions {
+  return {
+    centerId,
+    partnerId,
+    ancestors: settings.ancestors,
+    descendants: settings.descendants,
+    branches: settings.branches,
+    inLawFamilies: settings.inLawFamilies,
+    showHidden: settings.showHidden,
+    siblingsOnly: settings.siblingsOnly,
+    omit,
+    nearFormerPartner: true,
+    added: settings.added?.length ? new Set(settings.added) : undefined,
+  };
+}
+
 /**
  * renderPoster a piece at a time (see Steps): fitting a big tree to its page takes seconds, and done in pieces
  * the window answers meanwhile and the work can be dropped for a page asked for after it.
@@ -203,18 +223,7 @@ export function* posterSteps(input: PosterInput): Steps<PosterResult> {
   const partnerId = centerId ? pickPartner(fullIndex, centerId, settings) : undefined;
 
   const doc = centerId
-    ? scopeDocument(input.doc, fullIndex, {
-        centerId,
-        partnerId,
-        ancestors: settings.ancestors,
-        descendants: settings.descendants,
-        branches: settings.branches,
-        inLawFamilies: settings.inLawFamilies,
-        showHidden: settings.showHidden,
-        siblingsOnly: settings.siblingsOnly,
-        omit: input.omit,
-        nearFormerPartner: true,
-      }).doc
+    ? scopeDocument(input.doc, fullIndex, scopeOptions(settings, centerId, partnerId, input.omit)).doc
     : { ...input.doc, people: [], families: [] };
   const index = new TreeIndex(doc);
   const measure = (t: string, f: FontSpec) => input.measure(t, cssFont(f)) + (f.letterSpacing ?? 0) * f.size * Math.max(0, Array.from(t).length - 1);
@@ -591,21 +600,15 @@ export function* posterSteps(input: PosterInput): Steps<PosterResult> {
     const y0 = Math.min(...cs.map((c) => c.y));
     return { x: x0, y: y0, w: Math.max(...cs.map((c) => c.x + c.w)) - x0, h: Math.max(...cs.map((c) => c.y + c.h)) - y0 };
   });
-  for (const f of frames) chartSvg += coupleFrame(f);
-  // The lines from their parents down to the two end on the frame, not over it.
-  const frameOf = (personId: string) => {
-    const c = held.find((h) => h.personId === personId);
-    return c ? frameBox(frames.find((f) => c.x >= f.x - 0.5 && c.x + c.w <= f.x + f.w + 0.5 && c.y >= f.y - 0.5 && c.y + c.h <= f.y + f.h + 0.5)!) : undefined;
+  // The lines from their parents run through the frame onto their cards; the crown stands clear of where one comes in.
+  const into = (f: Rect) => {
+    const box = frameBox(f);
+    return layout.lines
+      .map((l) => l.points[l.points.length - 1])
+      .filter((p) => p && p.x > box.x && p.x < box.x + box.w && Math.abs(p.y - f.y) < 0.5)
+      .map((p) => p.x);
   };
-  const toFrame = (l: (typeof layout.lines)[number]) => {
-    const box = frameOf(l.childId);
-    const pts = l.points;
-    const end = pts[pts.length - 1];
-    const before = pts[pts.length - 2];
-    // Only a line that comes down onto the card from above.
-    if (!box || !before || Math.abs(before.x - end.x) > 0.5 || before.y >= box.y) return l;
-    return { ...l, points: [...pts.slice(0, -1), { x: end.x, y: box.y }] };
-  };
+  for (const f of frames) chartSvg += coupleFrame(f, into(f));
   for (const u of layout.unions) chartSvg += el('path', { d: roundedPath(u.line, 6), fill: 'none', stroke: palette.line, 'stroke-width': 1.1 * weight });
   // The direct line of each of the two the page is drawn around, in their own colour (the cards': blue, red):
   // from them up through their parents. Only that: brothers, sisters and their families stay plain.
@@ -630,9 +633,9 @@ export function* posterSteps(input: PosterInput): Steps<PosterResult> {
   // Whoever is in a direct line is the child of people in it too, known or not (a line up to parents nobody knows).
   const direct = (l: { childId: string; trunk: boolean }) => lines.find((x) => x.of.has(l.childId))?.colour ?? (l.trunk ? palette.trunk : undefined);
   // Every stretch is drawn once, by the first line that runs along it: the direct lines first, so what they share with others is theirs.
-  const ordered = layout.lines
-    .map(toFrame)
-    .sort((a, b) => Number(!!direct(b)) - Number(!!direct(a)) || Number(a.relation !== 'biological') - Number(b.relation !== 'biological'));
+  const ordered = [...layout.lines].sort(
+    (a, b) => Number(!!direct(b)) - Number(!!direct(a)) || Number(a.relation !== 'biological') - Number(b.relation !== 'biological'),
+  );
   const paths = sharedPaths(ordered, 7);
   // The plain lines under the coloured ones: where a branch starts on a direct line, its first step lies under that line.
   const strokes = { plain: '', direct: '' };
@@ -867,20 +870,23 @@ function drawCard(c: Drawing, at: LayoutCard): string {
   out += line(t.surname, d.surname, y.surname, palette.ink);
   out += line(t.birth, d.birth, y.birth, palette.muted);
   out += line(t.dates, d.dates, y.dates, palette.muted);
-  // A black ribbon across the top left corner for someone who has died; a white one for a child who died at birth.
-  if (c.settings.showRibbons && person.death) out += ribbon(d, diedAtBirth(person));
+  // A black ribbon across the top right corner for someone who has died; a white one for a child who died at birth.
+  if (c.settings.showRibbons && person.death) out += ribbon(d, w, diedAtBirth(person));
   return el('g', { class: 'card', 'data-person': at.personId, transform: `translate(${n(at.x)},${n(at.y)})`, opacity: ghost ? 0.62 : undefined }, out);
 }
 
 /**
  * The frame round the couple the page is drawn around (`f`, their cards together): quiet, in gold, a fine
  * double line close round them on a soft gold ground, with a small crown on it over the middle. The lines from
- * their parents end on it.
+ * their parents run through it onto the cards: where one comes in at the middle (`lines`, where they come in
+ * across), the crown stands aside of it.
  */
-function coupleFrame(f: Rect): string {
+function coupleFrame(f: Rect, lines: readonly number[] = []): string {
   const box = frameBox(f);
   const inner = 2.6;
-  const cx = box.x + box.w / 2;
+  const middle = box.x + box.w / 2;
+  const clear = (x: number) => lines.every((l) => Math.abs(l - x) > CROWN_CLEAR);
+  const cx = [0, 1, -1, 2, -2].map((k) => middle + k * CROWN_STEP).find(clear) ?? middle;
   const crown = `M${n(cx - 7)},${n(box.y + 2.2)}L${n(cx - 7)},${n(box.y - 3.6)}L${n(cx - 3.4)},${n(box.y - 0.6)}L${n(cx)},${n(box.y - 5.4)}L${n(cx + 3.4)},${n(box.y - 0.6)}L${n(cx + 7)},${n(box.y - 3.6)}L${n(cx + 7)},${n(box.y + 2.2)}Z`;
   return (
     // A soft ground of gold inside, so the two stand out from the page.
@@ -919,10 +925,10 @@ function frameBox(f: Rect): Rect {
 }
 
 /**
- * The band across the corner of someone who has died, in the manner of the title: a dark band (a white one for a
+ * The band across the top right corner (a card `w` wide) of someone who has died, in the manner of the title: a dark band (a white one for a
  * child who died at birth) edged inside with a double hairline in gold, and a small lozenge in the middle of it.
  */
-function ribbon(d: CardDesign, atBirth: boolean): string {
+function ribbon(d: CardDesign, w: number, atBirth: boolean): string {
   const { from, to } = d.ribbonBand;
   const band = atBirth ? '#fffdf6' : '#231a12';
   const fine = atBirth ? palette.accent : GOLD;
@@ -933,12 +939,21 @@ function ribbon(d: CardDesign, atBirth: boolean): string {
   const along = ((to - from) * 0.55) / Math.SQRT2;
   const across = ((to - from) * 0.17) / Math.SQRT2;
   return (
-    el('path', { d: d.ribbon, fill: band, stroke: atBirth ? palette.accent : 'none', 'stroke-width': atBirth ? 0.6 : undefined, 'stroke-linejoin': 'round' }) +
+    el('path', {
+      d: ribbonPath(d, w),
+      fill: band,
+      stroke: atBirth ? palette.accent : 'none',
+      'stroke-width': atBirth ? 0.6 : undefined,
+      'stroke-linejoin': 'round',
+    }) +
+    // The hairlines and the lozenge worked out as for the top left corner, and turned over onto the right.
+    `<g transform="translate(${n(w)},0) scale(-1,1)">` +
     el('path', { d: rule(from + inset) + rule(to - inset), fill: 'none', stroke: fine, 'stroke-width': 0.45, 'stroke-linecap': 'round' }) +
     el('path', {
       d: `M${n(c - along)},${n(c + along)}L${n(c + across)},${n(c + across)}L${n(c + along)},${n(c - along)}L${n(c - across)},${n(c - across)}Z`,
       fill: fine,
-    })
+    }) +
+    `</g>`
   );
 }
 

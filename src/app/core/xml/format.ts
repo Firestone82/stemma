@@ -52,7 +52,8 @@ export interface FormatVersion {
  *      of the page there are (showTitle, showLegend, showFrame). The settings of the earlier
  *      ways of drawing (styles, the drawn tree, generations in rows, stacked couples, sideways branches,
  *      relationship names, portraits), <background> and <arrangement> are no longer read, and are gone
- *      from a file once it is saved. People and families are as they were.
+ *      from a file once it is saved. People and families are as they were. Later in 1.9: moves (cards
+ *      moved by hand) and added (people brought onto the print by hand) on <print>.
  */
 export const CURRENT_FORMAT: FormatVersion = { major: 1, minor: 9 };
 

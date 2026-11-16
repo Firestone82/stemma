@@ -10,8 +10,8 @@ import { escapeText } from '../../core/xml/xml-writer';
 import { pdfFromJpeg, pdfPages, tilePages } from '../../core/poster/pdf';
 import { TileGrid, tileGrid } from '../../core/poster/tiles';
 import { Steps } from '../../core/layout/steps';
-import { PosterInput, PosterResult, forgetLayouts, posterSteps } from '../../core/poster/poster';
-import { RELATIVES, Relatives, relativesSettings, scopeDocument } from '../../core/poster/scope';
+import { PosterInput, PosterResult, forgetLayouts, posterSteps, scopeOptions } from '../../core/poster/poster';
+import { ADDABLE, Addable, RELATIVES, Relatives, relativesSettings, relativesToAdd, scopeDocument } from '../../core/poster/scope';
 import { FONTS, palette } from '../../core/poster/heritage';
 import { FileIo, safeFilename } from '../../core/services/file-io';
 import { ImageExporter } from '../../core/services/image-export';
@@ -295,9 +295,59 @@ export class PrintModel {
     return out;
   });
 
-  /** Leaves a person out of this print (from their card's menu); the person in the middle stays. */
+  /**
+   * Leaves a person out of this print (from their card's menu); the person in the middle stays. Someone brought
+   * onto it by hand is no longer brought (that is kept with the tree); left out for now as well, if the print
+   * would show them all the same.
+   */
   omit(personId: string): void {
-    if (personId !== this.centerId()) this.ui.omitFromPrint([personId]);
+    if (personId === this.centerId()) return;
+    const added = this.settings().added ?? [];
+    if (!added.includes(personId)) {
+      this.ui.omitFromPrint([personId]);
+      return;
+    }
+    const rest = added.filter((id) => id !== personId);
+    this.set({ added: rest.length ? rest : undefined }, `print add ${++this.stepCount}`);
+    const p = this.poster();
+    if (!p?.centerId) return;
+    const scope = scopeDocument(this.store.doc(), this.store.index(), scopeOptions(this.settings(), p.centerId, p.partnerId, new Set(this.ui.printOmitted())));
+    if (scope.people.has(personId)) this.ui.omitFromPrint([personId]);
+  }
+
+  /**
+   * Who a card's menu would bring onto the print, for each choice (see relativesToAdd): only those not on it
+   * now, and not those hidden from prints (unless they are printed too).
+   */
+  addable(personId: string): Readonly<Record<Addable, readonly string[]>> {
+    const index = this.store.index();
+    const shown = new Set(this.poster()?.shown ?? []);
+    const showHidden = this.settings().showHidden;
+    const out = {} as Record<Addable, readonly string[]>;
+    for (const what of ADDABLE)
+      out[what] = relativesToAdd(index, personId, what).filter((id) => !shown.has(id) && (showHidden || !index.person(id)?.hiddenFromPrint));
+    return out;
+  }
+
+  /** Brings a person's parents, brothers and sisters or whole family onto the print, as one step; kept with the tree. */
+  add(personId: string, what: Addable): void {
+    const ids = this.addable(personId)[what];
+    if (!ids.length) return;
+    const added = [...new Set([...(this.settings().added ?? []), ...ids])];
+    // Every addition is a step of its own to undo, however quickly one follows another.
+    this.set({ added }, `print add ${++this.stepCount}`);
+    this.ui.keepInPrint(ids);
+  }
+
+  /** How many people have been brought onto the print by hand (and are still in the tree). */
+  readonly addedCount = computed(() => {
+    const index = this.store.index();
+    return (this.settings().added ?? []).filter((id) => !!index.person(id)).length;
+  });
+
+  /** Nobody brought onto the print by hand any more. */
+  clearAdded(): void {
+    this.set({ added: undefined }, `print add ${++this.stepCount}`);
   }
 
   /**
@@ -318,7 +368,7 @@ export class PrintModel {
     if (Math.abs(x) < 0.5 && Math.abs(y) < 0.5) delete moves[personId];
     else moves[personId] = { x, y };
     // Every move is a step of its own to undo, however quickly one follows another.
-    this.set({ moves: Object.keys(moves).length ? moves : undefined }, `print move ${++this.moveCount}`);
+    this.set({ moves: Object.keys(moves).length ? moves : undefined }, `print move ${++this.stepCount}`);
   }
 
   /** Puts one card, or all of them, back where the layout has them. */
@@ -328,7 +378,8 @@ export class PrintModel {
     this.set({ moves: personId && Object.keys(moves).length ? moves : undefined });
   }
 
-  private moveCount = 0;
+  /** Counts what is done by hand on the page (moves, additions), so each is a step of its own to undo. */
+  private stepCount = 0;
 
   readonly movedCount = computed(() => Object.keys(this.settings().moves ?? {}).length);
 

@@ -46,6 +46,8 @@
         [cardUnits]="model.poster()?.cardUnits ?? null"
         [moved]="model.movedCount()"
         (unmove)="model.unmove()"
+        [added]="model.addedCount()"
+        (unadd)="model.clearAdded()"
         [lines]="model.poster()?.lines ?? []"
         (lineCut)="model.omitBranch($event)"
         (cardMove)="model.moveCard($event.personId, $event.dx, $event.dy)"
@@ -72,6 +74,17 @@
     <p class="menu-title">{{ m.name }}</p>
     @if (menuMoved()) {
       <button type="button" class="menu-item" role="menuitem" (click)="unmove()">{{ t('print.menu.unmove') }}</button>
+    }
+    @if (menuAdd(); as choices) {
+      @if (choices.length) {
+        <p class="menu-label">{{ t('print.menu.add') }}</p>
+        @for (c of choices; track c.what) {
+          <button type="button" class="menu-item" role="menuitem" (click)="add(c.what)">
+            <stemma-icon name="people" />{{ t(c.label) }}<span class="shortcut">{{ c.count }}</span>
+          </button>
+        }
+        <div class="menu-sep" role="separator"></div>
+      }
     }
     @if (m.id !== model.centerId()) {
       <button type="button" class="menu-item" role="menuitem" (click)="hide(m.id)"><stemma-icon name="noPrint" />{{ t('print.menu.hide') }}</button>

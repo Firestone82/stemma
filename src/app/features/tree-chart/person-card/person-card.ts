@@ -1,5 +1,5 @@
 import { ChangeDetectionStrategy, Component, computed, inject, input, output } from '@angular/core';
-import { CardDesign, CardParts, accentOf, cardLines } from '../../../core/card/card-design';
+import { CardDesign, CardParts, accentOf, cardLines, ribbonPath } from '../../../core/card/card-design';
 import { Tincture } from '../../../core/colors/tinctures';
 import { LayoutCard } from '../../../core/layout/types';
 import { I18n } from '../../../i18n/i18n';
@@ -46,7 +46,7 @@ export class PersonCard {
   readonly selected = input(false);
   /** The person the tree is centred on. */
   readonly focus = input(false);
-  /** A ribbon across the corner of someone who has died. */
+  /** A ribbon across the top right corner of someone who has died. */
   readonly ribbons = input(true);
   readonly pick = output<Event>();
 
@@ -64,6 +64,10 @@ export class PersonCard {
     const r = d.radius;
     return `M${r},0H${d.accent}V${h}H${r}Q0,${h} 0,${h - r}V${r}Q0,0 ${r},0Z`;
   });
+  /** The ribbon across the top right corner, for this card's width. */
+  protected readonly ribbon = computed(() => ribbonPath(this.design(), this.card().w));
+  /** Whether the card shows the ribbon: the mark for someone kept off prints then stands clear of it. */
+  protected readonly mourning = computed(() => this.ribbons() && this.label().deceased);
   protected readonly flag = computed<'problem' | 'missing' | null>(() => {
     const l = this.label();
     if (this.card().ghost) return null;
