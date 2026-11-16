@@ -64,14 +64,32 @@ describe('App', () => {
     expect(localStorage.getItem('stemma.tree.v1')).toContain('<title>Renamed</title>');
   });
 
-  it('notes how every couple on the chart stands', async () => {
+  it('says how every couple on the chart stands, on their marker', async () => {
     const fixture = TestBed.createComponent(App);
     await fixture.whenStable();
     const el = fixture.nativeElement as HTMLElement;
-    const notes = [...el.querySelectorAll('stemma-chart text.label')].map((t) => t.textContent?.trim());
-    expect(notes).toContain('married');
-    expect(notes).toContain('divorced');
-    expect(notes).toContain('engaged');
+    const notes = [...el.querySelectorAll('stemma-chart g.union title')].map((t) => t.textContent?.trim() ?? '');
+    expect(notes.some((n) => n.startsWith('Married'))).toBe(true);
+    expect(notes.some((n) => n.startsWith('Divorced'))).toBe(true);
+    expect(notes.some((n) => n.startsWith('Engaged'))).toBe(true);
+  });
+
+  it('draws everyone on the one card: shield, name, dates, sex and ribbon', async () => {
+    const fixture = TestBed.createComponent(App);
+    await fixture.whenStable();
+    const el = fixture.nativeElement as HTMLElement;
+    const cards = el.querySelectorAll('stemma-chart g.card');
+    expect(cards.length).toBe(29);
+    const thomas = el.querySelector('stemma-chart g.card[data-person="I1"]')!;
+    expect(thomas.querySelector('.shield-initials')?.textContent?.trim()).toBe('TA');
+    expect(thomas.querySelector('.given')?.textContent?.trim()).toBe('Thomas');
+    expect(thomas.querySelector('.dates')?.textContent).toContain('1898');
+    expect(thomas.querySelector('.accent')).not.toBeNull();
+    // The sex is told by the accent and the card's edge; no symbol.
+    expect(thomas.querySelector('.sex-mark')).toBeNull();
+    expect(thomas.querySelector('.mourning')).not.toBeNull();
+    // Someone alive has no ribbon.
+    expect(el.querySelector('stemma-chart g.card[data-person="I29"] .mourning')).toBeNull();
   });
 
   it('speaks the language chosen for the app, on the chart too', async () => {
@@ -83,8 +101,8 @@ describe('App', () => {
     expect(el.querySelector('stemma-sample-note')?.textContent).toContain('ukázková rodina');
     expect(document.documentElement.lang).toBe('cs');
     // The example tree was saved with English words on the chart; the chart follows the app.
-    const kin = [...el.querySelectorAll('stemma-chart text.kin')].map((t) => t.textContent?.trim());
-    expect(kin).toContain('Otec');
-    expect([...el.querySelectorAll('stemma-chart text.label')].map((t) => t.textContent?.trim())).toContain('manželé');
+    const births = [...el.querySelectorAll('stemma-chart text.birth')].map((t) => t.textContent?.trim() ?? '');
+    expect(births.some((b) => b.startsWith('roz.'))).toBe(true);
+    expect([...el.querySelectorAll('stemma-chart g.union title')].some((t) => t.textContent?.startsWith('Manželství'))).toBe(true);
   });
 });

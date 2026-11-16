@@ -3,7 +3,9 @@
 </button>
 @if (open()) {
   <div class="menu" role="menu" [attr.aria-label]="t('file.menu')">
-    <button type="button" class="menu-item" role="menuitem" (click)="documents.newTree()"><stemma-icon name="file" />{{ t('file.new') }}</button>
+    <button type="button" class="menu-item" role="menuitem" (click)="documents.newTree()">
+      <stemma-icon name="file" />{{ t('file.new') }}<span class="shortcut">Ctrl N</span>
+    </button>
     <button type="button" class="menu-item" role="menuitem" (click)="documents.openFile()">
       <stemma-icon name="folder" />{{ t('file.open') }}<span class="shortcut">Ctrl O</span>
     </button>

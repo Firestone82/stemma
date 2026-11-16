@@ -1,0 +1,14 @@
+@if (errors().length || missing()) {
+  <div class="notices" role="status">
+    @for (e of errors(); track e.key) {
+      <p class="notice error">
+        <stemma-icon name="warning" [size]="15" /><span>{{ e.text }}</span>
+      </p>
+    }
+    @if (missing()) {
+      <p class="notice gap">
+        <span class="flag" aria-hidden="true">!</span><span>{{ missing() }}</span>
+      </p>
+    }
+  </div>
+}

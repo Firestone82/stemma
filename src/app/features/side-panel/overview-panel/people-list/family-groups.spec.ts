@@ -18,4 +18,16 @@ describe('people grouped by family', () => {
     expect(groups[3].key).toBe('');
     expect(groups[3].members.map((p) => p.id)).toEqual(['X']);
   });
+
+  it('puts the Polish and the Czech spelling of a name in one group when the tree unites them', () => {
+    const b = new DocBuilder();
+    b.person('A', 'Jan', 'Nowak', 'male', '1925');
+    b.person('B', 'Bruno', 'Novák', 'male', '1950');
+    b.person('C', 'Soňa', 'Nováková', 'female', '1978');
+    const people = b.build().people;
+    const compare = (a: string, c: string) => a.localeCompare(c, 'cs');
+    expect(groupByFamily(people, compare, true)).toHaveLength(1);
+    expect(groupByFamily(people, compare, true)[0].members.map((p) => p.id)).toEqual(['A', 'B', 'C']);
+    expect(groupByFamily(people, compare)).toHaveLength(2);
+  });
 });

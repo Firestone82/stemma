@@ -1,9 +1,20 @@
-@if (store.doc().people.length) {
+@if (allGood()) {
+  <!-- Nothing to fix: one quiet line, without a heading of its own. -->
+  <section class="panel-section clear" [attr.aria-label]="t('checks.title')">
+    <p class="all-good">
+      <span class="tick" aria-hidden="true"><stemma-icon name="check" [size]="13" /></span>
+      {{ t('checks.allGood') }}
+    </p>
+    @if (unknownDates(); as n) {
+      <p class="unknown-dates">
+        {{ t('checks.unknownDates', { count: n }) }}
+        <button type="button" class="link" (click)="askAgain()">{{ t('checks.askAgain') }}</button>
+      </p>
+    }
+  </section>
+} @else if (store.doc().people.length) {
   <section class="panel-section">
     <h3>{{ t('checks.title') }}</h3>
-    @if (allGood()) {
-      <p class="ok"><stemma-icon name="check" [size]="16" />{{ t('checks.allGood') }}</p>
-    }
     @for (g of gaps(); track g.kind) {
       <details class="gap">
         <summary>
@@ -29,6 +40,11 @@
         }
       </ul>
     }
-    <p class="hint">{{ t('checks.hint') }}</p>
+    @if (unknownDates(); as n) {
+      <p class="unknown-dates">
+        {{ t('checks.unknownDates', { count: n }) }}
+        <button type="button" class="link" (click)="askAgain()">{{ t('checks.askAgain') }}</button>
+      </p>
+    }
   </section>
 }

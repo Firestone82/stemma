@@ -1,0 +1,18 @@
+<div class="sheet" [class.top-only]="topOnly()" role="radiogroup" [attr.aria-labelledby]="labelledBy() || null">
+  @for (c of cells(); track c.anchor) {
+    <button
+      type="button"
+      role="radio"
+      class="cell"
+      [class.on]="c.anchor === value()"
+      [attr.data-anchor]="c.anchor"
+      [attr.aria-checked]="c.anchor === value()"
+      [attr.aria-label]="t(c.label)"
+      [title]="t(c.label)"
+      [disabled]="disabled()"
+      (click)="valueChange.emit(c.anchor)"
+    >
+      <span class="dot" aria-hidden="true"></span>
+    </button>
+  }
+</div>

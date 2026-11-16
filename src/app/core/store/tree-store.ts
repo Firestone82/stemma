@@ -41,6 +41,8 @@ export class TreeStore {
   private lastCoalesce?: { key: string; at: number };
 
   readonly canUndo = computed(() => (this.historyTick(), this.past.length > 0));
+  /** How many steps can be undone: for telling what was done before or after a step kept somewhere else. */
+  readonly undoDepth = computed(() => (this.historyTick(), this.past.length));
   readonly canRedo = computed(() => (this.historyTick(), this.future.length > 0));
 
   readonly selectedPerson = computed<Person | undefined>(() => {

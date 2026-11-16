@@ -1,16 +1,16 @@
-import { Injectable, computed, inject, signal } from '@angular/core';
+import { Injectable, computed, inject } from '@angular/core';
 import { ColorAssignment, Tincture, assignColors, preferredSpelling } from '../core/colors/tinctures';
 import { Kin, kinship } from '../core/kinship/kinship';
 import { ChartLanguage, chartLanguage, kinLabel, surnameLinesIn } from '../core/lang/language';
-import { computeLayout } from '../core/layout/layout';
-import { tallLayout } from '../core/layout/tiering';
-import { COMFORTABLE_LAYOUT, LayoutOptions, LayoutResult } from '../core/layout/layout-types';
-import { displayName, initials, nameUnknown, surnameKey } from '../core/model/names';
-import { FamilyBalloon, familyBalloons, familyViewScope } from '../core/model/family-view';
+import { CardDesign, CardParts, cardDesign } from '../core/card/card-design';
+import { Layouter } from '../core/layout/engine';
+import { fitLayout } from '../core/layout/fit';
+import { LAYOUT, LayoutOptions, LayoutResult } from '../core/layout/types';
+import { displayName, initials, nameUnknown, surnameKey, unitingOf } from '../core/model/names';
+import { FamilyBalloon, familyBalloons, familyViewScope, isPortal, withPortals } from '../core/model/family-view';
 import { isBrokenUp, relationshipStatus } from '../core/model/relationship';
 import { birthGroupOf } from '../core/model/births';
-import { arrangementOf, isArranged } from '../core/model/arrangement';
-import { birthSurname } from '../core/model/surnames';
+import { birthSurname, birthSurnameUnknown } from '../core/model/surnames';
 import { diedAtBirth } from '../core/model/completeness';
 import { missingText } from '../shared/missing';
 import { DataChecks } from './data-checks';
@@ -20,7 +20,6 @@ import { Sex, TreeDocument, ViewSettings } from '../core/model/types';
 import { TextMeasurer } from '../core/services/text-measure';
 import { TreeStore } from '../core/store/tree-store';
 import { I18n } from '../i18n/i18n';
-import { CARD_METRICS, cardFonts } from './card-metrics';
 import { FamilyView } from './family-view';
 
 export interface CardLabel {
@@ -29,8 +28,6 @@ export interface CardLabel {
   /** The surname at birth when it differs from the surname: "née Barlow". */
   birth: string;
   dates: string;
-  /** How the person is related to the person the tree is centred on. */
-  kin: string;
   initials: string;
   /** Full name and dates, for tooltips and screen readers. */
   title: string;
@@ -48,11 +45,8 @@ export interface CardLabel {
   problem: string;
 }
 
-/** Room the sex symbol takes from the first line of a card, and the focus mark from the last. */
-export const CORNER_ROOM = 16;
-
-/** A card grows at most to this many times the usual width to fit its relationship name; beyond, the name is shortened. */
-const MAX_CARD_STRETCH = 2;
+/** The room the chart is shaped for. It suits a screen and a hand that moves it sideways: wider than a screen is, and low. */
+const SCREEN = { w: 2400, h: 1000, centred: 0 };
 
 /**
  * Everything the chart draws, derived from the store: the layout, colours,
@@ -77,21 +71,28 @@ export class ChartModel {
    */
   readonly language = computed<ChartLanguage>(() => chartLanguage(this.i18n.code()));
 
-  /**
-   * Positions and font sizes inside a card. The `density` a file may carry is
-   * no longer used: every tree is drawn with the same spacing. Places are not
-   * drawn on the chart (prints can show them), whatever `showPlaces` says.
-   */
-  readonly metrics = signal(CARD_METRICS).asReadonly();
+  /** Which parts the cards have: as the view settings say, with a line for the surname at birth when anyone has one. */
+  readonly parts = computed<CardParts>(
+    () => {
+      const v = this.view();
+      return {
+        emblem: v.showEmblems,
+        emblemTop: v.emblemAlign === 'top',
+        birthName: v.showBirthNames && this.birthRow(),
+        dates: v.dates !== 'none',
+        sexAccent: v.sexColors,
+      };
+    },
+    { equal: shallowEqual },
+  );
+
+  /** Where everything sits on a card (see core/card/card-design): the same card as on prints. */
+  readonly design = computed<CardDesign>(() => cardDesign(this.parts()));
 
   readonly options = computed<LayoutOptions>(
     () => {
-      const v = this.view();
-      const m = this.metrics();
-      // The partner of a childless couple is always stacked under the card, joined by a line down their side.
-      const base = { ...COMFORTABLE_LAYOUT, compactChildless: true, tuckBelow: true };
-      const extra = (v.showRelationships ? m.kin.shift : 0) + (this.birthRow() ? m.birth.shift : 0);
-      return extra ? { ...base, cardHeight: base.cardHeight + extra } : base;
+      const d = this.design();
+      return { ...LAYOUT, cardWidth: d.width, cardHeight: d.height };
     },
     { equal: (a, b) => a.cardWidth === b.cardWidth && a.cardHeight === b.cardHeight },
   );
@@ -132,7 +133,8 @@ export class ChartModel {
   /** The family each person was born into, as a surnameKey: Šárka née Nováková is a Novák. */
   readonly familyKeyOf = computed<ReadonlyMap<string, string>>(() => {
     const births = this.birthSurnames();
-    return new Map(this.store.doc().people.map((p) => [p.id, surnameKey(births.get(p.id) || p.name.surname)]));
+    const united = unitingOf(this.store.doc().view);
+    return new Map(this.store.doc().people.map((p) => [p.id, surnameKey(births.get(p.id) || p.name.surname, united)]));
   });
 
   /** Every family in the tree by key: its name as written (the base form: Novák) and how many were born into it. */
@@ -245,33 +247,45 @@ export class ChartModel {
     return centerId ? { centerId, partnerId: this.focusPartnerId(), ancestors: 'all', descendants: 'all' } : undefined;
   }
 
-  private readonly structure = computed(() => structureOf(this.scope()?.doc ?? this.store.doc(), this.store.loadId()), {
+  /** What the chart lays out: the people it shows and, in a family view, a stand-in for each family left off. */
+  private readonly laidOut = computed(() => {
+    const doc = this.scope()?.doc ?? this.store.doc();
+    return this.familyScope() ? withPortals(doc, this.store.index(), this.balloons()) : doc;
+  });
+
+  private readonly structure = computed(() => structureOf(this.laidOut(), this.store.loadId(), this.focusId(), this.focusPartnerId()), {
     equal: (a, b) => a.key === b.key,
   });
 
-  private previous?: { result: LayoutResult; loadId: number; people: ReadonlySet<string> };
-
-  /** The widest generations in two tiers, so a wide tree does not run so far to the sides. */
-  private readonly tall = computed(() => this.view().tallGenerations);
-
+  /**
+   * The chart: laid out top to bottom around the person in the middle and their partner, generation by
+   * generation, in the shape that suits a screen (see core/layout). Worked out again only when the shape of
+   * the tree changes.
+   */
   readonly layout = computed<LayoutResult>(() => {
     const s = this.structure();
     const options = this.options();
-    const prev = this.previous;
-    // Where the layout itself put everyone, without the moves made by hand, so its order stays put. Only
-    // while the chart shows about the same people: a layout of part of the tree (a family view, a nearer
-    // Relatives step) says nothing of where everyone else goes, and following it for the whole tree
-    // leaves families split up with their lines running behind other cards.
-    const people = new Set(s.doc.people.map((p) => p.id));
-    const hint = prev && prev.loadId === s.loadId && newcomers(people, prev.people) <= MAX_NEWCOMERS ? prev.result.hint : undefined;
-    const result = this.tall() ? tallLayout(s.doc, options, hint, this.cardWidths()) : computeLayout(s.doc, options, hint, this.cardWidths());
-    this.previous = { result, loadId: s.loadId, people };
-    return result;
+    // Families hang together wherever there is room, and no line crosses another.
+    const layouter = new Layouter(new TreeIndex(s.doc), options, s.focusId, s.partnerId);
+    // Couples stay side by side on screen, where they are worked on.
+    const layout = fitLayout(layouter, options, SCREEN, 'quick', { stack: false }).layout;
+    // The stand-ins of a family view are not people: they go with the empty places, where the chart draws their buttons.
+    if (!layout.cards.some((c) => isPortal(c.personId))) return layout;
+    const ranks = new Map([...layout.ranks].filter(([id]) => !isPortal(id)));
+    return {
+      ...layout,
+      cards: layout.cards.filter((c) => !isPortal(c.personId)),
+      placeholders: [
+        ...layout.placeholders,
+        ...layout.cards.filter((c) => isPortal(c.personId)).map((c) => ({ familyId: c.personId, x: c.x, y: c.y, w: c.w, h: c.h })),
+      ],
+      ranks,
+      generations: new Set(ranks.values()).size,
+    };
   });
 
   /** How each person is related to the one in the middle, as their card says: "Bývalá manželka strýce". */
   private readonly relations = computed<ReadonlyMap<string, string>>(() => {
-    if (!this.view().showRelationships) return new Map();
     const lang = this.language();
     const kin = this.kin();
     const bornWith = this.focusBornWith();
@@ -282,26 +296,6 @@ export class ChartModel {
   private fitting(full: string, short: string, font: string, max: number): string {
     return this.measure.fit(full, font, max) === full ? full : short;
   }
-
-  /** Cards wider than the rest, for a relationship name that would not fit on the usual card. */
-  readonly cardWidths = computed<ReadonlyMap<string, number>>(
-    () => {
-      this.measure.fontsVersion();
-      const m = this.metrics();
-      const base = this.options().cardWidth;
-      const font = cardFonts(m).kin;
-      // The name starts after the shield and stops short of the sex symbol.
-      const room = m.textX + m.padRight + (this.view().showSex ? CORNER_ROOM : 0);
-      const out = new Map<string, number>();
-      for (const [id, relation] of this.relations()) {
-        if (!relation) continue;
-        const needed = Math.ceil(room + this.measure.width(relation, font, m.kin.size * m.kin.spacing));
-        if (needed > base) out.set(id, Math.min(needed, base * MAX_CARD_STRETCH));
-      }
-      return out;
-    },
-    { equal: sameEntries },
-  );
 
   /** The surname each person was born with: as recorded, or their father's in the chart's language. */
   readonly birthSurnames = computed<ReadonlyMap<string, string>>(() => {
@@ -314,10 +308,12 @@ export class ChartModel {
   private readonly surnameLines = computed(() => {
     const lang = this.language();
     const births = this.birthSurnames();
-    return new Map(this.store.doc().people.map((p) => [p.id, surnameLinesIn(lang, p, births.get(p.id))]));
+    const index = this.store.index();
+    const unknown = this.store.doc().view.unknownBirthNames;
+    return new Map(this.store.doc().people.map((p) => [p.id, surnameLinesIn(lang, p, births.get(p.id), unknown && birthSurnameUnknown(index, p))]));
   });
 
-  /** Whether any card has a line for a surname at birth: all cards then make room for one, so rows line up. */
+  /** Whether anyone has a surname at birth to show: all cards then make room for the line, so all are one size. */
   readonly birthRow = computed(() => [...this.surnameLines().values()].some((l) => !!l.birth));
 
   /**
@@ -327,7 +323,8 @@ export class ChartModel {
    */
   readonly colors = computed<ColorAssignment>(() => {
     const births = this.birthSurnames();
-    return assignColors(this.store.doc(), 'family', this.layout().ranks, (p) => births.get(p.id) || p.name.surname.trim());
+    // On the chart every family has a colour, a family of one too (in prints those are "Other families").
+    return assignColors(this.store.doc(), 'family', this.layout().ranks, (p) => births.get(p.id) || p.name.surname.trim(), undefined, true);
   });
 
   readonly labels = computed<ReadonlyMap<string, CardLabel>>(() => {
@@ -337,33 +334,26 @@ export class ChartModel {
     const lang = this.language();
     const relations = this.relations();
     const surnames = this.surnameLines();
-    const birthRow = this.birthRow();
-    const focusId = this.focusId();
-    const m = this.metrics();
-    const fonts = cardFonts(m);
-    const widths = this.cardWidths();
-    const cardWidth = this.options().cardWidth;
-    // The sex symbol takes the top right corner, the focus mark the bottom right.
-    const top = view.showSex ? CORNER_ROOM : 0;
+    const parts = this.parts();
+    const d = this.design();
+    const font = (f: { family: string; size: number; weight: number; style?: string }) =>
+      `${f.style === 'italic' ? 'italic ' : ''}${f.weight} ${f.size}px ${f.family}`;
+    const fonts = { given: font(d.given), surname: font(d.surname), birth: font(d.birth), dates: font(d.dates) };
     const problems = this.checks.byPerson();
     const out = new Map<string, CardLabel>();
     for (const p of doc.people) {
-      const width = (widths.get(p.id) ?? cardWidth) - m.textX - m.padRight;
-      const datesWidth = width - (p.id === focusId ? CORNER_ROOM : 0);
+      const names = surnames.get(p.id) ?? { surname: p.name.surname.trim(), birth: '' };
       // Dates in full where they fit the card; years otherwise.
-      const dates = view.fullDates && view.showDates ? this.fitting(lang.lifespan(p, true), lang.lifespan(p), fonts.dates, datesWidth) : lang.lifespan(p);
+      const years = lang.lifespan(p);
+      const dates = view.dates === 'full' ? this.fitting(lang.lifespan(p, true), years, fonts.dates, d.textW) : years;
       const relation = relations.get(p.id) ?? '';
       const unknown = nameUnknown(p);
-      const title = [displayName(p, lang.unknown(p.sex)), relation, dates].filter(Boolean).join(', ');
-      const bottom = p.id === focusId ? CORNER_ROOM : 0;
-      const last = view.showDates ? 'dates' : birthRow ? 'birth' : 'surname';
-      const names = surnames.get(p.id) ?? { surname: p.name.surname.trim(), birth: '' };
+      const title = [displayName(p, lang.unknown(p.sex)), relation, years].filter(Boolean).join(', ');
       out.set(p.id, {
-        given: this.measure.fit(unknown ? lang.unknown(p.sex) : p.name.given.trim(), fonts.given, width - (view.showRelationships ? 0 : top)),
-        surname: this.measure.fit(names.surname, fonts.surname, width - (last === 'surname' ? bottom : 0)),
-        birth: this.measure.fit(names.birth, fonts.birth, width - (last === 'birth' ? bottom : 0)),
-        dates: view.showDates ? this.measure.fit(dates, fonts.dates, width - (last === 'dates' ? bottom : 0)) : '',
-        kin: relation ? this.measure.fit(relation, fonts.kin, width - top, m.kin.size * m.kin.spacing) : '',
+        given: this.measure.fit(unknown ? lang.unknown(p.sex) : p.name.given.trim(), fonts.given, d.textW),
+        surname: this.measure.fit(names.surname, fonts.surname, d.textW, d.surname.size * (d.surname.letterSpacing ?? 0)),
+        birth: parts.birthName ? this.measure.fit(names.birth, fonts.birth, d.textW) : '',
+        dates: parts.dates ? this.measure.fit(dates, fonts.dates, d.textW) : '',
         initials: initials(p),
         title,
         sex: p.sex,
@@ -383,7 +373,7 @@ export class ChartModel {
     return {
       people: doc.people.length,
       families: doc.families.filter((f) => f.partners.length === 2).length,
-      generations: this.layout().rows.length,
+      generations: this.layout().generations,
     };
   });
 }
@@ -410,18 +400,18 @@ function sameSet<T>(a: ReadonlySet<T>, b: ReadonlySet<T>): boolean {
   return a.size === b.size && [...a].every((x) => b.has(x));
 }
 
-function sameEntries<K, V>(a: ReadonlyMap<K, V>, b: ReadonlyMap<K, V>): boolean {
-  return a.size === b.size && [...a].every(([k, v]) => b.get(k) === v);
-}
-
 /**
- * The part of a document the layout depends on. Names, dates and notes do not
- * move anyone, so they are left out and edits to them reuse the layout. The
- * home person is passed along but is not part of the key: centring the tree on
- * someone else moves the view, not the people.
+ * The part of a document the layout depends on. Names, dates and notes do not move anyone, so they are left
+ * out and edits to them reuse the layout. Who the chart is drawn around is part of it: their direct line
+ * runs down the middle.
  */
-function structureOf(doc: TreeDocument, loadId: number): { key: string; doc: TreeDocument; loadId: number } {
-  const people = doc.people.map((p) => ({ id: p.id, sex: 'unknown' as const, name: { given: '', surname: '' } }));
+function structureOf(
+  doc: TreeDocument,
+  loadId: number,
+  focusId: string | undefined,
+  partnerId: string | undefined,
+): { key: string; doc: TreeDocument; focusId?: string; partnerId?: string } {
+  const people = doc.people.map((p) => ({ id: p.id, sex: p.sex, name: { given: '', surname: '' } }));
   const families = doc.families.map((f) => {
     const out: TreeDocument['families'][number] = {
       id: f.id,
@@ -433,24 +423,7 @@ function structureOf(doc: TreeDocument, loadId: number): { key: string; doc: Tre
     if (f.end?.reason) out.end = { reason: f.end.reason };
     return out;
   });
-  const reduced: TreeDocument = {
-    meta: { title: '', homePersonId: doc.meta.homePersonId },
-    view: doc.view,
-    people,
-    families,
-  };
-  // Changes made by hand are part of the layout too.
-  const arrangement = arrangementOf(doc);
-  if (isArranged(doc)) reduced.arrangement = arrangement;
-  const key = JSON.stringify([loadId, people.map((p) => p.id), families, reduced.arrangement ?? null]);
-  return { key, doc: reduced, loadId };
-}
-
-/** People added to the tree at once (pasted, imported) up to this many keep the chart's order; more and it is laid out afresh. */
-const MAX_NEWCOMERS = 3;
-
-function newcomers(now: ReadonlySet<string>, before: ReadonlySet<string>): number {
-  let n = 0;
-  for (const id of now) if (!before.has(id)) n++;
-  return n;
+  const reduced: TreeDocument = { meta: { title: '', homePersonId: focusId }, view: doc.view, people, families };
+  const key = JSON.stringify([loadId, focusId ?? null, partnerId ?? null, people.map((p) => [p.id, p.sex]), families]);
+  return { key, doc: reduced, focusId, partnerId };
 }

@@ -3,7 +3,7 @@
  * (Mikula and Mikulová, Černý and Černá), each family's members oldest first.
  */
 import { dateYear } from '../../../../core/model/dates';
-import { surnameKey } from '../../../../core/model/names';
+import { Unite, surnameKey } from '../../../../core/model/names';
 import { Person } from '../../../../core/model/types';
 
 export interface FamilyGroup {
@@ -16,12 +16,12 @@ export interface FamilyGroup {
 
 const FEMININE = /(?:ová|á|ska|cka|ova|eva|ina)$/i;
 
-/** Groups people by the surname they have now (or had at birth, when no other is known). */
-export function groupByFamily(people: readonly Person[], compare: (a: string, b: string) => number): FamilyGroup[] {
+/** Groups people by the surname they have now (or had at birth, when no other is known); `united` as in surnameKey. */
+export function groupByFamily(people: readonly Person[], compare: (a: string, b: string) => number, united: boolean | Unite = false): FamilyGroup[] {
   const groups = new Map<string, { spellings: Map<string, number>; members: Person[] }>();
   for (const p of people) {
     const surname = p.name.surname.trim() || p.name.birthSurname?.trim() || '';
-    const key = surnameKey(surname);
+    const key = surnameKey(surname, united);
     const g = groups.get(key) ?? { spellings: new Map<string, number>(), members: [] };
     if (surname) g.spellings.set(surname, (g.spellings.get(surname) ?? 0) + 1);
     g.members.push(p);

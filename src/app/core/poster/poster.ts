@@ -1,46 +1,31 @@
 /**
- * Draws a printable page of the tree: the part of the tree chosen in the print
- * settings, centred on a couple, in a print style, on a sheet of paper.
- * The result is a standalone SVG string; exporting turns it into PNG or PDF.
+ * Draws a printable page of the tree: the part of the tree chosen in the print settings, laid out to fill
+ * the sheet with cards as big as the paper allows, in the Heritage style. The result is a standalone SVG
+ * string; exporting turns it into PNG or PDF.
  */
-import { Tincture, assignColors } from '../colors/tinctures';
-import { Kin, kinship } from '../kinship/kinship';
-import { chartLanguage, kinLabel, surnameLinesIn } from '../lang/language';
-import { computeLayout } from '../layout/layout';
-import { widestRow } from '../layout/tiering';
-import { COMFORTABLE_LAYOUT, LayoutCard, LayoutOptions, LayoutResult, LayoutUnion, Pt, TUCK_OUT, TUCK_SCALE, TUCK_UP } from '../layout/layout-types';
-import { connectorPaths, linkPath, unionLinePath, unionMarkerPoint } from '../layout/paths';
-import { pictureBox } from '../layout/picture';
+import { CardDesign, CardParts, GHOST_DASH, LARGE_TEXT, UNKNOWN_DASH, accentOf, cardDesign, cardLines } from '../card/card-design';
+import { LegendEntry, Tincture, assignColors } from '../colors/tinctures';
+import { chartLanguage, surnameLinesIn } from '../lang/language';
+import { Layouter } from '../layout/engine';
+import { Fitted, Room, fitLayoutSteps, fitShapesSteps, place } from '../layout/fit';
+import { Steps, finish } from '../layout/steps';
+import { RELATION_DASH, roundedPath, sharedPaths } from '../layout/lines';
+import { applyMoves } from '../layout/moves';
+import { LAYOUT, LayoutCard, LayoutOptions, LayoutResult, TIGHT_LAYOUT } from '../layout/types';
 import { unionMark } from '../layout/union-marks';
+import { diedAtBirth } from '../model/completeness';
 import { dateYear } from '../model/dates';
 import { initials, nameUnknown } from '../model/names';
-import { RelationshipStatus, isBrokenUp, relationshipStatus } from '../model/relationship';
-import { birthGroupOf } from '../model/births';
-import { birthSurname } from '../model/surnames';
-import { mourningRibbon, sexSymbolPath } from '../layout/symbols';
-import { diedAtBirth } from '../model/completeness';
-import { TreeRoom, branchTree } from '../layout/branch-tree';
+import { isBrokenUp, relationshipStatus } from '../model/relationship';
+import { birthSurname, birthSurnameUnknown } from '../model/surnames';
 import { TreeIndex } from '../model/tree-index';
-import { BackgroundImage, DEFAULT_PRINT, LineStyle, PORTRAIT_ASPECT, Person, PrintSettings, TreeDocument, effectivePrint } from '../model/types';
+import { Anchor, DEFAULT_PRINT, LEGEND_GAP_CM, LETTERING_CM, LINE_HEIGHT, PrintSettings, TreeDocument, anchorShares, effectivePrint } from '../model/types';
+import { GOLD, LETTERING, MARGIN, SERIF, heritage, palette, tinctures } from './heritage';
 import { drawMark } from './marks';
 import { PX_PER_MM, paperSize } from './paper';
-import {
-  CardLine,
-  CardLines,
-  CardLook,
-  CardText,
-  FontSpec,
-  PageBlock,
-  PosterCardStyle,
-  PosterContext,
-  PosterTheme,
-  Rect,
-  SideBlock,
-  UNKNOWN_DASH,
-} from './poster-types';
+import { FontSpec, PageBlock, PosterContext, Rect } from './poster-types';
 import { scopeDocument } from './scope';
-import { cssFont, el, fontAttrs, n, shieldPath, text } from './svg';
-import { posterTheme } from './themes';
+import { cssFont, el, fontAttrs, n, text } from './svg';
 
 export interface PosterInput {
   doc: TreeDocument;
@@ -48,13 +33,13 @@ export interface PosterInput {
   settings?: PrintSettings;
   /** Language of the words on the page, a BCP 47 tag. Defaults to the one the document was saved in. */
   language?: string;
-  /** Square or curved family lines, as on the chart. Defaults to the print style's own. */
-  lines?: LineStyle;
   /** Width of a text in a CSS font (canvas measureText in the browser). */
   measure(text: string, font: string): number;
   now?: Date;
   /** People left out of this print only (clicked away in the studio); the person in the middle stays. */
   omit?: ReadonlySet<string>;
+  /** How hard to look for the best arrangement: 'quick' for a preview while settings change. */
+  effort?: 'full' | 'quick';
 }
 
 export interface PosterResult {
@@ -66,63 +51,151 @@ export interface PosterResult {
   paper?: { widthMm: number; heightMm: number; landscape: boolean };
   /** The size names print at, in points. */
   namePt: number;
-  /** How big one card comes out on paper, in millimetres (a card stretched for a long name may be wider). */
+  /** How big one card comes out on paper, in millimetres. */
   cardMm: { w: number; h: number };
+  /**
+   * The line height of the title and of the families' names on paper, in centimetres (see PrintSettings.titleSize),
+   * and what the page would make them by itself, to suit the sheet and the cards (the same, where no size is asked for).
+   */
+  lettering: { titleCm: number; legendCm: number; autoTitleCm: number; autoLegendCm: number };
+  /** How much of the room for the tree the cards cover, 0 to 1. */
+  coverage: number;
   /** People on the page, and in the whole tree. */
   people: number;
   total: number;
   generations: number;
   centerId?: string;
   partnerId?: string;
-  theme: PosterTheme;
   /**
-   * Where the families' names are on the page, as shares of its width and
-   * height; `free` when placed by hand (PrintSettings.legendBox).
+   * Where the families' names are on the page, as shares of its width and height; `free` when placed by
+   * hand or held at an anchor (PrintSettings.legendBox, legendAnchor) and not where the page puts them itself.
    */
   legend?: { x: number; y: number; w: number; h: number; free: boolean };
+  /** Where the title is, the same way; `free` when moved by hand or held at an anchor (PrintSettings.titleAt, titleAnchor). Only on paper. */
+  title?: { x: number; y: number; w: number; h: number; free: boolean };
+  /** The page inside its margin, as shares of its width and height: what the title and the names are lined up with when moved. */
+  inner: { x: number; y: number; w: number; h: number };
+  /** Everyone on the page, by id. */
+  shown: string[];
+  /** The size of a card in the layout's units (what PrintSettings.moves is measured in). */
+  cardUnits: { w: number; h: number };
+  /**
+   * The line from each child's parents to the child, whole, in the layout's units. On the page a stretch several
+   * children share is drawn once; this is for finding everyone who hangs on a stretch that is clicked.
+   */
+  lines: { familyId: string; childId: string; points: { x: number; y: number }[] }[];
   /** All text on the page, for embedding font subsets. */
   text: string;
+  /**
+   * The families' names drawn into a box on this page (as shares of its width and height), as they would stand
+   * there: the inside of the page's `g.pp-legend`. For showing them in a box being moved or made bigger or
+   * smaller before the page is drawn again.
+   */
+  namesIn: (box: { x: number; y: number; w: number; h: number }, style?: NamesStyle) => string;
 }
+
+/** How the families' names are drawn into a box (PosterResult.namesIn). */
+export interface NamesStyle {
+  /** Where they stand in the box; as the print settings say when not given. */
+  align?: Anchor;
+  /** Their line height in centimetres; null: as big as the box lets them be; as the print settings say when not given. */
+  cm?: number | null;
+}
+
+/** Round the couple the page is drawn around: how far their frame stands from their cards, in the layout's units. */
+const COUPLE_PAD = 8;
+/** How much heavier the lines are, and how much bigger the marks between partners, with PrintSettings.strongLines. */
+const STRONG_LINES = 1.7;
+const STRONG_MARKS = 1.3;
+/** The gap between partners with the bigger marks: the widest mark, 33 units, and room either side of it. */
+const STRONG_PARTNER_GAP = 44;
 
 /** A tree is not blown up beyond this on big paper; it would look like a children's book. */
 const MAX_SCALE = 2.1;
-/** How many layouts packing the families together may try (see packBranches). */
-const PACK_TRIES = 10;
-/** The page's unit of lettering (PosterContext.page.u) at most this share of the names' size on the cards: the title about three times as big as the names. */
-const LETTERING = 0.75;
-/** How hard rows are drawn in towards the middle (see LayoutOptions.squeeze). */
-const SQUEEZES = [0.5, 1];
-/** How many rows of stacked cards may be tried side by side (see renderPoster). */
-const MAX_FLAT_TRIES = 14;
-/** How many rows of couples may be stacked one after another (see renderPoster). */
-const MAX_STACK_ROUNDS = 6;
-/** More rows than any tree has: every row, for rows to leave as they are. */
-const MAX_ROWS = 400;
-/** What every print's cards are, whatever the settings say (see renderPoster). */
-const PRINTED_CARDS: Partial<PrintSettings> = { showPhotos: false, showRelationships: false, portrait: 'round', portraitAlign: 'middle', portraitSize: 1 };
-/** How much of the page the tree fills, in the direction that does not decide its size. */
-const FILL = 0.97;
-/** Gaps between families and brothers and sisters grow at most this many times to fill the width. */
-const MAX_SPREAD = 4;
-/** Places among their brothers and sisters tried for the person in the middle. */
-const MAX_SIBLING_TRIES = 4;
-const GUTTER = 64;
-/** Room the sex symbol takes from the first line of a card. */
-const SYMBOL_ROOM = 20;
-/** The sex symbol's size, and how far its middle is from the card's top and right edges. */
-const SYMBOL_SIZE = 15;
-const SYMBOL_INSET = 16.5;
-/** A card grows at most to this many times its width to fit a relationship name; beyond, the name is shortened. */
-const MAX_CARD_STRETCH = 2;
-const DASH: Record<string, string> = { adopted: '5 4', foster: '1.2 3.6', step: '9 4', unknown: '2 4' };
+/**
+ * The letters of the title and of the families' names when no size is asked for: so many times the given names
+ * on the cards as they come out on the paper, but within these shares of the paper's shorter side. On a small
+ * sheet the paper decides (a title a twenty-fourth of the sheet high); on a big sheet full of small cards the
+ * lettering keeps to the cards, without shrinking to where it is lost on the sheet.
+ */
+const AUTO_LETTERS = {
+  title: { names: 3.6, min: 0.022, max: 0.042 },
+  legend: { names: 1.7, min: 0.009, max: 0.016 },
+} as const;
+/** The room a page sized to the tree is laid out for. */
+const FIT_ROOM = { w: 1600, h: 1000 };
+const NO_BLOCK: PageBlock = { height: 0, draw: () => '' };
+
+interface CardText {
+  given: string;
+  surname: string;
+  birth: string;
+  dates: string;
+  initials: string;
+}
+
+interface Placed {
+  fitted: Fitted;
+  landscape: boolean;
+  page: PosterContext['page'];
+  chart: Rect;
+  header: PageBlock;
+  footer: PageBlock;
+  /** Where the page put the families' names when they were not placed by hand: in rows across the foot, or as a block in a corner. */
+  names?: NamesPlace;
+}
+
+/**
+ * The families' names where the page puts them: rows across the foot, or a block of so many columns in a
+ * corner. Or where they are held (PrintSettings.legendAnchor): a block of so many columns there.
+ */
+type NamesPlace = { at: 'foot' } | { at: Anchor; columns: number };
+type Corner = 'bottom-left' | 'bottom-right' | 'top-left' | 'top-right';
+const CORNERS: readonly Corner[] = ['bottom-left', 'bottom-right', 'top-left', 'top-right'];
+/** A block of names in a corner takes at most these shares of the page inside its margin. */
+const NAMES_BLOCK = { w: 0.5, h: 0.45 };
+/** The rows across the foot stay unless a corner makes the cards this much bigger. */
+const NAMES_GAIN = 1.015;
+/** How many corners are fitted in full (the most promising at a quick look), and how many trees each place is looked at with before that. */
+const NAMES_TRIED = 1;
+const NAMES_TREES = 14;
+/** A card whose names do not fit is made at most this many times the usual width (PrintSettings.freeWidths), in steps of so many units. */
+const WIDEST_CARD = 1.5;
+const WIDTH_STEP = 4;
+
+/**
+ * The layouts of the trees drawn last, by what they are made of. The page is drawn again for every change of a
+ * setting, and most change nothing about how the tree is laid out (the title's words, a colour, a box moved
+ * back to where it was): the work already done for the same tree then serves again.
+ */
+const layouters = new Map<string, Layouter>();
+const LAYOUTERS_KEPT = 2;
+
+function layouterFor(index: TreeIndex, options: LayoutOptions, centreId?: string, partnerId?: string): Layouter {
+  const made = new Layouter(index, options, centreId, partnerId);
+  const key = `${centreId ?? ''} ${partnerId ?? ''}\n${JSON.stringify(options)}\n${made.signature}`;
+  const kept = layouters.get(key);
+  layouters.delete(key);
+  layouters.set(key, kept ?? made);
+  if (layouters.size > LAYOUTERS_KEPT) layouters.delete(layouters.keys().next().value!);
+  return kept ?? made;
+}
+
+/** Lets go of the layouts kept from the pages drawn last (when nobody is looking at a page any more): they take tens of megabytes for a big tree. */
+export function forgetLayouts(): void {
+  layouters.clear();
+}
 
 export function renderPoster(input: PosterInput): PosterResult {
-  // Prints have no portraits (at print size they are too small to make out) and no relationship names; the
-  // shields and monograms stand in the middle of the cards. Those settings are kept in the file, unused.
-  const asked: PrintSettings = { ...DEFAULT_PRINT, ...(input.settings ?? effectivePrint(input.doc)), ...PRINTED_CARDS };
-  // With families packed together the rows are no longer generations: no numbers beside them.
-  const settings: PrintSettings = asked.packFamilies ? { ...asked, showGenerations: false } : asked;
-  const theme = posterTheme(settings.theme);
+  return finish(posterSteps(input));
+}
+
+/**
+ * renderPoster a piece at a time (see Steps): fitting a big tree to its page takes seconds, and done in pieces
+ * the window answers meanwhile and the work can be dropped for a page asked for after it.
+ */
+export function* posterSteps(input: PosterInput): Steps<PosterResult> {
+  const settings: PrintSettings = { ...DEFAULT_PRINT, ...(input.settings ?? effectivePrint(input.doc)) };
   const language = chartLanguage(input.language ?? input.doc.view.language);
   const now = input.now ?? new Date();
   const fullIndex = new TreeIndex(input.doc);
@@ -144,457 +217,521 @@ export function renderPoster(input: PosterInput): PosterResult {
       }).doc
     : { ...input.doc, people: [], families: [] };
   const index = new TreeIndex(doc);
-  // Surnames at birth come from the whole tree: a father may be outside the part that is printed.
-  // Everyone's is needed, so that families get the colours they have on the chart.
-  const births = new Map(input.doc.people.map((p) => [p.id, birthSurname(fullIndex, p, language.surnameFor)]));
-  const surnames = new Map(doc.people.map((p) => [p.id, surnameLinesIn(language, p, births.get(p.id))]));
-
-  // Dates in full where they fit the card; years otherwise.
-  const lifespanOf = (p: Person, max: number) => {
-    if (!settings.fullDates) return language.lifespan(p);
-    const full = language.lifespan(p, true);
-    return fit(full, card.dates, max) === full ? full : language.lifespan(p);
-  };
   const measure = (t: string, f: FontSpec) => input.measure(t, cssFont(f)) + (f.letterSpacing ?? 0) * f.size * Math.max(0, Array.from(t).length - 1);
   const fit = (t: string, f: FontSpec, max: number) => fitText(t, f, max, measure);
 
-  // Relationship names, as seen from the person in the middle; their twins are named as such.
-  const kin: ReadonlyMap<string, Kin> = centerId ? kinship(fullIndex, centerId) : new Map();
-  const twins = centerId ? birthGroupOf(input.doc, centerId) : undefined;
-  const bornWith = new Map(twins ? twins.memberIds.filter((m) => m !== centerId).map((m) => [m, twins.memberIds.length]) : []);
-  const relations = new Map(doc.people.map((p) => [p.id, settings.showRelationships ? kinLabel(language, kin.get(p.id), p.sex, bornWith.get(p.id)) : '']));
-
-  // Cards: every card has the same lines, so rows line up. The portraits (and the badges in their
-  // place) can be made bigger; the text then starts further right and the card is wider by as much.
-  const portraitScale = clamp(settings.portraitSize || 1, 0.5, 3);
-  const grown = Math.round((portraitScale - 1) * theme.card.badge.size);
-  // Without emblems the text starts where the emblem did, and the card is narrower by as much.
-  const emblemRoom = settings.showEmblems === false ? theme.card.textX - theme.card.badge.x : 0;
-  const card: PosterCardStyle = {
-    ...theme.card,
-    width: theme.card.width + grown - emblemRoom,
-    textX: theme.card.textX + grown - emblemRoom,
-    // No portraits on prints: they take no room either.
-    photoRadius: settings.showPhotos ? theme.card.photoRadius * portraitScale : 0,
-    badge: {
-      ...theme.card.badge,
-      kind: emblemRoom ? 'none' : theme.card.badge.kind,
-      size: theme.card.badge.size * portraitScale,
-      font: { ...theme.card.badge.font, size: theme.card.badge.font.size * Math.sqrt(portraitScale) },
-    },
-  };
-  // The sex symbol sits in the top right corner; the first line stops short of it.
-  const symbolRoom = settings.showSex ? SYMBOL_ROOM : 0;
-  // A relationship name that does not fit makes its card wider.
-  const widths = new Map<string, number>();
-  for (const [id, relation] of relations) {
-    const needed = Math.ceil(card.textX + measure(relation, card.kin) + symbolRoom + card.padRight);
-    if (relation && needed > card.width) widths.set(id, Math.min(needed, card.width * MAX_CARD_STRETCH));
-  }
-  const lines = presentLines(
-    theme,
-    settings,
-    [...surnames.values()].some((s) => !!s.birth),
+  // Surnames at birth come from the whole tree: a father may be outside the part that is printed.
+  // Everyone's is needed, so that families get the colours they have on the chart.
+  const births = new Map(input.doc.people.map((p) => [p.id, birthSurname(fullIndex, p, language.surnameFor)]));
+  const surnames = new Map(
+    doc.people.map((p) => [p.id, surnameLinesIn(language, p, births.get(p.id), settings.unknownBirthNames && birthSurnameUnknown(fullIndex, p))]),
   );
-  const cardHeight = cardHeightFor(theme, lines, card);
-  // Childless couples in the room of one card: the partner over the corner, or, with tall generations, under the card.
-  let options: LayoutOptions = {
-    ...COMFORTABLE_LAYOUT,
-    ...theme.spacing,
-    cardWidth: card.width,
-    cardHeight,
-    // Compact couples: childless ones stacked, and in rows too wide for them side by side, those with children too
-    // (worked out below), which needs cards stacked under each other.
-    compactChildless: settings.compactCouples,
-    tuckBelow: settings.tallGenerations || settings.compactCouples,
+
+  // Every card has the same parts, so all are one size: a line for the surname at birth when anyone has one.
+  const parts: CardParts = {
+    emblem: settings.showEmblems,
+    birthName: settings.showBirthNames && [...surnames.values()].some((s) => !!s.birth),
+    dates: settings.dates !== 'none',
+    emblemTop: settings.emblemAlign === 'top',
+    sexAccent: settings.sexColors,
   };
-  // Cards tucked over a corner reach above their row: the lines in the gap above keep clear of them.
-  if (options.compactChildless && !options.tuckBelow) options = { ...options, rowGap: options.rowGap + Math.round(cardHeight * TUCK_SCALE * TUCK_UP * 0.8) };
-  // The document laid out: the tree as it is, or (to keep the person in the middle there) with their
-  // brothers and sisters shared out on both sides of them.
-  let laidOut = doc;
-  const layoutWith = (o: LayoutOptions, d: TreeDocument = laidOut) => {
-    const l = computeLayout(d, o, undefined, widths);
-    return theme.flow === 'up' ? flipLayout(l) : l;
-  };
-  // Stacking only where asked for, at first: on paper without tall generations, in no row at all (rows
-  // where it makes the cards bigger are found below). Laid out to fit, the childless are always stacked.
-  if (settings.compactCouples && !settings.tallGenerations && paperSize(settings.paper)) {
-    options = { ...options, flatRows: new Set(Array.from({ length: MAX_ROWS }, (_, r) => r)) };
-  }
-  let layout = layoutWith(options);
+  const design = cardDesign(parts, settings.largeText ? LARGE_TEXT : 1);
 
   const texts = new Map<string, CardText>();
+  // Cards wider than the rest, for names that need it (PrintSettings.freeWidths).
+  const widths: Record<string, number> = {};
   for (const p of doc.people) {
-    const textWidth = (widths.get(p.id) ?? card.width) - card.textX - card.padRight;
     const names = surnames.get(p.id) ?? { surname: p.name.surname.trim(), birth: '' };
-    const relation = relations.get(p.id) ?? '';
+    const givenNames = nameUnknown(p) ? language.unknown(p.sex) : p.name.given.trim();
+    let wider = 0;
+    if (settings.freeWidths) {
+      // As wide as the longest of the names needs; the dates never widen a card (they are cut down to years).
+      const need = Math.max(
+        measure(givenNames, design.given),
+        measure(names.surname, design.surname),
+        parts.birthName && names.birth ? measure(names.birth, design.birth) : 0,
+      );
+      if (need > design.textW) {
+        wider = Math.min(design.width * (WIDEST_CARD - 1), Math.ceil((need - design.textW) / WIDTH_STEP) * WIDTH_STEP);
+        widths[p.id] = design.width + wider;
+      }
+    }
+    // Dates in full where they fit the card; years otherwise.
+    const room = design.textW + wider;
+    let dates = '';
+    if (parts.dates) {
+      const years = language.lifespan(p);
+      const full = settings.dates === 'full' ? language.lifespan(p, true) : years;
+      dates = fit(full, design.dates, room) === full ? full : fit(years, design.dates, room);
+    }
     texts.set(p.id, {
-      kin: relation ? fit(relation, card.kin, textWidth - symbolRoom) : '',
-      given: fit(nameUnknown(p) ? language.unknown(p.sex) : p.name.given.trim(), card.given, textWidth - (settings.showRelationships ? 0 : symbolRoom)),
-      surname: fit(names.surname, card.surname, textWidth),
-      birth: fit(names.birth, card.birth, textWidth),
-      dates: settings.showDates ? fit(lifespanOf(p, textWidth), card.dates, textWidth) : '',
-      place: '',
+      given: fit(givenNames, design.given, design.textW + wider),
+      surname: fit(names.surname, design.surname, room),
+      birth: parts.birthName ? fit(names.birth, design.birth, room) : '',
+      dates,
       initials: initials(p),
     });
   }
 
-  // One colour per family name, as on the chart.
-  const colors = assignColors(doc, 'family', layout.ranks, (p) => births.get(p.id) || p.name.surname.trim(), input.doc);
-  const focusIds = [centerId, partnerId].filter((id): id is string => !!id && !!index.person(id));
-  const rootIds = new Set<string>(focusIds);
-  for (const id of focusIds) for (const a of index.ancestors(id)) rootIds.add(a);
-
-  const generations = layout.rows.length;
+  const options: LayoutOptions = {
+    ...LAYOUT,
+    ...(settings.tight ? TIGHT_LAYOUT : {}),
+    cardWidth: design.width,
+    cardHeight: design.height,
+    widths: Object.keys(widths).length ? widths : undefined,
+    stackCouples: settings.stackCouples,
+    amidPartners: settings.amidPartners,
+    // The bigger marks between partners need a wider gap: the widest (divorced: two rings struck through) clear of both cards.
+    ...(settings.strongLines ? { partnerGap: Math.max((settings.tight ? TIGHT_LAYOUT : LAYOUT).partnerGap ?? LAYOUT.partnerGap, STRONG_PARTNER_GAP) } : {}),
+    // Room round the couple in the middle for the frame round them.
+    halo: { ids: [centerId, partnerId].filter((id): id is string => !!id), pad: COUPLE_PAD + 2 },
+  };
+  const layouter = layouterFor(index, options, centerId, partnerId);
   const title = settings.title?.trim() || input.doc.meta.title || 'Family tree';
-  const subtitle = settings.subtitle?.trim() ?? (doc.people.length ? language.summary(generations, doc.people.length) : '');
-
   const defs = new Map<string, string>();
   const ctx: PosterContext = {
-    theme,
-    card,
     settings,
     language,
-    doc,
-    index,
-    layout,
-    options,
     page: { w: 0, h: 0, u: 0, margin: 0 },
-    chart: { x: 0, y: 0, w: 0, h: 0 },
-    scale: 1,
-    colors: colors.byPerson,
-    legend: colors.legend.map((l) => ({ ...l, label: l.key === '' ? language.others : l.label })),
-    legendAt: 'below',
-    kin,
-    texts,
-    lines,
-    // Square or curved as on the chart; a style whose tree carries the lines draws them only without the tree.
-    lineStyle: input.lines ?? (theme.line.style === 'branch' ? 'square' : theme.line.style),
-    focusIds,
-    rootIds,
+    legend: [],
+    legendAt: !settings.showLegend ? 'none' : settings.legendBox || settings.legendAnchor ? 'free' : 'below',
     title,
-    subtitle: settings.subtitle?.trim() === '' ? '' : subtitle,
+    subtitle: '',
     years: yearRange(doc),
     now,
     measure,
-    fit,
     def: (id, markup) => {
       if (!defs.has(id)) defs.set(id, markup);
     },
-    person: (id) => index.person(id),
-    status: (familyId) => {
-      const f = index.family(familyId);
-      return f ? relationshipStatus(f) : 'unknown';
-    },
   };
 
+  // One colour per family name, as on the chart. The generations do not depend on how the tree is arranged.
+  const ranks = layouter.run({ down: Infinity, bands: [Infinity], wingL: Infinity, wingR: Infinity, flankL: 'band', flankR: 'band', stack: false }).ranks;
+  const colors = assignColors(doc, 'family', ranks, (p) => births.get(p.id) || p.name.surname.trim(), input.doc);
+  ctx.legend = colors.legend.map((l) => ({ ...l, label: l.key === '' ? language.others : l.label }));
+  const generations = new Set(ranks.values()).size;
+  ctx.subtitle =
+    settings.subtitle?.trim() === '' ? '' : (settings.subtitle?.trim() ?? (doc.people.length ? language.summary(generations, doc.people.length) : ''));
+
+  // The title (the page's lettering with it) and the families' names as big as asked for, a line so many
+  // centimetres high (see PrintSettings.titleSize, legendSize); otherwise in proportion to the page.
+  const letters = (cm: number | undefined) => (cm ? (clamp(cm, LETTERING_CM.min, LETTERING_CM.max) * 10 * PX_PER_MM) / LINE_HEIGHT : undefined);
+  const titleLetters = letters(settings.titleSize);
+  const legendLetters = letters(settings.legendSize);
+  const units = (base: number) => ({ u: titleLetters ? titleLetters / LETTERING.title : base, lu: legendLetters ? legendLetters / LETTERING.legend : base });
+  /** The letters the page gives the title and the families' names by itself, on a sheet so big on its shorter side with names so big on the cards (AUTO_LETTERS). */
+  const autoLetters = (short: number, names?: number) => {
+    const auto = (of: { names: number; min: number; max: number }) =>
+      names === undefined ? short * of.max : clamp(names * of.names, short * of.min, short * of.max);
+    return { title: auto(AUTO_LETTERS.title), legend: auto(AUTO_LETTERS.legend) };
+  };
+  /** The same on paper, sized to the sheet and to the names on the cards; before the cards' size is known, as big as the sheet allows. */
+  const paperUnits = (short: number, names?: number) => {
+    const auto = autoLetters(short, names);
+    return { u: (titleLetters ?? auto.title) / LETTERING.title, lu: (legendLetters ?? auto.legend) / LETTERING.legend };
+  };
+  const given = { work: settings.tight ? 2 : 1, fill: settings.fill };
   const paper = paperSize(settings.paper);
-  const gutter = settings.showGenerations && layout.rows.length ? GUTTER : 0;
-  // A little room under the bottom row.
-  const unionPad = 10;
-  // Room above the oldest generation for the crown of the drawn tree (a picture of one's own fills the chart area as it is).
-  const picture = settings.showTree ? input.doc.background : undefined;
-  const crownPad = settings.showTree && !picture && theme.tree ? cardHeight * 0.7 : 0;
 
   /**
-   * Fits a layout on the page: the content box, the orientation and the
-   * scale. The tree is as big as the page allows, with no empty band beside
-   * it; with the person kept in the middle, the tree is then slid across so
-   * they come as near the middle of the page as that leaves room for.
+   * What the title is drawn in (it stands in the middle of it) on a page so big: across the top; or where it
+   * was put by hand; or held at its anchor, as far to a side as leaves all of it (its rules reach out from the
+   * middle) inside the margin. Whatever size the title is, an anchored one stays at its place.
    */
-  const freeLegend = !!settings.legendBox;
-  // The page's lettering and the families' names as big as asked for (see PrintSettings.titleScale, legendScale).
-  const titleScale = clamp(settings.titleScale ?? 1, 0.5, 3);
-  const legendScale = clamp(settings.legendScale ?? 1, 0.5, 3);
-  const placeWith = (l: LayoutResult, uCap: number): Placed => {
-    const b = l.bounds;
-    const left = b.x - gutter;
-    const right = b.x + b.w;
-    const focusX = focusCenter(l, index, focusIds);
-    const centred = settings.centered && focusX !== undefined;
-    const cx = (left + right) / 2;
-    const content: Rect = { x: left, y: b.y - crownPad, w: Math.max(right - left, 1), h: Math.max(b.h + unionPad + crownPad, 1) };
-    if (!paper) {
-      const base = clamp(Math.max(content.w, content.h) / 110, 8, 22);
-      const margin = theme.margin * 100 * base;
-      ctx.page = { w: content.w + margin * 2, h: 0, u: base * titleScale, lu: base * legendScale, margin };
-      ctx.legendAt = freeLegend ? 'free' : 'below';
-      const header = theme.header(ctx);
-      const footer = theme.footer(ctx);
-      ctx.page.h = content.h + margin * 2 + header.height + footer.height;
-      const page = { ...ctx.page };
-      const chart = { x: margin, y: margin + header.height, w: content.w, h: content.h };
-      return {
-        cx,
-        content,
-        header,
-        footer,
-        side: undefined,
-        legendAt: ctx.legendAt,
-        landscape: false,
-        page,
-        chart,
-        anchor: chart.x + chart.w / 2,
-        scale: 1,
-        offCentre: 0,
-      };
+  const titleOn = (w: number, h: number, margin: number, header: PageBlock): Rect => {
+    const across = Math.max(10, w - margin * 2);
+    const top: Rect = { x: margin, y: margin, w: across, h: header.height };
+    if (!paper) return top;
+    if (settings.titleAnchor) {
+      const to = anchorShares(settings.titleAnchor);
+      const reach = Math.min(across, header.extent?.(top).w ?? across) / 2;
+      return { ...top, x: margin + reach + to.x * (across - 2 * reach) - across / 2, y: margin + to.y * Math.max(0, h - margin * 2 - header.height) };
     }
-    const portrait = { w: paper.widthMm * PX_PER_MM, h: paper.heightMm * PX_PER_MM };
-    const candidates = settings.orientation === 'portrait' ? [false] : settings.orientation === 'landscape' ? [true] : [false, true];
-    let best: Placed | undefined;
-    for (const land of candidates) {
-      // The legend under the tree, or (for styles that can) in a column beside it: whichever leaves the cards bigger.
-      const legendPlaces = freeLegend ? (['free'] as const) : theme.side ? (['below', 'side'] as const) : (['below'] as const);
-      for (const legendAt of legendPlaces) {
-        const w = land ? portrait.h : portrait.w;
-        const h = land ? portrait.w : portrait.h;
-        const margin = theme.margin * Math.min(w, h);
-        const base = Math.min(Math.min(w, h) / 100, uCap);
-        ctx.page = { w, h, u: base * titleScale, lu: base * legendScale, margin };
-        ctx.legendAt = legendAt;
-        const header = theme.header(ctx);
-        const footer = theme.footer(ctx);
-        const chartH = Math.max(10, h - margin * 2 - header.height - footer.height);
-        const side = legendAt === 'side' ? theme.side?.(ctx, chartH) : undefined;
-        if (legendAt === 'side' && !side) continue;
-        const chart = { x: margin, y: margin + header.height, w: Math.max(10, w - margin * 2 - (side?.width ?? 0)), h: chartH };
-        const scale = Math.min(chart.w / content.w, chart.h / content.h, MAX_SCALE);
-        // Where the middle of the content goes across the page. Room left over beside the tree (the
-        // height decides its size) lets the person in the middle move towards the middle of the page.
-        const slack = Math.max(0, (chart.w - content.w * scale) / 2);
-        const mid = chart.x + chart.w / 2;
-        const anchor = centred ? clamp(w / 2 - (focusX! - cx) * scale, mid - slack, mid + slack) : mid;
-        const offCentre = centred ? Math.abs(anchor + (focusX! - cx) * scale - w / 2) / w : 0;
-        const better =
-          !best ||
-          scale > best.scale * 1.02 ||
-          // About as big: the one with the person nearer the middle.
-          (scale > best.scale * 0.98 && offCentre < best.offCentre - 0.02);
-        if (better) best = { cx, content, landscape: land, scale, header, footer, side, legendAt, page: { ...ctx.page }, chart, anchor, offCentre };
+    const at = settings.titleAt;
+    return at ? { ...top, x: at.x * w - across / 2, y: at.y * h } : top;
+  };
+  /**
+   * The box of the families' names as it was sized by hand (PrintSettings.legendBox): where it was put; or, held
+   * at an anchor, a box of that size there, made bigger where the names need more than it has (they then grow
+   * away from the anchor, and never off the page or out of the tree's sight).
+   */
+  const handBox = (by: NonNullable<PrintSettings['legendBox']>, w: number, h: number, chart: Rect, title?: Rect): Rect => {
+    const box: Rect = { x: by.x * w, y: by.y * h, w: by.w * w, h: by.h * h };
+    if (!settings.legendAnchor) return box;
+    const need = namesIn(ctx, box);
+    return clearOf(placeAt(ctx, chart, settings.legendAnchor, Math.max(box.w, need.w), Math.max(box.h, need.h)), title);
+  };
+  /**
+   * The families' names placed by the page (held at an anchor, or in a corner it chose) where the title stands
+   * too: under it when they are in the upper half of the page, over it in the lower, PrintSettings.legendGap
+   * apart. Names placed by hand stay where they were put.
+   */
+  const clearOf = (rect: Rect, title?: Rect): Rect => {
+    if (!title || !paper) return rect;
+    const gap = (settings.legendGap ?? LEGEND_GAP_CM) * 10 * PX_PER_MM;
+    const across = rect.x < title.x + title.w && title.x < rect.x + rect.w;
+    const meet = rect.y < title.y + title.h + gap && title.y < rect.y + rect.h + gap;
+    if (!across || !meet) return rect;
+    const upper = rect.y + rect.h / 2 < ctx.page.h / 2;
+    return { ...rect, y: upper ? title.y + title.h + gap : title.y - gap - rect.h };
+  };
+  /** The names as a block of so many columns at an anchor, clear of the title. */
+  const blockAt = (chart: Rect, at: Anchor, columns: number, title?: Rect): Rect => clearOf(namesBlock(ctx, chart, at, columns), title);
+
+  /** The page in one orientation: the room the title and the families' names leave, and the tree fitted into it. */
+  function* lay(
+    w: number,
+    h: number,
+    landscape: boolean,
+    nameSize?: number,
+    shape?: Fitted['shape'],
+    chosen?: NamesPlace,
+    fitting: typeof given = given,
+  ): Steps<Placed> {
+    const margin = MARGIN * Math.min(w, h);
+    ctx.page = { w, h, ...paperUnits(Math.min(w, h), nameSize), margin };
+    const header = settings.showTitle ? heritage.header(ctx) : NO_BLOCK;
+    let footer = heritage.footer(ctx);
+    // The tree has the whole page inside the margin, but for the boxes of the title and of the families' names:
+    // it stands clear of those, with room beside them and between them for cards.
+    const chart: Rect = { x: margin, y: margin, w: Math.max(10, w - margin * 2), h: Math.max(10, h - margin * 2) };
+    const boxes: Rect[] = [];
+    let titleBox: Rect | undefined;
+    if (settings.showTitle) {
+      const rect = titleOn(w, h, margin, header);
+      titleBox = header.extent?.(rect) ?? rect;
+      boxes.push(titleBox);
+    }
+    const pad = ctx.page.u * 1.2;
+    const blockOf = (b: Rect) => ({ x: b.x - chart.x - pad, y: b.y - chart.y - pad, w: b.w + pad * 2, h: b.h + pad * 2 });
+    const titleBlocks = boxes.map(blockOf);
+    const roomWith = (legend?: Rect): Room => ({
+      w: chart.w,
+      h: chart.h,
+      centred: 0,
+      maxScale: MAX_SCALE,
+      blocks: legend ? [...titleBlocks, blockOf(legend)] : titleBlocks,
+    });
+    const effort = input.effort ?? 'full';
+    let legend: Rect | undefined;
+    let names: NamesPlace | undefined;
+    /** The best few trees for the page without the names: for a quick look at how big the tree stays around a box. */
+    const looks = function* (): Steps<(rect: Rect) => number> {
+      const trees: LayoutResult[] = [];
+      for (const tree of yield* fitShapesSteps(layouter, options, roomWith(), { ...given, fill: false }, NAMES_TREES)) {
+        trees.push(layouter.run(tree));
+        yield;
+      }
+      return (rect: Rect) => Math.max(0, ...trees.map((tree) => place(tree, roomWith(rect)).scale));
+    };
+    if (settings.showLegend && settings.legendBox) {
+      legend = handBox(settings.legendBox, w, h, chart, titleBox);
+    } else if (settings.showLegend && settings.legendAnchor) {
+      // Held at a place, as a block just big enough for the names: in as many columns as keep the tree biggest
+      // around it (a wide block suits the top or the foot, a tall one a side). Decided once for a page.
+      const at = settings.legendAnchor;
+      names = chosen;
+      if (!names) {
+        const count = namesEntries(ctx).entries.length;
+        const columns = namesColumns(ctx, chart);
+        if (!columns.length && count) columns.push(Math.ceil(Math.sqrt(count)));
+        let best = columns[0];
+        if (columns.length > 1 && effort === 'full') {
+          const quick = yield* looks();
+          let most = -1;
+          for (const c of columns) {
+            const size = quick(blockAt(chart, at, c, titleBox));
+            if (size > most * 1.002) [most, best] = [size, c];
+            yield;
+          }
+        }
+        names = best ? { at, columns: best } : undefined;
+      }
+      legend = names && names.at !== 'foot' ? blockAt(chart, names.at, names.columns, titleBox) : undefined;
+    } else if (settings.showLegend) {
+      // Not placed by hand: in rows across the foot as ever, unless a corner the tree leaves empty suits the page
+      // better. Decided once for a page (by how big the tree as it would stand without them can stay around
+      // each place), and kept while the lettering is sized to the cards.
+      ctx.legendAt = 'below';
+      footer = heritage.footer(ctx);
+      const foot = footer.legend?.({ x: margin, y: h - margin - footer.height, w: chart.w, h: footer.height });
+      const cornered = (at: Anchor, columns: number) => blockAt(chart, at, columns, titleBox);
+      names = chosen ?? (foot ? { at: 'foot' } : undefined);
+      if (!chosen && foot && effort === 'full') {
+        // How big the tree stays around each place, at a quick look: the best few trees found for the page
+        // without the names, each set down around the box as it is (the tree is not the same tree around every
+        // place). The corners that look better than the foot are then fitted in full, and so is the foot.
+        const quick = yield* looks();
+        const atFoot = quick(foot);
+        const corners: { names: NamesPlace & { at: Corner }; rect: Rect; quick: number }[] = [];
+        for (const at of CORNERS)
+          for (const columns of namesColumns(ctx, chart)) {
+            const rect = cornered(at, columns);
+            const c = { names: { at, columns }, rect, quick: quick(rect) };
+            if (c.quick > atFoot * NAMES_GAIN) corners.push(c);
+            yield;
+          }
+        corners.sort((a, b) => b.quick - a.quick);
+        if (corners.length) {
+          const full = function* (rect: Rect): Steps<number> {
+            return (yield* fitLayoutSteps(layouter, options, roomWith(rect), effort, { ...given, fill: false })).scale;
+          };
+          let best: { names: NamesPlace; scale: number } = { names: { at: 'foot' }, scale: (yield* full(foot)) * NAMES_GAIN };
+          // The best block of each corner, the most promising corners first.
+          const tried = new Set<Anchor>();
+          for (const c of corners) {
+            if (tried.has(c.names.at) || tried.size >= NAMES_TRIED) continue;
+            tried.add(c.names.at);
+            const scale = yield* full(c.rect);
+            if (scale > best.scale * 1.002) best = { names: c.names, scale };
+          }
+          names = best.names;
+        }
+      }
+      legend = names && names.at !== 'foot' ? cornered(names.at, names.columns) : foot;
+      if (names && names.at !== 'foot') {
+        ctx.legendAt = 'free';
+        footer = heritage.footer(ctx);
       }
     }
-    return best!;
-  };
-  // The title, the legend and the rest of the page's lettering in proportion to the names on the cards, not
-  // only to the paper: on a big sheet full of small cards they would otherwise dwarf the tree. Smaller
-  // lettering leaves the tree more room, so the cards grow a little and the lettering with them.
-  const place = (l: LayoutResult): Placed => {
-    let placed = placeWith(l, Infinity);
-    if (!paper) return placed;
-    for (let round = 0; round < 3; round++) {
-      const cap = LETTERING * card.given.size * placed.scale;
-      if (cap >= (placed.page.u / titleScale) * 0.98) break;
-      placed = placeWith(l, cap);
+    const room = roomWith(legend);
+    const fitted = shape ? { ...place(layouter.run(shape), room), shape } : yield* fitLayoutSteps(layouter, options, room, effort, fitting);
+    return { fitted, landscape, page: { ...ctx.page }, chart, header, footer, names };
+  }
+  /**
+   * The title, the families' names and the rest of the page's lettering in proportion to the names on the cards,
+   * not only to the paper: the tree is fitted with the lettering as big as the sheet allows, and the lettering
+   * then sized to the cards that gives (which leaves the tree a little more room, and the cards a little bigger).
+   * With the lettering at its size the tree is fitted once more, in case another shape suits the room better
+   * now than the one found around the bigger lettering (without the longer search: that one is not run twice).
+   */
+  function* layFor(w: number, h: number, landscape: boolean): Steps<Placed> {
+    let placed = yield* lay(w, h, landscape);
+    for (let round = 0; round < 2; round++) {
+      const names = design.given.size * placed.fitted.scale;
+      const next = paperUnits(Math.min(w, h), names);
+      if (Math.abs(next.u - placed.page.u) < placed.page.u * 0.02 && Math.abs(next.lu - (placed.page.lu ?? next.lu)) < next.lu * 0.02) break;
+      const kept: Placed = yield* lay(w, h, landscape, names, placed.fitted.shape, placed.names);
+      const again: Placed = (input.effort ?? 'full') === 'full' ? yield* lay(w, h, landscape, names, undefined, placed.names, { ...given, fill: false }) : kept;
+      placed = again.fitted.scale > kept.fitted.scale * 1.002 ? again : kept;
     }
     return placed;
-  };
+  }
 
-  let placed = place(layout);
-  // Rows too wide to stand side by side: their couples with children stacked under each other, the line to
-  // the children out at the side (see LayoutOptions.stackParents), the widest row first, as long as the width
-  // decides the size and the cards get bigger.
-  if (paper && settings.compactCouples) {
-    const widthDecides = (p: Placed) => p.chart.w / p.content.w <= p.chart.h / p.content.h + 1e-9;
-    const stackedRows = new Set<number>();
-    for (let round = 0; round < MAX_STACK_ROUNDS && widthDecides(placed) && placed.scale < MAX_SCALE; round++) {
-      let found: PackTry | undefined;
-      // The widest row; the next one only when stacking that one does not help.
-      for (const row of rowsByWidth(layout)
-        .filter((r) => !stackedRows.has(r))
-        .slice(0, 2)) {
-        if (found) break;
-        const flatRows = new Set(options.flatRows ?? []);
-        flatRows.delete(row);
-        const trialOptions = { ...options, flatRows, stackParentRows: new Set([...stackedRows, row]) };
-        const trialLayout = layoutWith(trialOptions);
-        const trialPlaced = place(trialLayout);
-        if (trialPlaced.scale > (found ?? { placed }).placed.scale * 1.01) found = { options: trialOptions, layout: trialLayout, placed: trialPlaced };
-      }
-      if (!found) break;
-      ({ options, layout, placed } = found);
-      for (const r of options.stackParentRows ?? []) stackedRows.add(r);
-    }
+  let placed: Placed;
+  if (paper) {
+    const portrait = { w: paper.widthMm * PX_PER_MM, h: paper.heightMm * PX_PER_MM };
+    const tries = settings.orientation === 'portrait' ? [false] : settings.orientation === 'landscape' ? [true] : [true, false];
+    const all: Placed[] = [];
+    for (const land of tries) all.push(yield* layFor(land ? portrait.h : portrait.w, land ? portrait.w : portrait.h, land));
+    placed = all.reduce((best, p) => (p.fitted.scale > best.fitted.scale * 1.02 ? p : best));
+  } else {
+    // A page the size of the tree: the tree as it suits a screen, then the page around it.
+    const fitted = yield* fitLayoutSteps(layouter, options, { ...FIT_ROOM, centred: 0 }, input.effort ?? 'full', given);
+    const b = fitted.layout.bounds;
+    const content = { w: Math.max(b.w, 1), h: Math.max(b.h, 1) };
+    const base = clamp(Math.max(content.w, content.h) / 110, 8, 22);
+    const margin = MARGIN * 100 * base;
+    ctx.page = { w: content.w + margin * 2, h: 0, ...units(base), margin };
+    const header = settings.showTitle ? heritage.header(ctx) : NO_BLOCK;
+    const footer = heritage.footer(ctx);
+    ctx.page.h = content.h + margin * 2 + header.height + footer.height;
+    const chart = { x: margin, y: margin + header.height, w: content.w, h: content.h };
+    placed = { fitted: { ...fitted, scale: 1, x: -b.x, y: -b.y, off: { x: 0, y: 0 } }, landscape: false, page: { ...ctx.page }, chart, header, footer };
   }
-  // Keeping the person in the middle: they may stand elsewhere among their brothers and sisters, when
-  // that brings them nearer the middle of the page without making the cards smaller. A few places at most,
-  // as each is a layout of its own.
-  if (paper && settings.centered && centerId) {
-    const start = placed;
-    for (const shared of siblingsAround(doc, index, centerId).slice(0, MAX_SIBLING_TRIES)) {
-      const trialLayout = layoutWith(options, shared);
-      const trialPlaced = place(trialLayout);
-      if (trialPlaced.scale > start.scale * 0.95 && trialPlaced.offCentre < placed.offCentre - 0.02) {
-        laidOut = shared;
-        layout = trialLayout;
-        placed = trialPlaced;
-      }
-    }
-  }
-  // A wide tree on narrow paper: the widest generations are drawn in two
-  // tiers, every other card a step lower, as long as that makes the cards bigger.
-  // With tall generations asked for, rows are stacked more readily: more of them, for a smaller gain.
-  const tall = settings.tallGenerations;
-  if (paper && placed.scale < MAX_SCALE) {
-    const tiers: number[] = [];
-    const tryTiers = (trialOptions: LayoutOptions) => {
-      const trialLayout = layoutWith(trialOptions);
-      const trialPlaced = place(trialLayout);
-      if (trialPlaced.scale < placed.scale * (tall ? 1.05 : 1.1)) return false;
-      options = trialOptions;
-      layout = trialLayout;
-      placed = trialPlaced;
-      return true;
-    };
-    for (let attempt = 0; attempt < (tall ? 5 : 3); attempt++) {
-      const wide = placed.chart.h / placed.content.h > (placed.chart.w / placed.content.w) * (tall ? 0.9 : 1.25);
-      const widest = widestRow(layout, tiers);
-      if (!wide || widest === undefined) break;
-      if (!tryTiers({ ...options, tierGenerations: [...tiers, widest] })) break;
-      tiers.push(widest);
-    }
-  }
-  // No empty corners: rows drawn inside the widest one, parents then not always right over their children
-  // (see LayoutOptions.squeeze), as little as gives the biggest cards, for the straightest lines.
-  const squeezed = (from: PackTry): PackTry => {
-    let best = from;
-    for (const squeeze of SQUEEZES) {
-      const trialOptions = { ...from.options, squeeze };
-      const trialLayout = layoutWith(trialOptions);
-      const trialPlaced = place(trialLayout);
-      if (trialPlaced.scale > best.placed.scale * 1.01) best = { options: trialOptions, layout: trialLayout, placed: trialPlaced };
-    }
-    return best;
-  };
-  const widthBound = (p: Placed) => p.chart.w / p.content.w <= p.chart.h / p.content.h + 1e-9;
-  if (paper && placed.scale < MAX_SCALE) {
-    const unpacked: PackTry = { options, layout, placed };
-    let best = squeezed(unpacked);
-    // Generations not in rows: whole branches drawn a row lower, wherever that lets the families beside them
-    // spread out and so makes the cards bigger (see packBranches), then drawn in as above. Only when the
-    // width still decides the size: hanging branches lower makes the tree taller.
-    if (settings.packFamilies && best.placed.scale < MAX_SCALE && widthBound(best.placed)) {
-      const packed = packBranches(
-        doc,
-        rootIds,
-        layout,
-        (sink) => {
-          const trialOptions = { ...options, sink };
-          const trialLayout = layoutWith(trialOptions);
-          return { options: trialOptions, layout: trialLayout, placed: place(trialLayout) };
-        },
-        placed.scale,
-      );
-      if (packed) {
-        const packedIn = squeezed(packed);
-        if (packedIn.placed.scale > best.placed.scale * 1.01) best = packedIn;
-      }
-    }
-    ({ options, layout, placed } = best);
-  }
-  // Room to spare across the page (the height decides the size, as with narrower cards without emblems):
-  // rows with cards stacked under each other are laid out side by side again, lower and wider, where that
-  // makes the cards bigger, those with most stacked cards first.
-  if (paper && options.tuckBelow && placed.scale < MAX_SCALE && !widthBound(placed)) {
-    const stacked = new Map<number, number>();
-    // (Couples only: brothers and sisters with nobody beside or under them stay stacked, the tree as narrow as it gets.)
-    const couple = (a: string, b: string) => index.partnerFamilies(a).some((f) => f.partners.includes(b));
-    for (const c of layout.cards) {
-      const row = layout.ranks.get(c.personId);
-      if (c.tuckedOn && row !== undefined && couple(c.personId, c.tuckedOn)) stacked.set(row, (stacked.get(row) ?? 0) + 1);
-    }
-    for (const [row] of [...stacked].sort((a, b) => b[1] - a[1] || a[0] - b[0]).slice(0, MAX_FLAT_TRIES)) {
-      const trialOptions = { ...options, flatRows: new Set([...(options.flatRows ?? []), row]) };
-      const trialLayout = layoutWith(trialOptions);
-      const trialPlaced = place(trialLayout);
-      if (trialPlaced.scale <= placed.scale * 1.01) continue;
-      options = trialOptions;
-      layout = trialLayout;
-      placed = trialPlaced;
-      if (widthBound(placed)) break;
-    }
-  }
-  // The tree fills the page: when the width decides the size, the generations
-  // are spread out to the full height; when the height decides it, the
-  // families are spread out to the full width.
-  const gaps = new Set(layout.ranks.values()).size - 1;
-  if (paper && gaps > 0 && placed.scale < MAX_SCALE) {
-    const room = (placed.chart.h * FILL) / placed.scale - placed.content.h;
-    const extra = room / gaps;
-    if (extra > 12) {
-      const trialOptions = { ...options, rowGap: options.rowGap + extra };
-      const trialLayout = layoutWith(trialOptions);
-      const trialPlaced = place(trialLayout);
-      if (trialPlaced.scale >= placed.scale * 0.99) {
-        options = trialOptions;
-        layout = trialLayout;
-        placed = trialPlaced;
-      }
-    }
-  }
-  if (paper && placed.scale < MAX_SCALE) {
-    // Wider gaps make the tree wider by about as much as the gaps already take; a few tries close in on the width wanted.
-    for (let attempt = 0; attempt < 4; attempt++) {
-      const want = (placed.chart.w * FILL) / placed.scale;
-      const missing = want - placed.content.w;
-      if (missing < placed.content.w * 0.02) break;
-      const spread = Math.min(1 + missing / Math.max(gapWidth(layout), 1), MAX_SPREAD / spreadOf(options));
-      if (spread < 1.02) break;
-      const trialOptions = spreadOut(options, spread);
-      const trialLayout = layoutWith(trialOptions);
-      const trialPlaced = place(trialLayout);
-      // Too wide now: the cards would shrink. Halfway is tried next.
-      if (trialPlaced.scale < placed.scale * 0.995) {
-        const halfway = spreadOut(options, 1 + (spread - 1) / 2);
-        const halfLayout = layoutWith(halfway);
-        const halfPlaced = place(halfLayout);
-        if (halfPlaced.scale < placed.scale * 0.995) break;
-        options = halfway;
-        layout = halfLayout;
-        placed = halfPlaced;
-        continue;
-      }
-      options = trialOptions;
-      layout = trialLayout;
-      placed = trialPlaced;
-    }
-  }
-  ctx.layout = layout;
-  ctx.options = options;
+
   ctx.page = placed.page;
-  ctx.chart = placed.chart;
-  ctx.scale = placed.scale;
-  ctx.legendAt = placed.legendAt;
-  const { header, footer, side, landscape, content, cx } = placed;
-
-  const s = ctx.scale;
-  const tx = placed.anchor - cx * s;
-  const ty = ctx.chart.y + (ctx.chart.h - content.h * s) / 2 - content.y * s;
-  const margin = ctx.page.margin;
-  // The space between header and footer, in the chart's own units: the tree may fill it.
-  const room: TreeRoom = { x: (ctx.chart.x - tx) / s, y: (ctx.chart.y - ty) / s, w: ctx.chart.w / s, h: ctx.chart.h / s };
-
-  const headerRect = { x: margin, y: margin, w: ctx.page.w - margin * 2, h: header.height };
-  const footerRect = { x: margin, y: ctx.page.h - margin - footer.height, w: ctx.page.w - margin * 2, h: footer.height };
-  const sideRect = side && { x: ctx.chart.x + ctx.chart.w, y: ctx.chart.y, w: side.width, h: ctx.chart.h };
-  // The box with the families' names: placed by hand, or where the style put them (for the preview to offer moving it).
-  const box = settings.legendBox;
-  const legendRect: Rect | undefined = box
-    ? { x: box.x * ctx.page.w, y: box.y * ctx.page.h, w: box.w * ctx.page.w, h: box.h * ctx.page.h }
-    : (sideRect && side?.legend?.(sideRect)) || footer.legend?.(footerRect) || header.legend?.(headerRect);
-
-  const body = [
-    theme.background(ctx),
-    header.draw(headerRect),
-    `<g transform="translate(${n(tx)},${n(ty)}) scale(${n(s)})">${drawChart(ctx, gutter, room)}</g>`,
-    footer.draw(footerRect),
-    (sideRect && side?.draw(sideRect)) ?? '',
-    box && legendRect ? drawLegendBox(ctx, legendRect) : '',
-    theme.overlay?.(ctx) ?? '',
-  ].join('');
-
+  // The families' names in a corner are drawn as a block, like a box placed by hand; the foot of the page then has no rows of them.
+  const cornerNames = placed.names && placed.names.at !== 'foot' ? placed.names : undefined;
+  if (settings.showLegend && !settings.legendBox) ctx.legendAt = cornerNames ? 'free' : 'below';
+  const { fitted, chart, header, footer } = placed;
+  // Cards moved by hand go where they were put, their lines after them.
+  const layout = settings.moves ? applyMoves(fitted.layout, new Map(Object.entries(settings.moves))) : fitted.layout;
+  const s = fitted.scale;
   const W = ctx.page.w;
   const H = ctx.page.h;
+  const margin = ctx.page.margin;
+
+  const titleFree = settings.showTitle && !!paper && (!!settings.titleAt || !!settings.titleAnchor);
+  const headerRect = settings.showTitle ? titleOn(W, H, margin, header) : { x: margin, y: margin, w: W - margin * 2, h: header.height };
+  const titleRect = settings.showTitle ? (header.extent?.(headerRect) ?? headerRect) : undefined;
+  const footerRect = { x: margin, y: H - margin - footer.height, w: W - margin * 2, h: footer.height };
+  // The box with the families' names: placed by hand, or where the page put them (for the preview to offer moving it).
+  const box = settings.showLegend ? settings.legendBox : undefined;
+  const legendRect: Rect | undefined = box
+    ? handBox(box, W, H, chart, titleRect)
+    : cornerNames
+      ? blockAt(chart, cornerNames.at, cornerNames.columns, titleRect)
+      : footer.legend?.(footerRect);
+
+  const focusIds = new Set([centerId, partnerId].filter((id): id is string => !!id));
+  // Lines and the marks between partners stronger, where asked (PrintSettings.strongLines).
+  const weight = settings.strongLines ? STRONG_LINES : 1;
+  const markScale = settings.strongLines ? STRONG_MARKS : 1;
+  const draw: Drawing = {
+    design,
+    parts,
+    settings,
+    texts,
+    colors: colors.byPerson,
+    index,
+    focusIds,
+  };
+  let chartSvg = '';
+  // The couple the page is drawn around: one frame round the two of them (and the marker between them), a
+  // double rule in the page's colour on a faint ground. Each their own where they stand apart.
+  const held = layout.cards.filter((c) => focusIds.has(c.personId) && !c.ghost);
+  const apart = (a: LayoutCard, b: LayoutCard) => ({
+    x: Math.max(0, Math.max(a.x, b.x) - Math.min(a.x + a.w, b.x + b.w)),
+    y: Math.max(0, Math.max(a.y, b.y) - Math.min(a.y + a.h, b.y + b.h)),
+  });
+  const together = held.length === 2 && apart(held[0], held[1]).x <= options.partnerGap + 2 && apart(held[0], held[1]).y <= options.stackGap + 2;
+  const frames = (together ? [held] : held.map((c) => [c])).map((cs) => {
+    const x0 = Math.min(...cs.map((c) => c.x));
+    const y0 = Math.min(...cs.map((c) => c.y));
+    return { x: x0, y: y0, w: Math.max(...cs.map((c) => c.x + c.w)) - x0, h: Math.max(...cs.map((c) => c.y + c.h)) - y0 };
+  });
+  for (const f of frames) chartSvg += coupleFrame(f);
+  // The lines from their parents down to the two end on the frame, not over it.
+  const frameOf = (personId: string) => {
+    const c = held.find((h) => h.personId === personId);
+    return c ? frameBox(frames.find((f) => c.x >= f.x - 0.5 && c.x + c.w <= f.x + f.w + 0.5 && c.y >= f.y - 0.5 && c.y + c.h <= f.y + f.h + 0.5)!) : undefined;
+  };
+  const toFrame = (l: (typeof layout.lines)[number]) => {
+    const box = frameOf(l.childId);
+    const pts = l.points;
+    const end = pts[pts.length - 1];
+    const before = pts[pts.length - 2];
+    // Only a line that comes down onto the card from above.
+    if (!box || !before || Math.abs(before.x - end.x) > 0.5 || before.y >= box.y) return l;
+    return { ...l, points: [...pts.slice(0, -1), { x: end.x, y: box.y }] };
+  };
+  for (const u of layout.unions) chartSvg += el('path', { d: roundedPath(u.line, 6), fill: 'none', stroke: palette.line, 'stroke-width': 1.1 * weight });
+  // The direct line of each of the two the page is drawn around, in their own colour (the cards': blue, red):
+  // from them up through their parents. Only that: brothers, sisters and their families stay plain.
+  const lineage = (id?: string): Set<string> => {
+    const seen = new Set<string>();
+    const walk = (p: string) => {
+      if (seen.has(p)) return;
+      seen.add(p);
+      for (const f of index.parentFamilies(p)) for (const parent of f.partners) walk(parent);
+    };
+    if (id) walk(id);
+    return seen;
+  };
+  const colourOf = (id?: string) => {
+    const sex = id ? accentOf(index.person(id)?.sex ?? 'unknown') : 'other';
+    return sex === 'male' ? palette.male : sex === 'female' ? palette.female : palette.trunk;
+  };
+  const lines = [
+    { of: lineage(centerId), colour: colourOf(centerId) },
+    { of: lineage(partnerId), colour: colourOf(partnerId) },
+  ];
+  // Whoever is in a direct line is the child of people in it too, known or not (a line up to parents nobody knows).
+  const direct = (l: { childId: string; trunk: boolean }) => lines.find((x) => x.of.has(l.childId))?.colour ?? (l.trunk ? palette.trunk : undefined);
+  // Every stretch is drawn once, by the first line that runs along it: the direct lines first, so what they share with others is theirs.
+  const ordered = layout.lines
+    .map(toFrame)
+    .sort((a, b) => Number(!!direct(b)) - Number(!!direct(a)) || Number(a.relation !== 'biological') - Number(b.relation !== 'biological'));
+  const paths = sharedPaths(ordered, 7);
+  // The plain lines under the coloured ones: where a branch starts on a direct line, its first step lies under that line.
+  const strokes = { plain: '', direct: '' };
+  for (const [i, l] of ordered.entries()) {
+    if (!paths[i]) continue;
+    const colour = direct(l);
+    strokes[colour ? 'direct' : 'plain'] += el('path', {
+      d: paths[i],
+      fill: 'none',
+      stroke: colour ?? palette.line,
+      'stroke-width': (colour ? 2.3 : 1.1) * weight,
+      'stroke-linecap': 'round',
+      'stroke-dasharray': RELATION_DASH[l.relation],
+      // A click on a line in the print studio takes away what hangs on it.
+      'data-family': l.familyId,
+      'data-child': l.childId,
+    });
+  }
+  chartSvg += strokes.plain + strokes.direct;
+  for (const u of layout.unions) {
+    const fam = index.family(u.familyId);
+    const mark = unionMark(u.kind, fam ? relationshipStatus(fam) : 'unknown', 4.8 * markScale);
+    chartSvg += drawMark(mark, u.x, u.y, {
+      plate: palette.paper,
+      ring: GOLD,
+      ringApart: palette.faint,
+      ringWidth: 1.45 * weight,
+      dot: palette.line,
+      cut: palette.break,
+    });
+  }
+  // How each couple stands, in a word: under the marker of a couple side by side, between the cards of one that
+  // stands one over the other, beside a marker that sits on a line over other cards.
+  const unionWords: string[] = [];
+  if (settings.unionText) {
+    const font = (size: number): FontSpec => ({ family: SERIF, size, style: 'italic' });
+    for (const u of layout.unions) {
+      const fam = index.family(u.familyId);
+      const word = fam ? language.union(relationshipStatus(fam)) : '';
+      if (!word) continue;
+      unionWords.push(word);
+      const level = u.line.length === 2;
+      const upright = !level && u.line.length === 4 && Math.abs(u.line[1].x - u.line[2].x) < 0.01;
+      const cardsLeft = upright && u.line[0].x < u.x;
+      // Between two cards one over the other there is only so much room.
+      const size = upright ? Math.min(8.5, options.stackGap - 1.5) : 8.5;
+      const at = level
+        ? { x: u.x, y: u.y + options.cardHeight / 2 + size * 0.9, anchor: 'middle' }
+        : upright
+          ? { x: u.x + (cardsLeft ? -9 : 9), y: u.y + size * 0.32, anchor: cardsLeft ? 'end' : 'start' }
+          : { x: u.x + 9, y: u.y + size * 0.32, anchor: 'start' };
+      chartSvg += el(
+        'text',
+        {
+          x: at.x,
+          y: at.y,
+          'text-anchor': at.anchor,
+          ...fontAttrs(font(size)),
+          fill: palette.muted,
+          stroke: palette.paper,
+          'stroke-width': 2.4,
+          'paint-order': 'stroke',
+          'stroke-linejoin': 'round',
+        },
+        text(word),
+      );
+    }
+  }
+  for (const h of layout.placeholders) {
+    chartSvg +=
+      el('rect', {
+        x: h.x,
+        y: h.y,
+        width: h.w,
+        height: h.h,
+        rx: design.radius,
+        fill: palette.card,
+        'fill-opacity': 0.55,
+        stroke: palette.cardEdge,
+        'stroke-width': 0.9,
+        'stroke-dasharray': UNKNOWN_DASH,
+      }) +
+      el('text', { x: h.x + h.w / 2, y: h.y + h.h / 2 + 7, 'text-anchor': 'middle', ...fontAttrs({ ...design.given, size: 22 }), fill: palette.faint }, '?');
+  }
+  for (const c of layout.cards) chartSvg += drawCard(draw, c);
+
+  // The title and the families' names each in a group of their own: the print studio moves them with their boxes.
+  const group = (name: string, markup: string) => (markup ? `<g class="${name}">${markup}</g>` : '');
+  const body = [
+    heritage.background(ctx, settings.showFrame),
+    group('pp-title', header.draw(headerRect)),
+    `<g transform="translate(${n(chart.x + fitted.x)},${n(chart.y + fitted.y)}) scale(${n(s)})">${chartSvg}</g>`,
+    group('pp-legend', footer.draw(footerRect)),
+    (box || cornerNames) && legendRect
+      ? drawLegendBox(ctx, legendRect, cornerNames ? { letters: namesSize(ctx), columns: cornerNames.columns } : undefined)
+      : '',
+    settings.showFrame ? heritage.overlay(ctx) : '',
+  ].join('');
+
   const sizeAttrs = paper ? `width="${n(W / PX_PER_MM)}mm" height="${n(H / PX_PER_MM)}mm"` : `width="${Math.ceil(W)}" height="${Math.ceil(H)}"`;
   const svg =
     `<svg xmlns="http://www.w3.org/2000/svg" ${sizeAttrs} viewBox="0 0 ${n(W)} ${n(H)}">` +
@@ -602,11 +739,15 @@ export function renderPoster(input: PosterInput): PosterResult {
     body +
     `</svg>`;
 
+  // What the page would make the title and the names by itself, with the cards as they came out.
+  const suggested = paper ? autoLetters(Math.min(W, H), design.given.size * s) : undefined;
+  const lineCm = (letters: number) => (letters * LINE_HEIGHT) / (10 * PX_PER_MM);
   const allText = [
     title,
     ctx.subtitle,
     language.drawn(now),
-    ...[...texts.values()].flatMap((t) => [t.kin, t.given, t.surname, t.birth, t.dates, t.place, t.initials]),
+    ...unionWords,
+    ...[...texts.values()].flatMap((t) => [t.given, t.surname, t.birth, t.dates, t.initials]),
     ...ctx.legend.map((l) => l.label),
     'IVXLCDM0123456789–·,. ?',
   ].join('');
@@ -615,527 +756,339 @@ export function renderPoster(input: PosterInput): PosterResult {
     svg,
     width: W,
     height: H,
-    paper: paper ? { widthMm: W / PX_PER_MM, heightMm: H / PX_PER_MM, landscape } : undefined,
-    namePt: card.given.size * s * 0.75,
-    cardMm: { w: (card.width * s) / PX_PER_MM, h: (cardHeight * s) / PX_PER_MM },
+    paper: paper ? { widthMm: W / PX_PER_MM, heightMm: H / PX_PER_MM, landscape: placed.landscape } : undefined,
+    namePt: design.given.size * s * 0.75,
+    cardMm: { w: (design.width * s) / PX_PER_MM, h: (design.height * s) / PX_PER_MM },
+    lettering: {
+      titleCm: lineCm(ctx.page.u * LETTERING.title),
+      legendCm: lineCm((ctx.page.lu ?? ctx.page.u) * LETTERING.legend),
+      autoTitleCm: lineCm(suggested?.title ?? ctx.page.u * LETTERING.title),
+      autoLegendCm: lineCm(suggested?.legend ?? (ctx.page.lu ?? ctx.page.u) * LETTERING.legend),
+    },
+    coverage: (layout.cards.length * design.width * design.height * s * s) / Math.max(1, chart.w * chart.h),
     people: doc.people.length,
     total: input.doc.people.length,
     generations,
     centerId,
     partnerId,
-    theme,
     text: allText,
-    legend: legendRect && { x: legendRect.x / W, y: legendRect.y / H, w: legendRect.w / W, h: legendRect.h / H, free: !!box },
+    legend: legendRect && {
+      x: legendRect.x / W,
+      y: legendRect.y / H,
+      w: legendRect.w / W,
+      h: legendRect.h / H,
+      free: !!box || (settings.showLegend && !!settings.legendAnchor),
+    },
+    title: titleRect && paper ? { x: titleRect.x / W, y: titleRect.y / H, w: titleRect.w / W, h: titleRect.h / H, free: titleFree } : undefined,
+    inner: { x: margin / W, y: margin / H, w: 1 - (2 * margin) / W, h: 1 - (2 * margin) / H },
+    shown: doc.people.map((p) => p.id),
+    cardUnits: { w: design.width, h: design.height },
+    lines: layout.lines.map((l) => ({ familyId: l.familyId, childId: l.childId, points: l.points.map((p) => ({ x: p.x, y: p.y })) })),
+    namesIn: (at, style = {}) =>
+      namesMarkup(ctx, { x: at.x * W, y: at.y * H, w: at.w * W, h: at.h * H }, undefined, {
+        align: style.align,
+        letters: style.cm === undefined ? undefined : style.cm === null ? null : letters(style.cm),
+      }),
   };
 }
 
-/** The families' names fitted into a box: as many columns as make the names biggest, the whole lot centred in it. */
-function drawLegendBox(ctx: PosterContext, box: Rect): string {
-  const entries = ctx.legend.filter((l) => l.key !== '' || ctx.legend.length > 1);
-  if (!entries.length) return '';
-  const style = ctx.theme.legendStyle;
-  const REF = 100;
-  // Widths at text 1 unit big: mark, space, label.
-  const widths = entries.map((l) => style.markW + style.markGap + ctx.measure(l.label, { ...style.font, size: REF }) / REF);
-  const ROW = 1.9;
-  const COL_GAP = 1.6;
-  let best = { size: 0, columns: 1, colW: [] as number[] };
-  for (let columns = 1; columns <= entries.length; columns++) {
-    const rows = Math.ceil(entries.length / columns);
-    const colW = Array.from({ length: columns }, (_, c) => Math.max(0, ...widths.slice(c * rows, (c + 1) * rows)));
-    const size = Math.min(box.h / (rows * ROW), box.w / (colW.reduce((a, b) => a + b, 0) + COL_GAP * (columns - 1)));
-    if (size > best.size) best = { size, columns, colW };
-  }
-  const size = Math.min(best.size, ctx.page.u * 8);
-  const rows = Math.ceil(entries.length / best.columns);
-  const totalW = (best.colW.reduce((a, b) => a + b, 0) + COL_GAP * (best.columns - 1)) * size;
-  const font = { ...style.font, size };
-  let out = '';
-  let x = box.x + (box.w - totalW) / 2;
-  const top = box.y + (box.h - rows * ROW * size) / 2;
-  best.colW.forEach((w, c) => {
-    entries.slice(c * rows, (c + 1) * rows).forEach((l, r) => {
-      const y = top + (r + 0.5) * ROW * size;
-      out += style.mark(ctx, l, x, y, size);
-      out += el('text', { x: x + (style.markW + style.markGap) * size, y: y + size * 0.34, ...fontAttrs(font), fill: style.ink }, text(l.label));
-    });
-    x += (w + COL_GAP) * size;
+interface Drawing {
+  design: CardDesign;
+  parts: CardParts;
+  settings: PrintSettings;
+  texts: ReadonlyMap<string, CardText>;
+  colors: ReadonlyMap<string, Tincture>;
+  index: TreeIndex;
+  focusIds: ReadonlySet<string>;
+}
+
+/** One card (see card-design.ts for what is on it). */
+function drawCard(c: Drawing, at: LayoutCard): string {
+  const person = c.index.person(at.personId);
+  const t = c.texts.get(at.personId);
+  if (!person || !t) return '';
+  const d = c.design;
+  const w = at.w;
+  const h = at.h;
+  const r = d.radius;
+  const ghost = !!at.ghost;
+  const unknown = nameUnknown(person);
+  const sex = accentOf(person.sex);
+  const tint = c.parts.sexAccent && sex === 'male' ? palette.cardMale : c.parts.sexAccent && sex === 'female' ? palette.cardFemale : palette.card;
+
+  // (The two the page is drawn around have a frame round both of them, drawn under the lines: see renderPoster.)
+  let out = el('rect', {
+    width: w,
+    height: h,
+    rx: r,
+    fill: tint,
+    stroke: palette.cardEdge,
+    'stroke-width': 0.9,
+    'stroke-dasharray': ghost ? GHOST_DASH : unknown ? UNKNOWN_DASH : undefined,
   });
-  return `<g class="pp-legend">${out}</g>`;
-}
-
-// ---------------------------------------------------------------------------
-// families packed together
-
-interface PackTry {
-  options: LayoutOptions;
-  layout: LayoutResult;
-  placed: Placed;
-}
-
-/**
- * Generations not in rows (PrintSettings.packFamilies): the children of one
- * family, with everyone below them, drawn a row lower than their generation,
- * so that the families beside them can spread out above or beside them and
- * the tree gets narrower. The families in the widest row are tried one at a
- * time, the best kept, and the same again for what is then the widest row,
- * as long as the cards get bigger. The direct line of the person in the
- * middle stays in its rows.
- */
-function packBranches(
-  doc: TreeDocument,
-  direct: ReadonlySet<string>,
-  start: LayoutResult,
-  layoutWith: (sink: ReadonlyMap<string, number>) => PackTry,
-  startScale: number,
-): PackTry | undefined {
-  const inTree = new Set(doc.people.map((p) => p.id));
-  // Each family's children in the tree, for families of children who may go lower.
-  const groups = doc.families
-    .map((f) => f.children.map((c) => c.personId).filter((id) => inTree.has(id)))
-    .filter((kids) => kids.length && !kids.some((id) => direct.has(id)));
-  let best: PackTry | undefined;
-  let bestScale = startScale;
-  let layout = start;
-  const sink = new Map<string, number>();
-  let tries = 0;
-  for (let round = 0; round < 4 && tries < PACK_TRIES; round++) {
-    const row = widestRank(layout);
-    if (row === undefined) break;
-    const candidates = groups.filter((kids) => kids.some((id) => layout.ranks.get(id) === row) && !kids.some((id) => sink.has(id)));
-    let found: { tried: PackTry; kids: string[] } | undefined;
-    for (const kids of candidates) {
-      if (tries++ >= PACK_TRIES) break;
-      const trial = new Map(sink);
-      for (const id of kids) trial.set(id, 1);
-      const tried = layoutWith(trial);
-      if (tried.placed.scale > bestScale * 1.01) {
-        bestScale = tried.placed.scale;
-        found = { tried, kids };
-      }
-    }
-    if (!found) break;
-    for (const id of found.kids) sink.set(id, 1);
-    best = found.tried;
-    layout = best.layout;
-  }
-  return best;
-}
-
-/** The rows, the widest first (as LayoutResult.ranks numbers them). */
-function rowsByWidth(layout: LayoutResult): number[] {
-  const span = new Map<number, { lo: number; hi: number }>();
-  for (const c of layout.cards) {
-    const rank = layout.ranks.get(c.personId) ?? c.rank;
-    const s = span.get(rank) ?? { lo: Infinity, hi: -Infinity };
-    span.set(rank, { lo: Math.min(s.lo, c.x), hi: Math.max(s.hi, c.x + c.w) });
-  }
-  return [...span].sort((a, b) => b[1].hi - b[1].lo - (a[1].hi - a[1].lo)).map(([r]) => r);
-}
-
-/** The row whose cards reach the furthest from one end to the other. */
-function widestRank(layout: LayoutResult): number | undefined {
-  const span = new Map<number, { lo: number; hi: number }>();
-  for (const c of layout.cards) {
-    // Rows as LayoutResult.ranks numbers them (card ranks count the extra rows between generations too).
-    const rank = layout.ranks.get(c.personId) ?? c.rank;
-    const s = span.get(rank) ?? { lo: Infinity, hi: -Infinity };
-    span.set(rank, { lo: Math.min(s.lo, c.x), hi: Math.max(s.hi, c.x + c.w) });
-  }
-  let widest: number | undefined;
-  let width = 0;
-  for (const [rank, s] of span) {
-    if (s.hi - s.lo > width) {
-      width = s.hi - s.lo;
-      widest = rank;
-    }
-  }
-  return widest;
-}
-
-// ---------------------------------------------------------------------------
-// the tree itself
-
-/** A layout fitted on the page: see renderPoster's `place`. */
-interface Placed {
-  /** How far the person in the middle is from the middle of the page, as a share of its width; 0 when that is not asked for. */
-  offCentre: number;
-  cx: number;
-  content: Rect;
-  landscape: boolean;
-  scale: number;
-  header: PageBlock;
-  footer: PageBlock;
-  side: SideBlock | undefined;
-  legendAt: PosterContext['legendAt'];
-  page: PosterContext['page'];
-  chart: Rect;
-  /** Where the content's `cx` is put across the page. */
-  anchor: number;
-}
-
-function drawChart(ctx: PosterContext, gutter: number, room: TreeRoom): string {
-  const { layout, theme, settings } = ctx;
-  const parts: string[] = [];
-  const pal = theme.palette;
-
-  // The tree or picture behind everything, then the generation numbers over it.
-  const tree = settings.showTree && !ctx.doc.background ? theme.tree : undefined;
-  if (settings.showTree && ctx.doc.background) parts.push(drawPicture(ctx, ctx.doc.background, room));
-  else if (tree) parts.push(drawTree(ctx, room));
-
-  if (settings.showGenerations && gutter) {
-    const x = layout.bounds.x - gutter / 2;
-    layout.rows.forEach((row, i) => {
-      const y = row.y + row.h / 2;
-      parts.push(theme.generationLabel ? theme.generationLabel(ctx, row.label, x, y, i) : defaultGenerationLabel(ctx, row.label, x, y));
+  // The plate's engraved inner rule; someone whose name nobody knows has only the dashed edge.
+  if (!unknown && !ghost)
+    out += el('rect', {
+      x: 2.6,
+      y: 2.6,
+      width: w - 5.2,
+      height: h - 5.2,
+      rx: Math.max(1, r - 2),
+      fill: 'none',
+      stroke: palette.cardEdge,
+      'stroke-width': 0.4,
+      opacity: 0.85,
     });
+  if (d.accent && sex) {
+    const a = d.accent;
+    out += el('path', { d: `M${n(r)},0H${n(a)}V${n(h)}H${n(r)}Q0,${n(h)} 0,${n(h - r)}V${n(r)}Q0,0 ${n(r)},0Z`, fill: palette[sex] });
   }
-
-  const focus = focusRect(ctx);
-  if (focus)
-    parts.push(
-      theme.focus
-        ? theme.focus(ctx, focus)
-        : el('rect', { x: focus.x, y: focus.y, width: focus.w, height: focus.h, rx: 8, fill: 'none', stroke: pal.accent, 'stroke-width': 2 }),
-    );
-
-  // A tree whose branches are the family lines needs no lines drawn over it.
-  if (!tree?.lines) parts.push(theme.connectors ? theme.connectors(ctx) : defaultConnectors(ctx));
-  for (const l of layout.links) {
-    parts.push(
+  if (d.shield) {
+    const tin = tinctures[c.colors.get(person.id) ?? 'argent'];
+    out +=
+      `<g transform="translate(${n(d.shield.x)},${n(d.shield.y)})">` +
       el('path', {
-        d: linkPath(l),
-        fill: 'none',
-        stroke: pal.line,
-        'stroke-width': theme.line.width,
-        'stroke-dasharray': '3 4',
-        'stroke-linecap': 'round',
-        opacity: 0.85,
-      }),
-    );
-  }
-
-  for (const u of layout.unions) {
-    if (u.mode === 'tucked') continue;
-    const d = unionLinePath(u, ctx.lineStyle);
-    if (d && theme.unionLine) parts.push(theme.unionLine(ctx, u, d));
-    else if (d)
-      parts.push(el('path', { d, fill: 'none', stroke: pal.line, 'stroke-width': theme.line.width, 'stroke-linecap': 'round', 'stroke-linejoin': 'round' }));
-    const at = unionMarkerPoint(u);
-    if (!at) continue;
-    const { x: mx, y: my } = at;
-    parts.push(theme.unionMarker ? theme.unionMarker(ctx, u, mx, my) : defaultUnionMarker(ctx, u, mx, my));
-  }
-
-  for (const p of layout.placeholders) {
-    parts.push(
-      `<g transform="translate(${n(p.cx)},${n(p.cy)})">` +
-        el('rect', {
-          x: n(-p.w / 2),
-          y: n(-p.h / 2),
-          width: n(p.w),
-          height: n(p.h),
-          rx: theme.card.radius,
-          fill: pal.card,
-          stroke: pal.muted,
-          'stroke-width': 1.1,
-          'stroke-dasharray': '4 3',
-        }) +
-        el(
-          'text',
-          {
-            'text-anchor': 'middle',
-            'dominant-baseline': 'central',
-            ...fontAttrs({ family: theme.card.given.family, size: Math.round(p.h * 0.42), weight: 600 }),
-            fill: pal.muted,
-          },
-          '?',
-        ) +
-        `</g>`,
-    );
-  }
-
-  // Full cards first, then the small cards tucked over them, then those couples' markers, so nothing is covered.
-  const covered = new Set(ctx.options.tuckBelow ? [] : layout.cards.map((c) => c.tuckedOn).filter((id): id is string => !!id));
-  for (const c of layout.cards) if (!c.tuckedOn) parts.push(drawCard(ctx, c, covered.has(c.personId)));
-  for (const c of layout.cards) if (c.tuckedOn) parts.push(drawCard(ctx, c));
-  for (const u of layout.unions) {
-    if (u.mode !== 'tucked') continue;
-    const d = unionLinePath(u, ctx.lineStyle);
-    if (d && theme.unionLine) parts.push(theme.unionLine(ctx, u, d));
-    else if (d)
-      parts.push(el('path', { d, fill: 'none', stroke: pal.line, 'stroke-width': theme.line.width, 'stroke-linecap': 'round', 'stroke-linejoin': 'round' }));
-    parts.push(theme.unionMarker ? theme.unionMarker(ctx, u, u.cx, u.cy) : defaultUnionMarker(ctx, u, u.cx, u.cy));
-  }
-  return parts.join('');
-}
-
-function drawCard(ctx: PosterContext, at: LayoutCard, covered = false): string {
-  const { theme, settings } = ctx;
-  const card = ctx.card;
-  const pal = theme.palette;
-  const t = ctx.texts.get(at.personId);
-  const person = ctx.person(at.personId);
-  if (!t || !person) return '';
-  // A card tucked over a corner is a full card drawn smaller; one stacked under its partner's is full size.
-  const scale = at.tuckedOn && !ctx.options.tuckBelow ? TUCK_SCALE : 1;
-  const c: LayoutCard = scale === 1 ? at : { ...at, w: at.w / scale, h: at.h / scale };
-  const look: CardLook = {
-    focus: ctx.focusIds.includes(c.personId),
-    fill: settings.sexColors && person.sex === 'male' ? pal.cardMale : settings.sexColors && person.sex === 'female' ? pal.cardFemale : pal.card,
-    unknown: nameUnknown(person),
-  };
-  const tincture = theme.tinctures[ctx.colors.get(c.personId) ?? 'argent'];
-  const parts: string[] = [theme.cardShape ? theme.cardShape(ctx, c, look) : defaultCardShape(ctx, c, look)];
-  // A black ribbon across the top left corner for someone who has died; a white one for a child who died at birth.
-  if (person.death) {
-    const atBirth = diedAtBirth(person);
-    parts.push(
-      el('path', {
-        d: mourningRibbon(c.h),
-        fill: atBirth ? '#fbf9f4' : '#1b1918',
-        stroke: atBirth ? '#1b1918' : pal.cardEdge,
-        'stroke-width': atBirth ? 0.9 : 0.5,
-      }),
-    );
-  }
-  // The sex symbol in the top right corner, unless a partner's card lies there.
-  if (settings.showSex && !covered) {
-    const d = sexSymbolPath(person.sex, SYMBOL_SIZE);
-    const color = person.sex === 'male' ? pal.male : person.sex === 'female' ? pal.female : pal.kin;
-    if (d)
-      parts.push(
-        `<path transform="translate(${n(c.w - SYMBOL_INSET)},${SYMBOL_INSET})" d="${d}" fill="none" stroke="${color}" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>`,
-      );
-  }
-
-  // The lines a card has: every card has the same set, so rows line up, but a line this person
-  // has nothing for (no surname at birth, no place) takes no room on their card.
-  const lines = ctx.lines;
-  const specs: { value: string; spec: CardLine; fill: string }[] = [];
-  if (lines.kin && t.kin) specs.push({ value: t.kin, spec: card.kin, fill: pal.kin });
-  specs.push({ value: t.given, spec: card.given, fill: look.unknown ? pal.muted : pal.ink });
-  if (t.surname) specs.push({ value: t.surname, spec: card.surname, fill: pal.ink });
-  if (lines.birth && t.birth) specs.push({ value: t.birth, spec: card.birth, fill: pal.muted });
-  if (lines.dates && t.dates) specs.push({ value: t.dates, spec: card.dates, fill: pal.muted });
-  if (lines.place && t.place) specs.push({ value: t.place, spec: card.place, fill: pal.faint });
-  const blockH = specs.length ? specs[0].spec.size * 0.74 + specs.slice(1).reduce((h, l) => h + l.spec.step, 0) : 0;
-  const middle = settings.portraitAlign !== 'top';
-  // Where the text starts: at the top of the card, or with the block of lines in the middle.
-  let textTop = middle ? Math.max(card.top, (c.h - blockH) / 2) : card.top;
-
-  const photo = settings.showPhotos ? person.photo : undefined;
-  const badge = card.badge;
-  const shape = settings.portrait;
-  const round = shape === 'round';
-  // The portrait or badge: beside the first lines at the top, or in the middle of the card.
-  const badgeH = badge.kind === 'shield' ? badge.size * 1.18 : badge.size;
-  const portraitCy = (h: number) => (middle ? c.h / 2 : Math.min(card.top + h / 2, c.h / 2));
-  if (photo) {
-    const r = card.photoRadius;
-    // Round and square portraits show the middle of the stored picture; a rectangle shows it whole, upright.
-    const pw = r * 2;
-    const ph = shape === 'rectangle' ? Math.min(pw * PORTRAIT_ASPECT, c.h - 8) : pw;
-    const cx = badge.x + badge.size / 2;
-    const cy = portraitCy(ph);
-    const id = `pp-photo-${c.personId}`;
-    const rx = Math.min(4, r * 0.2);
-    const window = round
-      ? `<circle cx="${n(cx)}" cy="${n(cy)}" r="${n(r)}"/>`
-      : `<rect x="${n(cx - pw / 2)}" y="${n(cy - ph / 2)}" width="${n(pw)}" height="${n(ph)}" rx="${n(rx)}"/>`;
-    ctx.def(id, `<clipPath id="${id}">${window}</clipPath>`);
-    parts.push(
-      round
-        ? el('circle', { cx, cy, r: r + 1.5, fill: tincture.fill, stroke: tincture.edge })
-        : el('rect', { x: cx - pw / 2 - 1.5, y: cy - ph / 2 - 1.5, width: pw + 3, height: ph + 3, rx: rx + 1, fill: tincture.fill, stroke: tincture.edge }),
-    );
-    parts.push(
-      el('image', { href: photo, x: cx - pw / 2, y: cy - ph / 2, width: pw, height: ph, preserveAspectRatio: 'xMidYMid slice', 'clip-path': `url(#${id})` }),
-    );
-  } else if (badge.kind === 'shield') {
-    const w = badge.size;
-    const h = badgeH;
-    parts.push(
-      `<g transform="translate(${n(badge.x)},${n(portraitCy(h) - h / 2)})">` +
-        el('path', { d: shieldPath(w, h), fill: tincture.fill, stroke: tincture.edge, 'stroke-width': tincture.edge ? 0.9 : undefined }) +
-        el(
-          'text',
-          { x: w / 2, y: h * 0.47, 'text-anchor': 'middle', 'dominant-baseline': 'central', ...fontAttrs(badge.font), fill: tincture.ink },
-          text(t.initials),
-        ) +
-        `</g>`,
-    );
-  } else if (badge.kind === 'seal') {
-    const r = badge.size / 2;
-    const cx = badge.x + r;
-    const cy = portraitCy(badge.size);
-    parts.push(
-      round
-        ? el('circle', { cx, cy, r, fill: tincture.fill, stroke: tincture.edge, 'stroke-width': tincture.edge ? 0.9 : undefined })
-        : el('rect', {
-            x: cx - r,
-            y: cy - r,
-            width: r * 2,
-            height: r * 2,
-            rx: r * 0.3,
-            fill: tincture.fill,
-            stroke: tincture.edge,
-            'stroke-width': tincture.edge ? 0.9 : undefined,
-          }),
-    );
-    parts.push(
+        d: d.shield.path,
+        fill: tin.fill,
+        stroke: tin.edge ?? palette.ink,
+        'stroke-width': tin.edge ? 0.7 : 0.35,
+        'stroke-opacity': tin.edge ? 1 : 0.5,
+      }) +
       el(
         'text',
-        { x: cx, y: cy + 0.5, 'text-anchor': 'middle', 'dominant-baseline': 'central', ...fontAttrs(badge.font), fill: tincture.ink },
+        { x: d.shield.w / 2, y: d.shield.h * 0.46 + d.shield.font.size * 0.34, 'text-anchor': 'middle', ...fontAttrs(d.shield.font), fill: tin.ink },
         text(t.initials),
-      ),
-    );
-  } else if (badge.kind === 'bar') {
-    parts.push(el('rect', { x: 0, y: 0, width: badge.size, height: c.h, fill: tincture.fill === theme.tinctures.argent.fill ? pal.cardEdge : tincture.fill }));
+      ) +
+      `</g>`;
   }
-
-  // A partner's small card over the top right corner: the lines start under it when
-  // they fit, otherwise the lines beside it stop short of it.
-  const tuck = covered ? { left: c.w - c.w * TUCK_SCALE * (1 - TUCK_OUT) - 3, bottom: c.h * TUCK_SCALE * (1 - TUCK_UP) } : undefined;
-  if (tuck && textTop < tuck.bottom + 3 && tuck.bottom + 3 + blockH <= c.h - 6) textTop = tuck.bottom + 3;
-  let y = textTop;
-  specs.forEach((l, i) => {
-    y += i === 0 ? l.spec.size * 0.74 : l.spec.step;
-    const value = tuck && y - l.spec.size * 0.74 < tuck.bottom ? ctx.fit(l.value, l.spec, tuck.left - card.textX) : l.value;
-    parts.push(el('text', { x: card.textX, y, ...fontAttrs(l.spec), fill: l.fill }, text(value)));
-  });
-
-  const transform = `translate(${n(c.x)},${n(c.y)})${scale === 1 ? '' : ` scale(${n(scale)})`}`;
-  return el('g', { class: 'card', 'data-person': c.personId, transform }, parts.join(''));
-}
-
-function defaultCardShape(ctx: PosterContext, c: LayoutCard, look: CardLook): string {
-  const pal = ctx.theme.palette;
-  return el('rect', {
-    x: 0,
-    y: 0,
-    width: c.w,
-    height: c.h,
-    rx: ctx.theme.card.radius,
-    fill: look.fill,
-    stroke: look.focus ? pal.ink : pal.cardEdge,
-    'stroke-width': look.focus ? 1.5 : 0.9,
-    'stroke-dasharray': look.unknown ? UNKNOWN_DASH : undefined,
-  });
+  const y = cardLines(d, c.parts, { birth: !!t.birth });
+  const line = (s: string, f: FontSpec, baseline: number, fill: string) => (s ? el('text', { x: d.textX, y: baseline, ...fontAttrs(f), fill }, text(s)) : '');
+  out += line(t.given, { ...d.given, style: unknown ? 'italic' : undefined }, y.given, unknown ? palette.muted : palette.ink);
+  out += line(t.surname, d.surname, y.surname, palette.ink);
+  out += line(t.birth, d.birth, y.birth, palette.muted);
+  out += line(t.dates, d.dates, y.dates, palette.muted);
+  // A black ribbon across the top left corner for someone who has died; a white one for a child who died at birth.
+  if (c.settings.showRibbons && person.death) out += ribbon(d, diedAtBirth(person));
+  return el('g', { class: 'card', 'data-person': at.personId, transform: `translate(${n(at.x)},${n(at.y)})`, opacity: ghost ? 0.62 : undefined }, out);
 }
 
 /**
- * The person's own picture over the whole chart area, as it is: an SVG stays
- * a drawing in SVG files and is drawn at full resolution in PDF and PNG.
+ * The frame round the couple the page is drawn around (`f`, their cards together): quiet, in gold, a fine
+ * double line close round them on a soft gold ground, with a small crown on it over the middle. The lines from
+ * their parents end on it.
  */
-function drawPicture(ctx: PosterContext, picture: BackgroundImage, room: TreeRoom): string {
-  const clip = 'pp-picture-room';
-  ctx.def(clip, `<clipPath id="${clip}"><rect x="${n(room.x)}" y="${n(room.y)}" width="${n(room.w)}" height="${n(room.h)}"/></clipPath>`);
-  const box = pictureBox(room, picture);
-  const image = el('image', {
-    href: picture.href,
-    x: box.x,
-    y: box.y,
-    width: box.w,
-    height: box.h,
-    opacity: picture.opacity < 1 ? picture.opacity : undefined,
-  });
-  return `<g clip-path="url(#${clip})">${image}</g>`;
-}
-
-/** The tree behind the chart, painted in the style's colours. */
-function drawTree(ctx: PosterContext, room: TreeRoom): string {
-  const t = ctx.theme.tree;
-  if (!t) return '';
-  // The tree always grows upwards from the couple; a chart drawn the other way up gets a mirrored tree.
-  const flipped = ctx.theme.flow === 'up';
-  const L = ctx.layout;
-  const axis = L.bounds.y * 2 + L.bounds.h;
-  const treeRoom = flipped ? { ...room, y: axis - room.y - room.h } : room;
-  const shape = branchTree(flipped ? flipLayout(L) : L, ctx.index, ctx.focusIds, { room: treeRoom });
-  if (!shape) return '';
-  const f = shape.foliage;
-  const fill = (color: string, parts: readonly string[]) => (parts.length ? `<path fill="${color}" d="${parts.join('')}"/>` : '');
-  // Twigs under the leaves, small masses of leaves, the wood over them, and single leaves and blossom over everything.
-  let art = fill(t.wood, shape.twigs);
-  art += fill(t.canopy[0], f.shade) + fill(t.canopy[1], f.body) + fill(t.canopy[2], f.light);
-  art += fill(t.wood, shape.wood);
-  if (t.bark && shape.bark.length)
-    art += `<path fill="none" stroke="${t.bark}" stroke-width="1.1" stroke-linecap="round" opacity="0.6" d="${shape.bark.join('')}"/>`;
-  f.leaves.forEach((leaves, i) => (art += fill(t.leaves[i % t.leaves.length], leaves)));
-  if (t.bloom) shape.blooms.forEach((blooms, i) => (art += fill(t.bloom![i], blooms)));
-  const clip = 'pp-tree-room';
-  ctx.def(clip, `<clipPath id="${clip}"><rect x="${n(treeRoom.x)}" y="${n(treeRoom.y)}" width="${n(treeRoom.w)}" height="${n(treeRoom.h)}"/></clipPath>`);
-  const tree = `<g clip-path="url(#${clip})" opacity="${n(t.opacity)}">${art}</g>`;
-  return flipped ? `<g transform="translate(0,${n(axis)}) scale(1,-1)">${tree}</g>` : tree;
-}
-
-function defaultConnectors(ctx: PosterContext): string {
-  const { theme, layout } = ctx;
-  const out: string[] = [];
-  for (const c of layout.connectors) {
-    for (const p of connectorPaths(c, ctx.lineStyle, theme.line.radius)) {
-      out.push(
-        el('path', {
-          d: p.d,
-          fill: 'none',
-          stroke: theme.palette.line,
-          'stroke-width': theme.line.width,
-          'stroke-linecap': 'round',
-          'stroke-linejoin': 'round',
-          'stroke-dasharray': DASH[p.relation],
-        }),
-      );
-    }
-  }
-  return out.join('');
-}
-
-function defaultUnionMarker(ctx: PosterContext, u: LayoutUnion, x: number, y: number): string {
-  const pal = ctx.theme.palette;
-  return drawMark(unionMark(u.kind, ctx.status(u.familyId), 4.6), x, y, {
-    plate: pal.card,
-    plateEdge: pal.cardEdge,
-    ring: pal.accent,
-    ringApart: pal.muted,
-    dot: pal.line,
-    cut: pal.break,
-  });
-}
-
-function defaultGenerationLabel(ctx: PosterContext, label: string, x: number, y: number): string {
-  return el(
-    'text',
-    { x, y, 'text-anchor': 'middle', 'dominant-baseline': 'central', ...fontAttrs(ctx.theme.generationFont), fill: ctx.theme.palette.faint },
-    text(label),
+function coupleFrame(f: Rect): string {
+  const box = frameBox(f);
+  const inner = 2.6;
+  const cx = box.x + box.w / 2;
+  const crown = `M${n(cx - 7)},${n(box.y + 2.2)}L${n(cx - 7)},${n(box.y - 3.6)}L${n(cx - 3.4)},${n(box.y - 0.6)}L${n(cx)},${n(box.y - 5.4)}L${n(cx + 3.4)},${n(box.y - 0.6)}L${n(cx + 7)},${n(box.y - 3.6)}L${n(cx + 7)},${n(box.y + 2.2)}Z`;
+  return (
+    // A soft ground of gold inside, so the two stand out from the page.
+    el('rect', {
+      class: 'focus-frame',
+      x: box.x,
+      y: box.y,
+      width: box.w,
+      height: box.h,
+      rx: 2.5,
+      fill: GOLD,
+      'fill-opacity': 0.16,
+      stroke: GOLD,
+      'stroke-width': 1.1,
+    }) +
+    el('rect', {
+      x: box.x + inner,
+      y: box.y + inner,
+      width: box.w - inner * 2,
+      height: box.h - inner * 2,
+      rx: 1.5,
+      fill: 'none',
+      stroke: GOLD,
+      'stroke-width': 0.55,
+    }) +
+    el('rect', { x: cx - 9, y: box.y - 6.5, width: 18, height: 9.5, fill: palette.paper }) +
+    el('path', { d: crown, fill: GOLD, 'stroke-linejoin': 'round' }) +
+    el('circle', { cx, cy: box.y - 6.6, r: 1.2, fill: GOLD })
   );
 }
 
-// ---------------------------------------------------------------------------
-// helpers
-
-/** Which optional lines the cards have. `birth`: someone on the page was born with another surname. */
-export function presentLines(theme: PosterTheme, settings: PrintSettings, birth = false): CardLines {
-  void theme;
-  // Places are no longer printed, whatever `showPlaces` says.
-  return { kin: settings.showRelationships, birth, dates: settings.showDates, place: false };
+/** The frame's outline round the couple's cards. */
+function frameBox(f: Rect): Rect {
+  const p = COUPLE_PAD;
+  return { x: f.x - p, y: f.y - p, w: f.w + p * 2, h: f.h + p * 2 };
 }
 
-export function cardHeightFor(theme: PosterTheme, lines: CardLines, card: PosterCardStyle = theme.card): number {
-  const c = card;
-  const specs: CardLine[] = [];
-  if (lines.kin) specs.push(c.kin);
-  specs.push(c.given, c.surname);
-  if (lines.birth) specs.push(c.birth);
-  if (lines.dates) specs.push(c.dates);
-  if (lines.place) specs.push(c.place);
-  let y = c.top + specs[0].size * 0.74;
-  for (const s of specs.slice(1)) y += s.step;
-  // At least as high as the portrait (an upright one is taller than wide) or badge, with a little room.
-  const badge = c.badge.kind === 'shield' ? c.badge.size * 1.18 : c.badge.kind === 'none' ? 0 : c.badge.size;
-  const portrait = Math.max(c.photoRadius * 2 * PORTRAIT_ASPECT, badge) + 12;
-  return Math.round(Math.max(y + c.bottom, portrait));
+/**
+ * The band across the corner of someone who has died, in the manner of the title: a dark band (a white one for a
+ * child who died at birth) edged inside with a double hairline in gold, and a small lozenge in the middle of it.
+ */
+function ribbon(d: CardDesign, atBirth: boolean): string {
+  const { from, to } = d.ribbonBand;
+  const band = atBirth ? '#fffdf6' : '#231a12';
+  const fine = atBirth ? palette.accent : GOLD;
+  const rule = (k: number) => `M0,${n(k)}L${n(k)},0`;
+  const inset = (to - from) * 0.17;
+  // The lozenge in the middle of the band, long along it and narrow across, between the hairlines.
+  const c = (from + to) / 4;
+  const along = ((to - from) * 0.55) / Math.SQRT2;
+  const across = ((to - from) * 0.17) / Math.SQRT2;
+  return (
+    el('path', { d: d.ribbon, fill: band, stroke: atBirth ? palette.accent : 'none', 'stroke-width': atBirth ? 0.6 : undefined, 'stroke-linejoin': 'round' }) +
+    el('path', { d: rule(from + inset) + rule(to - inset), fill: 'none', stroke: fine, 'stroke-width': 0.45, 'stroke-linecap': 'round' }) +
+    el('path', {
+      d: `M${n(c - along)},${n(c + along)}L${n(c + across)},${n(c + across)}L${n(c + along)},${n(c - along)}L${n(c - across)},${n(c - across)}Z`,
+      fill: fine,
+    })
+  );
+}
+
+/** The families' names fitted into a box: as many columns as make the names biggest, the whole lot centred in it. */
+/** The families' names as a block: rows so many times their letters apart, columns so many letters apart. */
+const NAMES_ROW = 1.9;
+const NAMES_COLUMN_GAP = 1.6;
+
+/** The size of the letters of the families' names where the page sizes them. */
+function namesSize(ctx: PosterContext): number {
+  return (ctx.page.lu ?? ctx.page.u) * LETTERING.legend;
+}
+
+/** The families whose names are shown, and how wide each entry is with letters 1 unit big: mark, space, label. */
+function namesEntries(ctx: PosterContext): { entries: LegendEntry[]; widths: number[] } {
+  const entries: LegendEntry[] = ctx.legend.filter((l) => l.key !== '' || ctx.legend.length > 1);
+  const style = heritage.legendStyle;
+  const REF = 100;
+  return { entries, widths: entries.map((l) => style.markW + style.markGap + ctx.measure(l.label, { ...style.font, size: REF }) / REF) };
+}
+
+/** The names in so many columns, filled downwards: how wide each column is, and the whole block, with letters 1 unit big. */
+function namesColumnsOf(widths: readonly number[], columns: number): { colW: number[]; rows: number; w: number; h: number } {
+  const rows = Math.ceil(widths.length / columns);
+  const colW = Array.from({ length: columns }, (_, c) => Math.max(0, ...widths.slice(c * rows, (c + 1) * rows)));
+  return { colW, rows, w: colW.reduce((a, b) => a + b, 0) + NAMES_COLUMN_GAP * (colW.length - 1), h: rows * NAMES_ROW };
+}
+
+/** The numbers of columns a block of the names in a corner may have: those that leave it no bigger than a share of the page, each number of rows once. */
+function namesColumns(ctx: PosterContext, chart: Rect): number[] {
+  const { widths } = namesEntries(ctx);
+  const size = namesSize(ctx);
+  const out: number[] = [];
+  let rows = Infinity;
+  for (let columns = 1; columns <= widths.length; columns++) {
+    const block = namesColumnsOf(widths, columns);
+    if (block.rows === rows) continue;
+    rows = block.rows;
+    if (block.w * size <= chart.w * NAMES_BLOCK.w && block.h * size <= chart.h * NAMES_BLOCK.h) out.push(columns);
+  }
+  return out;
+}
+
+/**
+ * A box so big at an anchor of the page inside its margin (`chart`): in a corner, in the middle of a side, in the
+ * middle. In a corner it keeps clear of the frame's flourish there, where the page has a frame.
+ */
+function placeAt(ctx: PosterContext, chart: Rect, at: Anchor, w: number, h: number): Rect {
+  const to = anchorShares(at);
+  const clear = ctx.settings.showFrame && to.x !== 0.5 && to.y !== 0.5 ? heritage.cornerClear(ctx) : 0;
+  return { x: chart.x + clear + to.x * (chart.w - clear * 2 - w), y: chart.y + clear + to.y * (chart.h - clear * 2 - h), w, h };
+}
+
+/** The box of the names as a block of so many columns at an anchor of the page (a corner, mostly), inside its margin. */
+function namesBlock(ctx: PosterContext, chart: Rect, at: Anchor, columns: number): Rect {
+  const { widths } = namesEntries(ctx);
+  const size = namesSize(ctx);
+  const block = namesColumnsOf(widths, Math.max(1, Math.min(columns, widths.length || 1)));
+  return placeAt(ctx, chart, at, block.w * size, block.h * size);
+}
+
+/** How the families' names stand in a box: how big their letters are, in how many columns, and the room they take. */
+interface NamesFit {
+  entries: LegendEntry[];
+  size: number;
+  columns: number;
+  /** The width of each column, with letters 1 unit big. */
+  colW: number[];
+  rows: number;
+  w: number;
+  h: number;
+}
+
+/**
+ * The families' names fitted to a box: placed by hand, or by the page as a block (`block` then says how big
+ * their letters are and how many columns they stand in).
+ */
+function namesIn(ctx: PosterContext, box: { w: number; h: number }, block?: { letters: number; columns: number }, letters?: number | null): NamesFit {
+  const { entries, widths } = namesEntries(ctx);
+  const ROW = NAMES_ROW;
+  const COL_GAP = NAMES_COLUMN_GAP;
+  let best = { size: 0, columns: 1, colW: [] as number[] };
+  const columnsOf = (columns: number) => namesColumnsOf(widths, columns).colW;
+  const span = (colW: number[]) => colW.reduce((a, b) => a + b, 0) + COL_GAP * (colW.length - 1);
+  // Names as big as asked for (PrintSettings.legendSize): in as many columns as the box is wide enough for,
+  // running past its foot when they are many; otherwise as big as the box lets them be.
+  const fixed =
+    block?.letters ?? (letters !== undefined ? (letters ?? undefined) : ctx.settings.legendSize && ctx.page.lu ? ctx.page.lu * LETTERING.legend : undefined);
+  if (block) {
+    const columns = Math.max(1, Math.min(block.columns, entries.length));
+    best = { size: block.letters, columns, colW: columnsOf(columns) };
+  } else if (fixed) {
+    best = { size: fixed, columns: 1, colW: columnsOf(1) };
+    for (let columns = 2; columns <= entries.length; columns++) {
+      const colW = columnsOf(columns);
+      if (span(colW) * fixed > box.w + 0.5) break;
+      best = { size: fixed, columns, colW };
+    }
+  } else {
+    for (let columns = 1; columns <= entries.length; columns++) {
+      const rows = Math.ceil(entries.length / columns);
+      const colW = columnsOf(columns);
+      const size = Math.min(box.h / (rows * ROW), box.w / span(colW));
+      if (size > best.size) best = { size, columns, colW };
+    }
+  }
+  const size = fixed ?? Math.min(best.size, ctx.page.u * 8);
+  const rows = Math.ceil(entries.length / best.columns);
+  return { entries, size, columns: best.columns, colW: best.colW, rows, w: span(best.colW) * size, h: rows * ROW * size };
+}
+
+/**
+ * The families' names drawn in a box. In one bigger than they need they stand where PrintSettings.legendAlign
+ * says: in a corner of it, along a side, in the middle. Where they need more than the box has, they start at
+ * its left and its top, or run out of it to the left and upwards when they stand at its right or its foot.
+ */
+function drawLegendBox(ctx: PosterContext, box: Rect, block?: { letters: number; columns: number }): string {
+  const out = namesMarkup(ctx, box, block);
+  return out ? `<g class="pp-legend">${out}</g>` : '';
+}
+
+/**
+ * The names as drawLegendBox draws them, without the group around them. `as` asks for them otherwise than
+ * the print settings say: standing elsewhere in the box, or with letters so big (null: as big as the box lets them be).
+ */
+function namesMarkup(
+  ctx: PosterContext,
+  box: Rect,
+  block?: { letters: number; columns: number },
+  as: { align?: Anchor; letters?: number | null } = {},
+): string {
+  const fit = namesIn(ctx, box, block, as.letters);
+  if (!fit.entries.length) return '';
+  const style = heritage.legendStyle;
+  const { entries, size, rows } = fit;
+  const font = { ...style.font, size };
+  const float = anchorShares(block ? 'center' : (as.align ?? ctx.settings.legendAlign ?? 'center'));
+  const from = (start: number, room: number, share: number) => start + (share === 1 ? room : Math.max(0, share * room));
+  let out = '';
+  let x = from(box.x, box.w - fit.w, float.x);
+  const top = from(box.y, box.h - fit.h, float.y);
+  fit.colW.forEach((w, c) => {
+    entries.slice(c * rows, (c + 1) * rows).forEach((l, r) => {
+      const y = top + (r + 0.5) * NAMES_ROW * size;
+      out += style.mark(l, x, y, size);
+      out += el('text', { x: x + (style.markW + style.markGap) * size, y: y + size * 0.34, ...fontAttrs(font), fill: style.ink }, text(l.label));
+    });
+    x += (w + NAMES_COLUMN_GAP) * size;
+  });
+  return out;
 }
 
 function fitText(t: string, f: FontSpec, max: number, measure: (t: string, f: FontSpec) => number): string {
@@ -1165,81 +1118,6 @@ function pickPartner(index: TreeIndex, centerId: string, settings: PrintSettings
   return current?.partners.find((p) => p !== centerId);
 }
 
-/** Where the couple in the middle is: their union marker, or the person's card. */
-function focusCenter(layout: LayoutResult, index: TreeIndex, focusIds: readonly string[]): number | undefined {
-  if (!focusIds.length) return undefined;
-  if (focusIds.length === 2) {
-    const fam = index.familyBetween(focusIds[0], focusIds[1]);
-    const u = fam ? layout.unions.find((x) => x.familyId === fam.id && (x.mode === 'gap' || x.mode === 'bridge')) : undefined;
-    if (u) return u.cx;
-  }
-  const c = layout.cards.find((x) => x.personId === focusIds[0]);
-  return c ? c.x + c.w / 2 : undefined;
-}
-
-/** The gaps between neighbours in a layout's widest row, which spreading the tree out widens. */
-function gapWidth(layout: LayoutResult): number {
-  const rows = new Map<number, LayoutCard[]>();
-  for (const c of layout.cards) {
-    if (c.tuckedOn) continue;
-    const row = rows.get(c.y) ?? [];
-    row.push(c);
-    rows.set(c.y, row);
-  }
-  let widest = 0;
-  for (const row of rows.values()) {
-    const x0 = Math.min(...row.map((c) => c.x));
-    const x1 = Math.max(...row.map((c) => c.x + c.w));
-    const cards = row.reduce((sum, c) => sum + c.w, 0);
-    if (x1 - x0 > widest) widest = Math.max(0, x1 - x0 - cards);
-  }
-  return widest;
-}
-
-/** The gaps the tree is spread out by (see spreadOut), as a share of the comfortable ones. */
-function spreadOf(o: LayoutOptions): number {
-  return o.siblingGap / COMFORTABLE_LAYOUT.siblingGap;
-}
-
-/** The gaps between brothers and sisters, families and separate trees `by` times as wide; partners stay together. */
-function spreadOut(o: LayoutOptions, by: number): LayoutOptions {
-  return { ...o, siblingGap: o.siblingGap * by, familyGap: o.familyGap * by, componentGap: o.componentGap * by };
-}
-
-/**
- * The ways the person in the middle can stand among their brothers and
- * sisters other than the way they do: at each other place in the row, the
- * others in birth order round them, so the tree can spread round them
- * instead of off to one side.
- */
-export function siblingsAround(doc: TreeDocument, index: TreeIndex, personId: string): TreeDocument[] {
-  const family = index.primaryParentFamily(personId);
-  if (!family || family.children.length < 2) return [];
-  const self = family.children.find((c) => c.personId === personId)!;
-  const others = family.children.filter((c) => c !== self);
-  const out: TreeDocument[] = [];
-  for (let at = 0; at <= others.length; at++) {
-    const children = [...others.slice(0, at), self, ...others.slice(at)];
-    if (children.every((c, i) => c === family.children[i])) continue;
-    out.push({ ...doc, families: doc.families.map((f) => (f.id === family.id ? { ...f, children } : f)) });
-  }
-  return out;
-}
-
-function focusRect(ctx: PosterContext): Rect | undefined {
-  const cards = ctx.layout.cards.filter((c) => ctx.focusIds.includes(c.personId));
-  if (!cards.length) return undefined;
-  const sameRow = cards.every((c) => c.y === cards[0].y);
-  const use = sameRow ? cards : cards.filter((c) => c.personId === ctx.focusIds[0]);
-  const pad = 7;
-  const x0 = Math.min(...use.map((c) => c.x)) - pad;
-  const x1 = Math.max(...use.map((c) => c.x + c.w)) + pad;
-  const y0 = Math.min(...use.map((c) => c.y)) - pad;
-  const y1 = Math.max(...use.map((c) => c.y + c.h)) + pad;
-  return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
-}
-
-/** The first and last year anyone on the page was born or died. */
 function yearRange(doc: TreeDocument): { from: number; to: number } | undefined {
   let from = Infinity;
   let to = -Infinity;
@@ -1255,36 +1133,6 @@ function yearRange(doc: TreeDocument): { from: number; to: number } | undefined 
   return Number.isFinite(from) ? { from, to } : undefined;
 }
 
-/** Turns the chart upside down (oldest at the bottom) without turning the cards. */
-export function flipLayout(L: LayoutResult): LayoutResult {
-  const top = L.bounds.y;
-  const bottom = L.bounds.y + L.bounds.h;
-  const fy = (y: number) => top + bottom - y;
-  const fp = (p: Pt): Pt => ({ x: p.x, y: fy(p.y) });
-  return {
-    ...L,
-    cards: L.cards.map((c) => ({ ...c, y: fy(c.y + c.h) })),
-    placeholders: L.placeholders.map((p) => ({ ...p, cy: fy(p.cy) })),
-    unions: L.unions.map((u) => ({ ...u, cy: fy(u.cy), line: u.line.map(fp) })),
-    connectors: L.connectors.map((c) => ({
-      ...c,
-      stem: fp(c.stem),
-      clearY: fy(c.clearY),
-      barY: fy(c.barY),
-      drops: c.drops.map((d) => ({
-        ...d,
-        points: d.points.map(fp),
-        through: d.through?.map((t) => ({ x: t.x, from: fy(t.from), to: fy(t.to) })),
-      })),
-    })),
-    links: L.links.map((l) => ({ ...l, from: fp(l.from), clearY: fy(l.clearY), to: fp(l.to) })),
-    rows: L.rows.map((r) => ({ ...r, y: fy(r.y + r.h), top: fy(r.bottom), bottom: fy(r.top) })),
-    lanes: L.lanes.map((r) => ({ ...r, y: fy(r.y + r.h), top: fy(r.bottom), bottom: fy(r.top) })),
-  };
-}
-
 function clamp(v: number, lo: number, hi: number): number {
   return Math.max(lo, Math.min(hi, v));
 }
-
-export type { Tincture, RelationshipStatus };

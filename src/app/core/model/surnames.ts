@@ -46,7 +46,25 @@ export function birthSurname(index: TreeIndex, person: Person, form: SurnameForm
   const own = person.name.surname.trim();
   const fromFather = surnameFromFather(index, person, form);
   if (!fromFather) return own;
-  return own && surnameKey(own) === surnameKey(fromFather) ? own : fromFather;
+  // The same name however it is written (Nováková, the daughter of a Nowak): theirs as they have it.
+  return own && surnameKey(own, true) === surnameKey(fromFather, true) ? own : fromFather;
+}
+
+/**
+ * Whether nobody knows the surname a married woman was born with: she bears the name of a husband (a form of
+ * it, however it is written), no surname at birth is entered for her, and no father is in the tree whose name
+ * it would be. A woman whose surname is not her husband's is taken to have kept her own.
+ */
+export function birthSurnameUnknown(index: TreeIndex, person: Person): boolean {
+  if (person.sex !== 'female' || person.name.birthSurname?.trim()) return false;
+  const own = person.name.surname.trim();
+  if (!own) return false;
+  const father = birthFather(index, person.id);
+  if (father && (father.name.surname.trim() || father.name.birthSurname?.trim())) return false;
+  const key = surnameKey(own, true);
+  return index
+    .partnerFamilies(person.id)
+    .some((f) => f.kind === 'marriage' && f.partners.some((id) => id !== person.id && surnameKey(index.person(id)?.name.surname, true) === key));
 }
 
 /** Surnames of the men in the tree, most common first. */

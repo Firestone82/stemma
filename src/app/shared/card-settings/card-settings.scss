@@ -1,0 +1,30 @@
+:host {
+  display: grid;
+  gap: 10px;
+}
+
+.switches {
+  display: grid;
+
+  &.two {
+    grid-template-columns: 1fr 1fr;
+    column-gap: 20px;
+  }
+}
+
+@media (max-width: 380px) {
+  .switches.two {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* The dates and where the shield stands: side by side where there is room. */
+.fields {
+  display: grid;
+  gap: 10px;
+
+  &.two {
+    grid-template-columns: 1fr 1fr;
+    gap: 10px 14px;
+  }
+}

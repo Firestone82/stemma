@@ -60,6 +60,10 @@ describe('chart languages', () => {
     expect(surnameLinesIn(en, person('Ashworth', undefined, 'male'), 'Moreau')).toEqual({ surname: 'Ashworth', birth: 'né Moreau' });
     // Nothing under a surname that did not change; only the surname at birth known: that is the surname.
     expect(surnameLinesIn(en, person('Ashworth', 'Ashworth'))).toEqual({ surname: 'Ashworth', birth: '' });
+    // A married woman whose own name nobody knows (see birthSurnameUnknown): the line says so.
+    expect(surnameLinesIn(en, person('Kowalová'), '', true)).toEqual({ surname: 'Kowalová', birth: 'née Unknown' });
+    expect(surnameLinesIn(cs, person('Kowalová'), '', true)).toEqual({ surname: 'Kowalová', birth: 'roz. Neznámá' });
+    expect(surnameLinesIn(cs, person('Kowalová'), 'Kowalová', false)).toEqual({ surname: 'Kowalová', birth: '' });
     expect(surnameLinesIn(en, person('', 'Barlow'))).toEqual({ surname: 'Barlow', birth: '' });
   });
 

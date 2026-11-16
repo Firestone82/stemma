@@ -1,5 +1,7 @@
 import {
   addChild,
+  clearUnknownDates,
+  unknownDateCount,
   addParent,
   addPartner,
   addPerson,
@@ -202,5 +204,25 @@ describe('tree operations', () => {
     expect('occupation' in cleared.people[0]).toBe(false);
     expect('nickname' in cleared.people[0].name).toBe(false);
     expect(doc.people[0].occupation).toBeUndefined();
+  });
+
+  it('unticks every date marked as unknown at once, and nothing else', () => {
+    let doc = emptyDocument('Dates');
+    const a = addPerson(doc, { given: 'Ada', birth: { dateUnknown: true } });
+    const b = addPerson(a.doc, { given: 'Ben', birth: { date: { value: '1900' }, place: 'Brno' } });
+    doc = updatePerson(b.doc, b.personId, { death: { dateUnknown: true, place: 'Ostrava' } });
+    const c = addPerson(doc, { given: 'Cy' });
+    doc = updatePerson(c.doc, c.personId, { death: { dateUnknown: true } });
+    expect(unknownDateCount(doc)).toBe(3);
+    const cleared = clearUnknownDates(doc);
+    expect(unknownDateCount(cleared)).toBe(0);
+    const person = (id: string) => cleared.people.find((p) => p.id === id)!;
+    // A birth that said nothing else is gone; a death stays a death, with what else is known of it.
+    expect(person(a.personId).birth).toBeUndefined();
+    expect(person(b.personId).birth).toEqual({ date: { value: '1900' }, place: 'Brno' });
+    expect(person(b.personId).death).toEqual({ place: 'Ostrava' });
+    expect(person(c.personId).death).toEqual({});
+    // Nothing ticked, nothing changed.
+    expect(clearUnknownDates(cleared)).toBe(cleared);
   });
 });

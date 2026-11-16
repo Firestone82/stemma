@@ -1,11 +1,16 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  Stemma family tree file format, version 1.x (this schema describes 1.6).
+  Stemma family tree file format, version 1.x (this schema describes 1.9).
 
   Compatibility rules:
   * The namespace never changes between versions.
   * formatVersion="MAJOR.MINOR". Minor versions only add optional elements and
     attributes. Readers ignore what they do not understand and write it back.
+  * 1.9 has one way of drawing the tree and one print style. The settings of the
+    earlier ways of drawing (styles, the drawn tree, generations in rows, stacked
+    couples, sideways branches, relationship names, portraits), <background> and
+    <arrangement> are no longer part of the format: a reader ignores them and
+    does not write them back. People and families are unchanged.
   * Elements and attributes from other namespaces are allowed almost anywhere,
     so other tools can attach their own data.
 -->
@@ -14,7 +19,7 @@
            targetNamespace="urn:stemma:family-tree"
            elementFormDefault="qualified"
            attributeFormDefault="unqualified"
-           version="1.6">
+           version="1.9">
 
   <xs:element name="familyTree" type="t:FamilyTree">
     <xs:key name="personId">
@@ -70,6 +75,7 @@
       <xs:pattern value="[A-Za-z_][A-Za-z0-9._\-]*"/>
     </xs:restriction>
   </xs:simpleType>
+
 
   <xs:simpleType name="FormatVersion">
     <xs:restriction base="xs:string">
@@ -131,37 +137,9 @@
     </xs:restriction>
   </xs:simpleType>
 
-  <xs:simpleType name="TreeStyle">
-    <xs:restriction base="xs:string">
-      <xs:enumeration value="auto"/>
-      <xs:enumeration value="archive"/>
-      <xs:enumeration value="print"/>
-      <xs:enumeration value="night"/>
-    </xs:restriction>
-  </xs:simpleType>
 
-  <xs:simpleType name="ColorBy">
-    <xs:restriction base="xs:string">
-      <xs:enumeration value="family"/>
-      <xs:enumeration value="generation"/>
-      <xs:enumeration value="sex"/>
-      <xs:enumeration value="none"/>
-    </xs:restriction>
-  </xs:simpleType>
 
-  <xs:simpleType name="LineStyle">
-    <xs:restriction base="xs:string">
-      <xs:enumeration value="square"/>
-      <xs:enumeration value="curved"/>
-    </xs:restriction>
-  </xs:simpleType>
 
-  <xs:simpleType name="Density">
-    <xs:restriction base="xs:string">
-      <xs:enumeration value="comfortable"/>
-      <xs:enumeration value="compact"/>
-    </xs:restriction>
-  </xs:simpleType>
 
   <!-- 1.1: a BCP 47 language tag such as "en" or "cs". -->
   <xs:simpleType name="Language">
@@ -171,6 +149,21 @@
   </xs:simpleType>
 
   <!-- 1.1 -->
+  <!-- 1.9: a place on the page or in a box: a corner, the middle of a side, the middle. -->
+  <xs:simpleType name="Anchor">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="top-left"/>
+      <xs:enumeration value="top"/>
+      <xs:enumeration value="top-right"/>
+      <xs:enumeration value="left"/>
+      <xs:enumeration value="center"/>
+      <xs:enumeration value="right"/>
+      <xs:enumeration value="bottom-left"/>
+      <xs:enumeration value="bottom"/>
+      <xs:enumeration value="bottom-right"/>
+    </xs:restriction>
+  </xs:simpleType>
+
   <xs:simpleType name="Orientation">
     <xs:restriction base="xs:string">
       <xs:enumeration value="auto"/>
@@ -203,10 +196,6 @@
       <xs:element name="families" type="t:Families"/>
       <!-- 1.1 -->
       <xs:element name="print" type="t:Print" minOccurs="0"/>
-      <!-- 1.3 -->
-      <xs:element name="background" type="t:Background" minOccurs="0"/>
-      <!-- 1.4 -->
-      <xs:element name="arrangement" type="t:Arrangement" minOccurs="0"/>
       <xs:group ref="t:Foreign"/>
     </xs:sequence>
     <xs:attribute name="formatVersion" type="t:FormatVersion" use="required"/>
@@ -226,124 +215,124 @@
     <xs:anyAttribute namespace="##other" processContents="lax"/>
   </xs:complexType>
 
+  <!--
+    What the cards show (1.9), on the chart and in prints alike. Every attribute is optional.
+    showEmblems: the shield with the initials in the family's colour. showBirthNames: the surname
+    at birth under the surname. dates: none, years, or in full where they fit. showSex: the sex
+    as a symbol. sexColors: the sex as an accent down the card's edge. showRibbons: a ribbon across
+    the corner of someone who has died (white for a child who died at birth). The badge on a card
+    whose record has a mistake is not a setting: it is always on the chart and never in a print.
+  -->
+  <xs:attributeGroup name="Cards">
+    <xs:attribute name="showEmblems" type="xs:boolean" default="true"/>
+    <xs:attribute name="showBirthNames" type="xs:boolean" default="true"/>
+    <!-- 1.9: with the surnames at birth, "née Unknown" for a married woman who bears her husband's name and whose own is not known. -->
+    <xs:attribute name="unknownBirthNames" type="xs:boolean" default="true"/>
+    <xs:attribute name="dates" type="t:DateStyle" default="years"/>
+    <xs:attribute name="showSex" type="xs:boolean" default="true"/>
+    <xs:attribute name="sexColors" type="xs:boolean" default="true"/>
+    <xs:attribute name="showRibbons" type="xs:boolean" default="true"/>
+  </xs:attributeGroup>
+
+  <xs:simpleType name="PositiveNumber">
+    <xs:restriction base="xs:decimal">
+      <xs:minExclusive value="0"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="DateStyle">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="none"/>
+      <xs:enumeration value="years"/>
+      <xs:enumeration value="full"/>
+    </xs:restriction>
+  </xs:simpleType>
+
   <!-- How the chart is drawn. Every attribute is optional and has a default. -->
   <xs:complexType name="View">
     <xs:group ref="t:Foreign"/>
-    <xs:attribute name="style" type="t:TreeStyle" default="auto"/>
-    <xs:attribute name="colorBy" type="t:ColorBy" default="family"/>
-    <xs:attribute name="lines" type="t:LineStyle" default="square"/>
-    <xs:attribute name="density" type="t:Density" default="comfortable"/>
-    <xs:attribute name="showDates" type="xs:boolean" default="true"/>
-    <xs:attribute name="showPlaces" type="xs:boolean" default="false"/>
-    <xs:attribute name="showPhotos" type="xs:boolean" default="true"/>
-    <xs:attribute name="showGenerations" type="xs:boolean" default="true"/>
-    <!-- 1.1 -->
-    <xs:attribute name="showRelationships" type="xs:boolean" default="true"/>
-    <xs:attribute name="showUnions" type="xs:boolean" default="true"/>
+    <xs:attributeGroup ref="t:Cards"/>
+    <!-- 1.1: the language of the words on the chart when the tree was saved. -->
     <xs:attribute name="language" type="t:Language" default="en"/>
-    <!-- 1.2 -->
-    <xs:attribute name="showSex" type="xs:boolean" default="true"/>
-    <xs:attribute name="sexColors" type="xs:boolean" default="false"/>
-    <xs:attribute name="showTree" type="xs:boolean" default="true"/>
-    <!--
-      1.4: who the chart shows. branches: how far out to the sides from the
-      direct line of the person in the middle (0 the direct line, 1 siblings,
-      2 first cousins), as on <print>. inLawFamilies="false" (with branches
-      "all") leaves out everyone without a relationship name, mostly the
-      families of those who married in; their partners stay.
-    -->
+    <!-- 1.4: how far out to the sides the chart reaches: 0 the direct line, 1 siblings, aunts and uncles, 2 first cousins, all. -->
     <xs:attribute name="branches" type="t:Reach" default="all"/>
+    <!-- 1.4: with branches="all", whether the families of those who married in are shown too. -->
     <xs:attribute name="inLawFamilies" type="xs:boolean" default="true"/>
-    <!-- 1.6: the widest generations drawn in two tiers while the chart is much wider than tall. -->
-    <xs:attribute name="tallGenerations" type="xs:boolean" default="false"/>
-    <!-- 1.6: no longer used (siblings always stand in birth order); kept and written back. -->
-    <xs:attribute name="childlessOutside" type="xs:boolean" default="false"/>
-    <!-- 1.6: dates on the cards in full, as numbers, where known and where they fit. -->
-    <xs:attribute name="fullDates" type="xs:boolean" default="false"/>
     <!-- 1.6: with branches="1", brothers and sisters only, without aunts, uncles, nieces and nephews. -->
     <xs:attribute name="siblingsOnly" type="xs:boolean" default="false"/>
+    <!-- 1.9: the Polish and the Czech spelling of a surname count as one family (Nowak and Novák). -->
+    <xs:attribute name="uniteSpellings" type="xs:boolean" default="true"/>
+    <!-- 1.9: the German and the Czech spelling of a surname count as one family too (Schmidt and Šmíd). -->
+    <xs:attribute name="uniteForeign" type="xs:boolean" default="true"/>
+    <!-- 1.9: on the chart, a soft background in each family's colour behind its cards. -->
+    <xs:attribute name="familyBackgrounds" type="xs:boolean" default="false"/>
     <xs:anyAttribute namespace="##other" processContents="lax"/>
   </xs:complexType>
 
   <!--
-    1.1: how the tree is printed. theme and paper are open lists (a newer version
-    may add styles and paper sizes); unknown values are kept and drawn with the
-    defaults (heirloom, A3).
+    1.1: how the tree is printed. paper is an open list (a newer version may add paper sizes);
+    an unknown value is kept and drawn on A3.
   -->
   <xs:complexType name="Print">
     <xs:group ref="t:Foreign"/>
-    <xs:attribute name="theme" type="xs:string" default="heirloom"/>
+    <xs:attributeGroup ref="t:Cards"/>
     <xs:attribute name="paper" type="xs:string" default="A3"/>
     <xs:attribute name="orientation" type="t:Orientation" default="auto"/>
+    <!-- The person the page is drawn around (the home person when absent) and their partner beside them. -->
     <xs:attribute name="center" type="t:Id"/>
     <xs:attribute name="partner" type="t:Id"/>
     <xs:attribute name="withPartner" type="xs:boolean" default="true"/>
-    <xs:attribute name="centered" type="xs:boolean" default="true"/>
+    <!-- 1.9: families as close together as they go, with the least room between cards and lines. -->
+    <xs:attribute name="tight" type="xs:boolean" default="false"/>
+    <!-- 1.9: a much longer search for the arrangement of the families that leaves the least of the page empty. -->
+    <xs:attribute name="fill" type="xs:boolean" default="false"/>
+    <!-- 1.9: in a column of children, a couple with nobody under them stands one over the other; otherwise every couple stands side by side. -->
+    <xs:attribute name="stackCouples" type="xs:boolean" default="false"/>
+    <!-- 1.9: someone with several partners stands between them; false keeps the partners of a family that hangs at the side of a line all on one side. -->
+    <xs:attribute name="amidPartners" type="xs:boolean" default="true"/>
+    <!-- 1.9: the words on the cards a size bigger, the cards taller for it. -->
+    <xs:attribute name="largeText" type="xs:boolean" default="false"/>
+    <!-- 1.9: the lines between the cards heavier and the marks between partners bigger. -->
+    <xs:attribute name="strongLines" type="xs:boolean" default="false"/>
+    <!-- 1.9: a card whose names do not fit it is as wide as they need; the others keep the one width, all the one height. -->
+    <xs:attribute name="freeWidths" type="xs:boolean" default="false"/>
+    <!-- 1.9: the families' names held at a place on the page inside its margin, whatever size they are: with legendBox, a box of that size; without, a block just big enough for them. -->
+    <xs:attribute name="legendAnchor" type="t:Anchor"/>
+    <!-- 1.9: where the names stand in a box bigger than they need (legendBox). In the middle when absent. -->
+    <xs:attribute name="legendAlign" type="t:Anchor"/>
+    <!-- 1.9: the title held at a place on the page inside its margin (titleAt is then not used). Top middle when neither is there. -->
+    <xs:attribute name="titleAnchor" type="t:Anchor"/>
+    <!-- 1.9: how each couple stands, as a word at their marker ("married", "divorced"). -->
+    <xs:attribute name="unionText" type="xs:boolean" default="false"/>
+    <!-- 1.9: the title moved by hand: "x y", the middle of it across and its top, as shares of the page. -->
+    <xs:attribute name="titleAt" type="xs:string"/>
+    <!-- 1.9: cards moved by hand: "I12:30,-14.5 I40:0,66", each a person and how far right and down from where the layout puts the card, in the layout's units (a card is about 190 wide). -->
+    <xs:attribute name="moves" type="xs:string"/>
     <xs:attribute name="ancestors" type="t:Reach" default="all"/>
     <xs:attribute name="descendants" type="t:Reach" default="all"/>
     <xs:attribute name="branches" type="t:Reach" default="all"/>
+    <xs:attribute name="inLawFamilies" type="xs:boolean" default="true"/>
+    <xs:attribute name="siblingsOnly" type="xs:boolean" default="false"/>
     <xs:attribute name="title" type="xs:string"/>
     <xs:attribute name="subtitle" type="xs:string"/>
-    <xs:attribute name="showDates" type="xs:boolean" default="true"/>
-    <xs:attribute name="showPlaces" type="xs:boolean" default="true"/>
-    <xs:attribute name="showPhotos" type="xs:boolean" default="true"/>
-    <xs:attribute name="showUnions" type="xs:boolean" default="true"/>
-    <xs:attribute name="showRelationships" type="xs:boolean" default="true"/>
-    <xs:attribute name="showGenerations" type="xs:boolean" default="true"/>
-    <!-- 1.2 -->
-    <xs:attribute name="showSex" type="xs:boolean" default="true"/>
-    <xs:attribute name="sexColors" type="xs:boolean" default="false"/>
-    <xs:attribute name="showTree" type="xs:boolean" default="true"/>
-    <!-- 1.4: as on <view>. -->
-    <xs:attribute name="inLawFamilies" type="xs:boolean" default="true"/>
-    <!-- 1.5: portraits round, square or upright rectangles, at the top of the cards or in the middle. -->
-    <xs:attribute name="portrait" type="t:PortraitShape" default="round"/>
-    <xs:attribute name="portraitAlign" type="t:PortraitAlign" default="middle"/>
-    <xs:attribute name="portraitSize" type="xs:decimal" default="1"/>
-    <!-- 1.6: couples without children take the room of one card, the partner tucked small over its corner. -->
-    <xs:attribute name="compactCouples" type="xs:boolean" default="false"/>
-    <!-- 1.6: taller and narrower: the partner of a childless couple under the card, generations in two tiers more readily. -->
-    <xs:attribute name="tallGenerations" type="xs:boolean" default="false"/>
-    <!-- 1.6: people hidden from prints (print="hidden") are printed all the same. -->
+    <!-- 1.9: the parts of the page: the title across the top, the families' names, the frame. -->
+    <xs:attribute name="showTitle" type="xs:boolean" default="true"/>
+    <xs:attribute name="showLegend" type="xs:boolean" default="true"/>
+    <xs:attribute name="showFrame" type="xs:boolean" default="true"/>
+    <!-- 1.6: people hidden from prints are printed all the same. -->
     <xs:attribute name="showHidden" type="xs:boolean" default="false"/>
-    <!-- 1.6: no longer used; kept and written back. -->
-    <xs:attribute name="childlessOutside" type="xs:boolean" default="false"/>
-    <!-- 1.6: dates on the cards in full, as numbers, where known and where they fit. -->
-    <xs:attribute name="fullDates" type="xs:boolean" default="false"/>
-    <!-- 1.6: with branches="1", brothers and sisters only, without aunts, uncles, nieces and nephews. -->
-    <xs:attribute name="siblingsOnly" type="xs:boolean" default="false"/>
+    <!-- 1.8: the PDF in pieces on sheets of this paper, to be glued together; borderless: the printer prints to the edge. -->
+    <xs:attribute name="tiles" type="xs:string"/>
+    <xs:attribute name="tilesBorderless" type="xs:boolean" default="false"/>
+    <!-- 1.8: the line height of the title and of the families' names on paper, in centimetres. -->
+    <xs:attribute name="titleSize" type="t:PositiveNumber"/>
+    <xs:attribute name="legendSize" type="t:PositiveNumber"/>
+    <!-- 1.9: how far the families' names held at the top (or the foot) keep from the title there, in centimetres; 0.5 when absent. -->
+    <xs:attribute name="legendGap" type="xs:decimal"/>
     <!-- 1.8: the families' names placed by hand: "x y w h", shares of the page's width and height. -->
     <xs:attribute name="legendBox" type="xs:string"/>
-    <!-- 1.8: generations need not stand in rows: whole branches drawn lower where that makes the cards bigger. -->
-    <xs:attribute name="packFamilies" type="xs:boolean" default="false"/>
-    <!-- 1.8: false: cards without the family's emblem; the colour band on the card shows the family. -->
-    <xs:attribute name="showEmblems" type="xs:boolean" default="true"/>
-    <!-- Read as compactCouples="true" (a setting of its own while 1.8 was being made); not written. -->
-    <xs:attribute name="stackCouples" type="xs:boolean" default="false"/>
-    <!-- 1.8: the PDF in pieces on sheets of this paper (A4, A3, ...), to be glued together. -->
-    <xs:attribute name="tiles" type="xs:string"/>
-    <!-- 1.8: with tiles: the printer prints to the edge, so the sheets join edge to edge at full size. -->
-    <xs:attribute name="tilesBorderless" type="xs:boolean" default="false"/>
-    <!-- 1.8: the title and the page's lettering, and the families' names, this many times their usual size (0.5 to 3). -->
-    <xs:attribute name="titleScale" type="xs:decimal"/>
-    <xs:attribute name="legendScale" type="xs:decimal"/>
     <xs:anyAttribute namespace="##other" processContents="lax"/>
   </xs:complexType>
-
-  <xs:simpleType name="PortraitShape">
-    <xs:restriction base="xs:string">
-      <xs:enumeration value="round"/>
-      <xs:enumeration value="square"/>
-      <xs:enumeration value="rectangle"/>
-    </xs:restriction>
-  </xs:simpleType>
-
-  <xs:simpleType name="PortraitAlign">
-    <xs:restriction base="xs:string">
-      <xs:enumeration value="top"/>
-      <xs:enumeration value="middle"/>
-    </xs:restriction>
-  </xs:simpleType>
 
   <xs:complexType name="People">
     <xs:sequence>
@@ -430,85 +419,6 @@
       </xs:extension>
     </xs:simpleContent>
   </xs:complexType>
-
-  <!--
-    1.3: a picture of one's own behind the chart, instead of the drawn tree.
-    Embedded like a photo; width and height are its size in pixels (an SVG's
-    own units), fit is how it fills the area behind the chart.
-  -->
-  <xs:complexType name="Background">
-    <xs:simpleContent>
-      <xs:extension base="xs:string">
-        <xs:attribute name="mediaType" type="xs:string"/>
-        <xs:attribute name="encoding" type="xs:string" fixed="base64"/>
-        <xs:attribute name="href" type="xs:anyURI"/>
-        <xs:attribute name="width" type="t:PositiveNumber"/>
-        <xs:attribute name="height" type="t:PositiveNumber"/>
-        <xs:attribute name="fit" type="t:BackgroundFit" default="cover"/>
-        <xs:attribute name="opacity" type="t:Opacity" default="1"/>
-        <xs:attribute name="name" type="xs:string"/>
-        <xs:anyAttribute namespace="##other" processContents="lax"/>
-      </xs:extension>
-    </xs:simpleContent>
-  </xs:complexType>
-
-  <!--
-    1.4: changes made by hand to the automatic layout, applied on top of it.
-    move: a person's card moved sideways by dx (a couple moves together);
-    line: a family's line, the bar its children hang from, moved down by dy
-    (up when negative); couple: the partner drawn on the left.
-  -->
-  <xs:complexType name="Arrangement">
-    <xs:sequence>
-      <xs:choice minOccurs="0" maxOccurs="unbounded">
-        <xs:element name="move" type="t:CardMove"/>
-        <xs:element name="line" type="t:LineMove"/>
-        <xs:element name="couple" type="t:CoupleSide"/>
-      </xs:choice>
-      <xs:group ref="t:Foreign"/>
-    </xs:sequence>
-    <xs:anyAttribute namespace="##other" processContents="lax"/>
-  </xs:complexType>
-
-  <xs:complexType name="CardMove">
-    <xs:attribute name="person" type="t:Id" use="required"/>
-    <xs:attribute name="dx" type="xs:decimal" use="required"/>
-    <xs:anyAttribute namespace="##other" processContents="lax"/>
-  </xs:complexType>
-
-  <xs:complexType name="LineMove">
-    <xs:attribute name="family" type="t:Id" use="required"/>
-    <xs:attribute name="dy" type="xs:decimal" use="required"/>
-    <xs:anyAttribute namespace="##other" processContents="lax"/>
-  </xs:complexType>
-
-  <xs:complexType name="CoupleSide">
-    <xs:attribute name="family" type="t:Id" use="required"/>
-    <xs:attribute name="left" type="t:Id" use="required"/>
-    <xs:anyAttribute namespace="##other" processContents="lax"/>
-  </xs:complexType>
-
-  <xs:simpleType name="BackgroundFit">
-    <xs:restriction base="xs:string">
-      <xs:enumeration value="cover"/>
-      <xs:enumeration value="contain"/>
-    </xs:restriction>
-  </xs:simpleType>
-
-  <xs:simpleType name="Opacity">
-    <xs:restriction base="xs:decimal">
-      <xs:minInclusive value="0"/>
-      <xs:maxInclusive value="1"/>
-    </xs:restriction>
-  </xs:simpleType>
-
-  <xs:simpleType name="PositiveNumber">
-    <xs:restriction base="xs:decimal">
-      <xs:minExclusive value="0"/>
-    </xs:restriction>
-  </xs:simpleType>
-
-  <!-- Families -->
 
   <xs:complexType name="Family">
     <xs:sequence>

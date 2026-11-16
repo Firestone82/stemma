@@ -1,3 +1,7 @@
-@for (s of switches(); track s.key) {
-  <stemma-switch [checked]="s.on" (checkedChange)="toggle(s.key, $event)">{{ t(s.label) }}</stemma-switch>
-}
+<stemma-card-settings idPrefix="view-cards" [settings]="view()" (settingsChange)="settingsChange.emit($event)" />
+<div class="backgrounds">
+  <stemma-switch [checked]="view().familyBackgrounds" (checkedChange)="settingsChange.emit({ familyBackgrounds: $event })">{{
+    t('display.familyBackgrounds')
+  }}</stemma-switch>
+  <p class="hint">{{ t('display.familyBackgroundsHint') }}</p>
+</div>

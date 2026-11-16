@@ -1,61 +1,48 @@
 @let c = card();
-@let m = metrics();
+@let d = design();
 @let l = label();
-<svg:rect class="card-shadow" y="1.6" [attr.width]="c.w" [attr.height]="c.h" [attr.rx]="m.radius" />
-<svg:rect class="card-shape" [attr.width]="c.w" [attr.height]="c.h" [attr.rx]="m.radius" />
-<svg:g class="shield" [attr.transform]="shieldTransform()">
-  <svg:path class="shield-field" [attr.d]="shield()" />
-  <svg:text
-    class="shield-initials"
-    [attr.font-size]="m.shield.initials"
-    [attr.x]="m.shield.w / 2"
-    [attr.y]="m.shield.h * 0.46"
-    text-anchor="middle"
-    dominant-baseline="central"
-  >
-    {{ l.initials }}
-  </svg:text>
-</svg:g>
-@if (l.deceased) {
-  <svg:path class="mourning" [class.at-birth]="l.diedAtBirth" [attr.d]="ribbon()">
+@let y = lines();
+<svg:rect class="card-shadow" y="1.6" [attr.width]="c.w" [attr.height]="c.h" [attr.rx]="d.radius" />
+<svg:rect class="card-shape" [attr.width]="c.w" [attr.height]="c.h" [attr.rx]="d.radius" />
+@if (accent()) {
+  <svg:path class="accent" [attr.d]="accentPath()" />
+}
+@if (d.shield; as s) {
+  <svg:g class="shield" [attr.transform]="'translate(' + s.x + ',' + s.y + ')'">
+    <svg:path class="shield-field" [attr.d]="s.path" />
+    <svg:text class="shield-initials" [attr.font-size]="s.font.size" [attr.x]="s.w / 2" [attr.y]="s.h * 0.46" text-anchor="middle" dominant-baseline="central">
+      {{ l.initials }}
+    </svg:text>
+  </svg:g>
+}
+<svg:text class="given" [attr.font-size]="d.given.size" [attr.x]="d.textX" [attr.y]="y.given">{{ l.given }}</svg:text>
+@if (l.surname) {
+  <svg:text class="surname" [attr.font-size]="d.surname.size" [attr.x]="d.textX" [attr.y]="y.surname">{{ l.surname }}</svg:text>
+}
+@if (l.birth) {
+  <svg:text class="birth" [attr.font-size]="d.birth.size" [attr.x]="d.textX" [attr.y]="y.birth">{{ l.birth }}</svg:text>
+}
+@if (l.dates) {
+  <svg:text class="dates" [attr.font-size]="d.dates.size" [attr.x]="d.textX" [attr.y]="y.dates">{{ l.dates }}</svg:text>
+}
+@if (ribbons() && l.deceased) {
+  <svg:path class="mourning" [class.at-birth]="l.diedAtBirth" [attr.d]="d.ribbon">
     <svg:title>{{ l.diedAtBirth ? t('card.diedAtBirth') : t('card.deceased') }}</svg:title>
   </svg:path>
 }
-@if (sexSymbol()) {
-  <svg:path class="sex-mark" [attr.transform]="symbolTransform()" [attr.d]="sexSymbol()" />
-}
-@if (l.hiddenFromPrint) {
-  <svg:g class="no-print-mark" [attr.transform]="noPrintTransform()">
+@if (l.hiddenFromPrint && !c.ghost) {
+  <svg:g class="no-print-mark" [attr.transform]="'translate(' + (c.w - 30) + ',4)'">
     <svg:title>{{ t('person.hiddenFromPrint') }}</svg:title>
     <svg:path
       d="M4.2 5.1V2.4h6v2.7M4.2 10.2H3a.9.9 0 0 1-.9-.9V6a.9.9 0 0 1 .9-.9h8.4a.9.9 0 0 1 .9.9v3.3a.9.9 0 0 1-.9.9h-1.2M4.2 8.4h6V12h-6zM2.1 2.1l10.2 10.2"
     />
   </svg:g>
 }
-@if (focus()) {
-  <svg:g class="focus-mark" [attr.transform]="focusTransform()">
-    <svg:circle r="6" class="focus-ring" />
-    <svg:circle r="2.4" class="focus-dot" />
-  </svg:g>
-}
-@if (l.kin) {
-  <svg:text class="kin" [attr.font-size]="m.kin.size" [attr.x]="m.textX" [attr.y]="m.kin.y">{{ l.kin }}</svg:text>
-}
-<svg:text class="given" [attr.font-size]="m.given.size" [attr.x]="m.textX" [attr.y]="m.given.y + shift()">{{ l.given }}</svg:text>
-@if (l.surname) {
-  <svg:text class="surname" [attr.font-size]="m.surname.size" [attr.x]="m.textX" [attr.y]="m.surname.y + shift()">{{ l.surname }}</svg:text>
-}
-@if (l.birth) {
-  <svg:text class="birth" [attr.font-size]="m.birth.size" [attr.x]="m.textX" [attr.y]="m.birth.y + shift()">{{ l.birth }}</svg:text>
-}
-@if (l.dates) {
-  <svg:text class="dates" [attr.font-size]="m.dates.size" [attr.x]="m.textX" [attr.y]="m.dates.y + lifeShift()">{{ l.dates }}</svg:text>
-}
-@if (l.missing || l.problem) {
-  <svg:g class="missing-flag" [class.problem]="!!l.problem" [attr.transform]="flagTransform()">
+@if (flag(); as f) {
+  <svg:g class="badge" [class.problem]="f === 'problem'" [attr.transform]="'translate(' + d.badge.x + ',' + d.badge.y + ')'">
     <svg:title>{{ l.problem ? l.problem + (l.missing ? '\n' + l.missing : '') : l.missing }}</svg:title>
-    <svg:circle r="7" />
-    <svg:path d="M0 -3.6V0.8M0 3.1V3.3" />
+    <svg:circle [attr.r]="d.badge.r" />
+    <svg:path [attr.d]="d.badge.mark" />
   </svg:g>
 }
-<svg:title>{{ l.title }}</svg:title>
+<svg:title>{{ c.ghost ? t('card.standIn', { name: l.title }) : l.title }}</svg:title>

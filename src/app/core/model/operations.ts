@@ -492,6 +492,35 @@ export function updateView(doc: TreeDocument, patch: Partial<ViewSettings>): Tre
   return { ...doc, view: { ...doc.view, ...patch } };
 }
 
+/** How many dates of birth and of death in the tree are ticked as unknown (LifeEvent.dateUnknown). */
+export function unknownDateCount(doc: TreeDocument): number {
+  return doc.people.reduce((n, p) => n + Number(!!p.birth?.dateUnknown) + Number(!!p.death?.dateUnknown), 0);
+}
+
+/**
+ * Unticks every date of birth and of death marked as unknown, so that the checks ask about each of them again.
+ * Nothing else changes: someone who died is still someone who died.
+ */
+export function clearUnknownDates(doc: TreeDocument): TreeDocument {
+  if (!unknownDateCount(doc)) return doc;
+  const without = (event: LifeEvent | undefined, keep: boolean): LifeEvent | undefined => {
+    if (!event?.dateUnknown) return event;
+    const rest = { ...event };
+    delete rest.dateUnknown;
+    return keep || Object.keys(rest).length ? rest : undefined;
+  };
+  return {
+    ...doc,
+    people: doc.people.map((p) => {
+      if (!p.birth?.dateUnknown && !p.death?.dateUnknown) return p;
+      const next: Person = { ...p, birth: without(p.birth, false), death: without(p.death, true) };
+      if (!next.birth) delete next.birth;
+      if (!next.death) delete next.death;
+      return next;
+    }),
+  };
+}
+
 /** Changes print settings; keys set to undefined are removed (back to their default). */
 export function updatePrint(doc: TreeDocument, patch: Partial<PrintSettings>): TreeDocument {
   const print: PrintSettings = { ...DEFAULT_PRINT, ...effectivePrint(doc), ...patch };

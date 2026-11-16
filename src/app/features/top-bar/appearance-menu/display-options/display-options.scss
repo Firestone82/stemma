@@ -4,3 +4,15 @@
   padding-top: 4px;
   border-top: 1px solid var(--rule);
 }
+
+/* What stands behind the cards: ruled off from what is on them. */
+.backgrounds {
+  display: grid;
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--rule);
+
+  .hint {
+    margin: 0;
+  }
+}

@@ -20,48 +20,66 @@
   <rect class="backdrop" width="100%" height="100%" />
 
   <g class="world" [attr.transform]="worldTransform()">
-    @if (view.showGenerations) {
-      <g stemmaBands [layout]="displayed()"></g>
+    @if (view.familyBackgrounds) {
+      @let bg = clusters();
+      <g class="clusters" aria-hidden="true">
+        <!-- Where two families share a piece of background (a partner who married in), stripes of the two. -->
+        @for (s of bg.stripes; track s.id) {
+          <pattern [attr.id]="s.id" width="16" height="16" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+            <rect class="cluster-paint" [attr.data-tincture]="s.a" width="8" height="16" />
+            <rect class="cluster-paint" [attr.data-tincture]="s.b" x="8" width="8" height="16" />
+          </pattern>
+        }
+        @for (r of bg.painted; track $index) {
+          @if (r.with) {
+            <rect
+              [attr.x]="r.box.x"
+              [attr.y]="r.box.y"
+              [attr.width]="r.box.w"
+              [attr.height]="r.box.h"
+              [attr.fill]="'url(#stemma-stripes-' + r.tincture + '-' + r.with + ')'"
+            />
+          } @else {
+            <rect
+              class="cluster-paint"
+              [attr.data-tincture]="r.tincture"
+              [attr.x]="r.box.x"
+              [attr.y]="r.box.y"
+              [attr.width]="r.box.w"
+              [attr.height]="r.box.h"
+            />
+          }
+        }
+      </g>
     }
-    <g stemmaFamilyLines [layout]="shown()" [cuts]="cutTitles()" (takeOut)="onCut($event)"></g>
+    <g stemmaFamilyLines [layout]="shown()" [cuts]="cutTitles()" [hover]="hoverId()" (takeOut)="onCut($event)"></g>
     <g stemmaUnions [layout]="shown()" [cuts]="cutTitles()" (pick)="onUnionPick($event)" (takeOut)="onCut($event)"></g>
     <g stemmaPlaceholders [layout]="shown()" (pick)="onPlaceholderPick($event)"></g>
     @if (familyActive()) {
-      <g stemmaFamilyBalloons [balloons]="placedBalloons()" [labels]="balloonLabels()" (pick)="onBalloonPick($event)"></g>
+      <g stemmaFamilyBalloons [slots]="familySlots()" [labels]="balloonLabels()" [hint]="showFamilies" (pick)="onBalloonPick($event)"></g>
     }
 
     <g class="cards">
-      @for (c of shown().cards; track c.personId) {
+      @for (c of shown().cards; track c.key) {
         <g
           stemmaCard
           [card]="c"
           [label]="model.labels().get(c.personId)!"
           [tincture]="tinctureOf(c.personId)"
-          [metrics]="model.metrics()"
-          [selected]="c.personId === selectedId()"
-          [focus]="c.personId === model.focusId()"
-          [kinRow]="view.showRelationships"
-          [birthRow]="model.birthRow()"
-          [showSex]="view.showSex"
-          [sexColors]="view.sexColors"
+          [design]="model.design()"
+          [parts]="model.parts()"
+          [selected]="c.personId === selectedId() && !c.ghost"
+          [focus]="c.personId === model.focusId() && !c.ghost"
+          [ribbons]="view.showRibbons"
           [class.flash]="flashId() === c.personId"
+          (pointerenter)="hoverId.set(c.personId)"
+          (pointerleave)="hoverId.set(null)"
           (pick)="onCardPick(c.personId, $event)"
           (dblclick)="onCardDoubleClick(c.personId, $event)"
           (contextmenu)="onContextMenu($event, c.personId)"
         ></g>
       }
     </g>
-
-    @if (ui.arranging()) {
-      <g
-        stemmaArrangeHandles
-        [layout]="shown()"
-        [dragging]="drag()?.kind === 'line' ? $any(drag()).familyId : null"
-        (turn)="onTurn($event)"
-        (putBack)="arrange.putBackCouple($event)"
-        (putBackLine)="arrange.putBackLine($event)"
-      ></g>
-    }
 
     <g class="selection">
       @if (selectedCard(); as c) {
@@ -71,7 +89,7 @@
           [attr.y]="c.y - 4.5"
           [attr.width]="c.w + 9"
           [attr.height]="c.h + 9"
-          [attr.rx]="model.metrics().radius + 4"
+          [attr.rx]="model.design().radius + 4"
         />
       }
       @if (selectedUnion(); as m) {
@@ -111,20 +129,6 @@
       <stemma-family-bar />
     } @else {
       <stemma-relatives-filter />
-      <button
-        type="button"
-        class="arrange-pill"
-        [attr.aria-pressed]="ui.arranging()"
-        [attr.aria-label]="t('arrange.title')"
-        [title]="t('arrange.title')"
-        (click)="toggleArrange()"
-      >
-        <stemma-icon name="move" [size]="17" />
-        <span class="label">{{ t('arrange.button') }}</span>
-      </button>
     }
   </div>
-  @if (ui.arranging()) {
-    <stemma-arrange-bar />
-  }
 }

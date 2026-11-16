@@ -2,15 +2,16 @@
  * The family view: one family (or a few) on its own, apart from the rest of
  * the tree. A family is everyone born with its name (Novák and Nováková
  * together, by surnameKey), with their partners so couples stay together.
- * Everyone else the people on the chart are joined to is left off and shown
- * as a balloon instead: the family a person's parents, children or partner
- * belong to, which can be opened or added to the view.
+ * Everyone else the people on the chart are joined to is left off. Where their
+ * card would be the chart has a button instead (a "balloon" here): the family
+ * a person's parents, children or partner belong to, which a press brings into
+ * the view, in the button's place.
  */
 import { Scope } from '../poster/scope';
 import { TreeIndex } from './tree-index';
 import { Family, TreeDocument } from './types';
 
-/** Where a balloon hangs: above a person (their parents), below a couple (their children) or beside a person (a partner). */
+/** Where a balloon stands: above a person (their parents), below a couple (their children) or beside a person (a partner). */
 export type BalloonKind = 'parents' | 'children' | 'partner';
 
 export interface FamilyBalloon {
@@ -60,8 +61,6 @@ export function familyViewScope(doc: TreeDocument, index: TreeIndex, keys: Reado
       view: doc.view,
       people,
       families,
-      ...(doc.background ? { background: doc.background } : {}),
-      ...(doc.arrangement ? { arrangement: doc.arrangement } : {}),
     },
     people: included,
   };
@@ -113,6 +112,60 @@ export function familyBalloons(doc: TreeDocument, index: TreeIndex, included: Re
     out.push({ id: `children:${f.id}`, kind: 'children', personId: shown[0], familyId: f.id, keys: keysOf(children), people: children });
   }
   return out;
+}
+
+/** Ids of the stand-ins the chart lays out for the balloons: no person or family of a tree has an id like these. */
+const PORTAL_PREFIX = '~portal:';
+
+export function portalId(balloonId: string): string {
+  return PORTAL_PREFIX + balloonId;
+}
+
+export function isPortal(id: string): boolean {
+  return id.startsWith(PORTAL_PREFIX);
+}
+
+/** The balloon a stand-in's id belongs to. */
+export function balloonIdOf(portal: string): string {
+  return portal.slice(PORTAL_PREFIX.length);
+}
+
+/**
+ * A family view's part of the tree (`doc`, from familyViewScope) with a stand-in where each family left off
+ * begins: a parent over the person, a child under the couple, a partner beside the person. The chart lays
+ * the stand-ins out like anyone else, so each has the place the family's first card would have, with the
+ * line to it, and draws a button there. `index` is of the whole tree.
+ */
+export function withPortals(doc: TreeDocument, index: TreeIndex, balloons: readonly FamilyBalloon[]): TreeDocument {
+  if (!balloons.length) return doc;
+  const people = [...doc.people];
+  const families = [...doc.families];
+  const at = new Map(families.map((f, i) => [f.id, i]));
+  const shown = new Set(doc.people.map((p) => p.id));
+  for (const b of balloons) {
+    const id = portalId(b.id);
+    people.push({ id, sex: 'unknown', name: { given: '', surname: '' } });
+    if (b.kind === 'parents') {
+      // Brothers and sisters whose parents nobody knows stand under a "?" already: the stand-in joins them there.
+      const known = families.findIndex((f) => !f.partners.length && f.children.some((c) => c.personId === b.personId));
+      if (known >= 0) families[known] = { ...families[known], children: [...families[known].children, { personId: id, relation: 'biological' }] };
+      else families.push({ id, kind: 'unknown', partners: [id], children: [{ personId: b.personId, relation: 'biological' }] });
+      continue;
+    }
+    const real = b.familyId ? index.family(b.familyId) : undefined;
+    if (!real) continue;
+    let i = at.get(real.id);
+    if (i === undefined) {
+      // A family the view leaves out because nobody but one partner is on the chart: back, for the stand-in.
+      i = families.length;
+      at.set(real.id, i);
+      families.push({ id: real.id, kind: real.kind, partners: real.partners.filter((p) => shown.has(p)), children: [], start: real.start, end: real.end });
+    }
+    const f = families[i];
+    if (b.kind === 'children') families[i] = { ...f, children: [...f.children, { personId: id, relation: 'biological' }] };
+    else families[i] = { ...f, partners: real.partners.map((p) => (shown.has(p) ? p : id)).filter((p, n, all) => all.indexOf(p) === n) };
+  }
+  return { ...doc, people, families };
 }
 
 function sexOrder(index: TreeIndex, id: string): number {

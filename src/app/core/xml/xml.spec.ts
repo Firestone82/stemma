@@ -79,22 +79,13 @@ describe('XML format', () => {
       expect(roundTrip(doc)).toEqual(doc);
     });
 
-    it('round-trips compact childless couples on prints', () => {
+    it('round-trips printing the hidden people and brothers and sisters only', () => {
       const doc = sampleDocument(new Date('2026-01-01T00:00:00Z'));
-      expect(serializeTree(doc)).not.toContain('compactCouples');
-      doc.print = { ...DEFAULT_PRINT, compactCouples: true };
-      expect(serializeTree(doc)).toMatch(/<print [^>]*compactCouples="true"/);
-      expect(roundTrip(doc)).toEqual(doc);
-    });
-
-    it('round-trips tall generations and printing the hidden people', () => {
-      const doc = sampleDocument(new Date('2026-01-01T00:00:00Z'));
-      expect(serializeTree(doc)).not.toMatch(/tallGenerations|showHidden/);
-      doc.print = { ...DEFAULT_PRINT, tallGenerations: true, showHidden: true };
-      doc.view = { ...doc.view, tallGenerations: true, siblingsOnly: true };
-      doc.print.siblingsOnly = true;
-      expect(serializeTree(doc)).toMatch(/<print [^>]*tallGenerations="true"[^>]*showHidden="true" siblingsOnly="true"/);
-      expect(serializeTree(doc)).toMatch(/<view [^>]*tallGenerations="true" siblingsOnly="true"/);
+      expect(serializeTree(doc)).not.toMatch(/showHidden|siblingsOnly/);
+      doc.print = { ...DEFAULT_PRINT, showHidden: true, siblingsOnly: true };
+      doc.view = { ...doc.view, siblingsOnly: true };
+      expect(serializeTree(doc)).toMatch(/<print [^>]*siblingsOnly="true"[^>]*showHidden="true"/);
+      expect(serializeTree(doc)).toMatch(/<view [^>]*siblingsOnly="true"/);
       expect(roundTrip(doc)).toEqual(doc);
     });
   });
@@ -103,105 +94,199 @@ describe('XML format', () => {
     it("round-trips the families' names placed by hand, and ignores a box that makes no sense", () => {
       const doc = sampleDocument(new Date('2026-01-01T00:00:00Z'));
       expect(serializeTree(doc)).not.toMatch(/legendBox/);
-      doc.print = { ...DEFAULT_PRINT, packFamilies: true, showEmblems: false, legendBox: { x: 0.05, y: 0.8, w: 0.3, h: 0.12 } };
-      expect(serializeTree(doc)).toMatch(/<print [^>]*packFamilies="true" showEmblems="false" legendBox="0.05 0.8 0.3 0.12"/);
+      doc.print = { ...DEFAULT_PRINT, legendBox: { x: 0.05, y: 0.8, w: 0.3, h: 0.12 } };
+      expect(serializeTree(doc)).toMatch(/<print [^>]*legendBox="0.05 0.8 0.3 0.12"/);
       expect(roundTrip(doc)).toEqual(doc);
       expect(parseLegendBox('0.9 0.9 0.5 0.5')).toEqual({ x: 0.9, y: 0.9, w: expect.closeTo(0.1), h: expect.closeTo(0.1) });
       expect(parseLegendBox('1 2 3')).toBeUndefined();
       expect(parseLegendBox('0 0 0 0.2')).toBeUndefined();
     });
 
-    it('round-trips the sizes of the title and the family names, and reads stacked couples as compact ones', () => {
+    it('round-trips the line heights of the title and the family names, within what makes sense', () => {
       const doc = sampleDocument(new Date('2026-01-01T00:00:00Z'));
-      expect(serializeTree(doc)).not.toMatch(/titleScale|legendScale/);
-      doc.print = { ...DEFAULT_PRINT, titleScale: 1.6, legendScale: 2 };
-      expect(serializeTree(doc)).toMatch(/<print [^>]*titleScale="1.6" legendScale="2"/);
+      expect(serializeTree(doc)).not.toMatch(/titleSize|legendSize/);
+      doc.print = { ...DEFAULT_PRINT, titleSize: 2.5, legendSize: 0.8 };
+      expect(serializeTree(doc)).toMatch(/<print [^>]*titleSize="2.5" legendSize="0.8"/);
       expect(roundTrip(doc)).toEqual(doc);
-      const xml = serializeTree(doc).replace(/titleScale="1.6"/, 'titleScale="9" stackCouples="true"');
-      const read = parseTree(xml).doc.print!;
-      expect(read.titleScale).toBe(3);
-      expect(read.compactCouples).toBe(true);
-      expect(serializeTree({ ...doc, print: read })).not.toMatch(/stackCouples/);
+      const read = parseTree(serializeTree(doc).replace(/titleSize="2.5"/, 'titleSize="40"')).doc.print!;
+      expect(read.titleSize).toBe(12);
     });
   });
 
-  describe('format 1.4', () => {
-    it('round-trips who the chart and the print show', () => {
+  describe('format 1.9', () => {
+    it('round-trips what the cards show and which parts the page has', () => {
       const doc = sampleDocument(new Date('2026-01-01T00:00:00Z'));
-      doc.view = { ...doc.view, branches: 'all', inLawFamilies: false };
-      doc.print = { ...DEFAULT_PRINT, branches: 2, inLawFamilies: false };
+      doc.view = {
+        ...doc.view,
+        showEmblems: false,
+        showBirthNames: false,
+        dates: 'full',
+        emblemAlign: 'top',
+        sexColors: false,
+        showRibbons: false,
+      };
+      doc.print = { ...DEFAULT_PRINT, dates: 'none', showTitle: false, showLegend: false, showFrame: false };
       const xml = serializeTree(doc);
-      expect(xml).toMatch(/<view [^>]*branches="all" inLawFamilies="false"/);
-      expect(xml).toMatch(/<print [^>]*branches="2" [^>]*inLawFamilies="false"/);
+      expect(xml).toMatch(/<view showEmblems="false" showBirthNames="false" dates="full" emblemAlign="top" sexColors="false" showRibbons="false"/);
+      expect(xml).toMatch(/<print [^>]*showTitle="false" showLegend="false" showFrame="false" [^>]*dates="none"/);
       expect(roundTrip(doc)).toEqual(doc);
     });
 
-    it('round-trips changes made by hand to the layout, for people and families in the tree', () => {
+    it('round-trips how the families of a print are arranged, written only where it is not as it comes', () => {
       const doc = sampleDocument(new Date('2026-01-01T00:00:00Z'));
-      doc.arrangement = { moves: { I18: 40, I12: 40, I99: 5 }, lines: { F4: -12.5 }, left: { F8: 'I12' } };
+      doc.print = { ...DEFAULT_PRINT, tight: true, fill: true, stackCouples: true, amidPartners: false };
       const xml = serializeTree(doc);
-      expect(xml).toContain('<move person="I18" dx="40"/>');
-      expect(xml).toContain('<line family="F4" dy="-12.5"/>');
-      expect(xml).toContain('<couple family="F8" left="I12"/>');
-      expect(xml).not.toContain('I99');
-      const { doc: back, warnings } = parseTree(xml);
+      expect(xml).toMatch(/<print [^>]*tight="true" fill="true" stackCouples="true" amidPartners="false"/);
+      expect(roundTrip(doc)).toEqual(doc);
+      doc.print = { ...DEFAULT_PRINT };
+      expect(serializeTree(doc)).not.toMatch(/tight|fill=|stackCouples|amidPartners/);
+      expect(roundTrip(doc).print).toMatchObject({ fill: false, stackCouples: false, amidPartners: true });
+    });
+
+    it('round-trips bigger text and cards of their own width, written only when on', () => {
+      const doc = sampleDocument(new Date('2026-01-01T00:00:00Z'));
+      doc.print = { ...DEFAULT_PRINT, largeText: true, freeWidths: true };
+      expect(serializeTree(doc)).toMatch(/<print [^>]*largeText="true" freeWidths="true"/);
+      expect(roundTrip(doc)).toEqual(doc);
+      doc.print = { ...DEFAULT_PRINT };
+      expect(serializeTree(doc)).not.toMatch(/largeText|freeWidths/);
+      expect(roundTrip(doc).print).toMatchObject({ largeText: false, freeWidths: false });
+    });
+
+    it('round-trips where the title and the family names are held, and where the names stand in their box', () => {
+      const doc = sampleDocument(new Date('2026-01-01T00:00:00Z'));
+      doc.print = {
+        ...DEFAULT_PRINT,
+        titleAnchor: 'top-right',
+        legendAnchor: 'bottom-left',
+        legendAlign: 'top-left',
+        legendBox: { x: 0.1, y: 0.2, w: 0.3, h: 0.25 },
+      };
+      expect(serializeTree(doc)).toMatch(/<print [^>]*legendAnchor="bottom-left" legendAlign="top-left" titleAnchor="top-right"/);
+      expect(roundTrip(doc)).toEqual(doc);
+      // In the middle of the box is how it comes: not written.
+      doc.print = { ...DEFAULT_PRINT, legendAlign: 'center' };
+      expect(serializeTree(doc)).not.toMatch(/legendAnchor|legendAlign|titleAnchor/);
+      expect(roundTrip(doc).print?.legendAlign).toBeUndefined();
+      // legendTop, written for a short while: the names from the top of their box. An anchor that is not one is left out, with a warning.
+      const old = serializeTree(doc).replace('<print ', '<print legendTop="true" titleAnchor="upstairs" ');
+      const read = parseTree(old);
+      expect(read.doc.print).toMatchObject({ legendAlign: 'top' });
+      expect(read.doc.print?.titleAnchor).toBeUndefined();
+      expect(read.warnings.some((w) => JSON.stringify(w).includes('upstairs'))).toBe(true);
+      expect(serializeTree(read.doc)).toMatch(/legendAlign="top"/);
+      expect(serializeTree(read.doc)).not.toMatch(/legendTop/);
+    });
+
+    it('round-trips what is arranged by hand in a print: moved cards, the title, the options', () => {
+      const doc = sampleDocument(new Date('2026-01-01T00:00:00Z'));
+      doc.print = {
+        ...DEFAULT_PRINT,
+        tight: true,
+        unionText: true,
+        titleAt: { x: 0.25, y: 0.9 },
+        moves: { I7: { x: 30, y: -14.5 }, I12: { x: 0, y: 66 } },
+      };
+      const xml = serializeTree(doc);
+      expect(xml).toMatch(/<print [^>]*tight="true" unionText="true" titleAt="0.25 0.9" moves="I7:30,-14.5 I12:0,66"/);
+      expect(roundTrip(doc)).toEqual(doc);
+      // None of it is written for a print left as it comes, and what is not a place is dropped.
+      doc.print = { ...DEFAULT_PRINT };
+      expect(serializeTree(doc)).not.toMatch(/tight|unionText|titleAt|moves/);
+      const odd = parseTree(xml.replace('I12:0,66', 'I12:left,66').replace('titleAt="0.25 0.9"', 'titleAt="2 x"')).doc.print!;
+      expect(odd.moves).toEqual({ I7: { x: 30, y: -14.5 } });
+      expect(odd.titleAt).toBeUndefined();
+    });
+
+    it('no longer has the arrangement of single families chosen by hand: the layout is found on its own', () => {
+      const xml = `<familyTree xmlns="${NS}" formatVersion="1.9"><meta><title>T</title></meta><people/><families/><print familyLayouts="F1:row" paper="A2"/></familyTree>`;
+      const { doc, warnings } = parseTree(xml);
       expect(warnings).toEqual([]);
-      expect(back.arrangement).toEqual({ moves: { I18: 40, I12: 40 }, lines: { F4: -12.5 }, left: { F8: 'I12' } });
+      expect(serializeTree(doc)).not.toMatch(/familyLayouts/);
     });
 
-    it('leaves out changes by hand for people who are not in the file', () => {
-      const xml = `<familyTree xmlns="${NS}" formatVersion="1.4"><meta><title>T</title></meta><people><person id="I1"><name given="A"/></person></people><families/>
-  <arrangement><move person="I1" dx="7"/><move person="I2" dx="9"/><line family="F1" dy="3"/><move person="I1" dx="oops"/></arrangement>
-</familyTree>`;
-      const { doc } = parseTree(xml);
-      expect(doc.arrangement).toEqual({ moves: { I1: 7 }, lines: {}, left: {} });
+    it('keeps what is switched off about family names and unknown surnames at birth, and writes nothing while they are on', () => {
+      const doc = sampleDocument(new Date('2026-01-01T00:00:00Z'));
+      expect(serializeTree(doc)).not.toMatch(/uniteSpellings|unknownBirthNames/);
+      doc.view = { ...doc.view, uniteSpellings: false, unknownBirthNames: false };
+      doc.print = { ...DEFAULT_PRINT, unknownBirthNames: false };
+      const xml = serializeTree(doc);
+      expect(xml).toMatch(/<view [^>]*unknownBirthNames="false"[^>]*uniteSpellings="false"/);
+      expect(xml).toMatch(/<print [^>]*unknownBirthNames="false"/);
+      expect(roundTrip(doc)).toEqual(doc);
     });
 
-    it('shows the whole tree for files from before 1.4', () => {
-      const xml = `<familyTree xmlns="${NS}" formatVersion="1.3"><meta><title>T</title></meta><view style="night"/><people/><families/>
-  <print branches="1"/>
+    it('no longer has generations in rows or children beside their parents: read without a word, gone once saved', () => {
+      const xml = `<familyTree xmlns="${NS}" formatVersion="1.9"><meta><title>T</title></meta><people/><families/><view generationRows="true"/><print generationRows="true" childrenBeside="true" paper="A2"/></familyTree>`;
+      const { doc, warnings } = parseTree(xml);
+      expect(warnings).toEqual([]);
+      expect(doc.print?.paper).toBe('A2');
+      expect(serializeTree(doc)).not.toMatch(/generationRows|childrenBeside/);
+    });
+
+    it('no longer has the setting that kept the couple near the middle of the page', () => {
+      const xml = `<familyTree xmlns="${NS}" formatVersion="1.9"><meta><title>T</title></meta><people/><families/><print centered="false" paper="A2"/></familyTree>`;
+      const { doc, warnings } = parseTree(xml);
+      expect(warnings).toEqual([]);
+      expect(doc.print).toEqual({ ...DEFAULT_PRINT, paper: 'A2' });
+      expect(serializeTree(doc)).not.toMatch(/centered/);
+    });
+
+    it('has no setting for the badge on mistakes: always on the chart, never in a print', () => {
+      const xml = `<familyTree xmlns="${NS}" formatVersion="1.9"><meta><title>T</title></meta>
+  <view showBadges="false"/>
+  <people/><families/>
+  <print showBadges="true" paper="A2"/>
 </familyTree>`;
       const { doc, warnings } = parseTree(xml);
       expect(warnings).toEqual([]);
-      expect(doc.view).toMatchObject({ branches: 'all', inLawFamilies: true });
-      expect(doc.print).toMatchObject({ branches: 1, inLawFamilies: true });
-    });
-  });
-
-  describe('format 1.3', () => {
-    it('round-trips a background picture and twins', () => {
-      const doc = sampleDocument(new Date('2026-01-01T00:00:00Z'));
-      doc.background = { href: 'data:image/svg+xml;base64,PHN2Zy8+', width: 1600, height: 1100, fit: 'contain', opacity: 0.45, name: 'oak.svg' };
-      const family = doc.families.find((f) => f.children.length >= 2)!;
-      family.children = family.children.map((c, i) => (i < 2 ? { ...c, birthGroup: '1' } : c));
-      const xml = serializeTree(doc);
-      expect(xml).toContain(
-        '<background mediaType="image/svg+xml" encoding="base64" width="1600" height="1100" fit="contain" opacity="0.45" name="oak.svg">PHN2Zy8+</background>',
-      );
-      expect(xml).toContain('birthGroup="1"');
-      expect(roundTrip(doc)).toEqual(doc);
+      expect(doc.view).toEqual(DEFAULT_VIEW);
+      expect(doc.print).toEqual({ ...DEFAULT_PRINT, paper: 'A2' });
+      expect(serializeTree(doc)).not.toMatch(/showBadges/);
     });
 
-    it('leaves out a damaged picture with a note, and reads files without one', () => {
-      const xml = `<familyTree xmlns="${NS}" formatVersion="1.3"><meta><title>T</title></meta><people/><families/>
-  <background mediaType="image/png" encoding="base64" fit="sideways" opacity="7">not base64!</background>
+    it('reads how an earlier version said what the cards show, once', () => {
+      const xml = `<familyTree xmlns="${NS}" formatVersion="1.8"><meta><title>Old</title></meta>
+  <view showDates="true" fullDates="true" showSex="false" sexColors="true"/>
+  <people/><families/>
+  <print theme="heraldic" showDates="false" showEmblems="false" paper="A2"/>
 </familyTree>`;
-      const result = parseTree(xml);
-      expect(result.doc.background).toBeUndefined();
-      expect(result.warnings.map((w) => w.code)).toContain('xml.bad-background');
-      const fine = parseTree(xml.replace('not base64!', 'iVBORw0K'));
-      expect(fine.doc.background).toMatchObject({ href: 'data:image/png;base64,iVBORw0K', fit: 'cover', opacity: 1, width: 1000 });
-      expect(parseTree(serializeTree(sampleDocument())).doc.background).toBeUndefined();
+      const { doc, warnings } = parseTree(xml);
+      expect(warnings).toEqual([]);
+      // The sex as a symbol is no longer a setting: read, and gone.
+      expect(doc.view).toEqual({ ...DEFAULT_VIEW, dates: 'full' });
+      expect(serializeTree(doc)).not.toMatch(/showSex/);
+      expect(doc.print).toEqual({ ...DEFAULT_PRINT, dates: 'none', showEmblems: false, paper: 'A2' });
+    });
+
+    it('leaves the settings of the earlier ways of drawing, the background and the arrangement out of what it saves', () => {
+      const xml = `<familyTree xmlns="${NS}" formatVersion="1.8"><meta><title>Old</title></meta>
+  <view style="night" colorBy="sex" lines="curved" density="compact" showGenerations="true" showRelationships="true" showTree="true" tallGenerations="true"/>
+  <people><person id="I1" sex="male"><name given="Ada" surname="Old"/></person></people><families/>
+  <print theme="modern" compactCouples="true" tallGenerations="true" packFamilies="true" sidewaysBranches="true" sidewaysOn="I1" portrait="square" showTree="true"/>
+  <background mediaType="image/png" encoding="base64" width="10" height="10" fit="cover" opacity="1">AAAA</background>
+  <arrangement><move person="I1" dx="40"/></arrangement>
+</familyTree>`;
+      const { doc, warnings } = parseTree(xml);
+      expect(warnings).toEqual([]);
+      expect(doc.view.ext).toBeUndefined();
+      expect(doc.print?.ext).toBeUndefined();
+      expect(doc.ext).toBeUndefined();
+      const again = serializeTree(doc);
+      expect(again).not.toMatch(
+        /theme=|compactCouples|tallGenerations|packFamilies|sideways|portrait|showTree|showGenerations|showRelationships|colorBy|density|<background|<arrangement/,
+      );
+      // The people are as they were.
+      expect(again).toContain('<name given="Ada" surname="Old"/>');
     });
   });
 
   describe('format 1.1', () => {
     it('round-trips engagements, chart language and print settings', () => {
       const doc = sampleDocument(new Date('2026-01-01T00:00:00Z'));
-      doc.view = { ...doc.view, language: 'cs', showRelationships: false, showUnions: true };
+      doc.view = { ...doc.view, language: 'cs' };
       doc.print = {
         ...DEFAULT_PRINT,
-        theme: 'botanical',
         paper: 'A2',
         orientation: 'landscape',
         centerId: 'I11',
@@ -210,12 +295,11 @@ describe('XML format', () => {
         descendants: 'all',
         branches: 1,
         title: 'Rodina Ashworthových',
-        showPhotos: false,
       };
       const xml = serializeTree(doc);
       expect(xml).toContain('<engagement date="2024-12-24" place="Prague, Czechia"/>');
       expect(xml).toMatch(
-        /<print theme="botanical" paper="A2" orientation="landscape" center="I11" withPartner="false" centered="true" ancestors="2" descendants="all" branches="1" title="Rodina Ashworthových"/,
+        /<print paper="A2" orientation="landscape" center="I11" withPartner="false" ancestors="2" descendants="all" branches="1" inLawFamilies="true" title="Rodina Ashworthových"/,
       );
       expect(parseTree(xml).doc).toEqual(doc);
     });
@@ -250,7 +334,7 @@ describe('XML format', () => {
       expect(result.doc).toEqual(doc);
     });
 
-    it('keeps styles, papers and languages it does not have', () => {
+    it('keeps papers and languages it does not have', () => {
       const xml = `<familyTree xmlns="${NS}" formatVersion="1.4"><meta><title>Newer</title></meta>
   <view language="de"/>
   <people/><families/>
@@ -258,18 +342,16 @@ describe('XML format', () => {
 </familyTree>`;
       const { doc } = parseTree(xml);
       expect(doc.view.language).toBe('de');
-      expect(doc.print?.theme).toBe('watercolour');
       expect(doc.print?.paper).toBe('B2');
       const again = serializeTree(doc);
       expect(again).toContain('language="de"');
-      expect(again).toContain('theme="watercolour"');
       expect(again).toContain('paper="B2"');
     });
   });
 
   describe('compatibility between versions', () => {
     const newerMinor = `<?xml version="1.0" encoding="UTF-8"?>
-<familyTree xmlns="${NS}" xmlns:x="urn:example:other" formatVersion="1.9" generator="Stemma 1.10.0" x:origin="import" futureRootAttr="yes">
+<familyTree xmlns="${NS}" xmlns:x="urn:example:other" formatVersion="1.12" generator="Stemma 1.12.0" x:origin="import" futureRootAttr="yes">
   <meta>
     <title>Future file</title>
     <colour>teal</colour>
@@ -303,10 +385,9 @@ describe('XML format', () => {
     it('reads a file from a newer minor version and says so', () => {
       const result = parseTree(newerMinor);
       expect(result.fromNewerVersion).toBe(true);
-      expect(result.fileVersion).toBe('1.9');
+      expect(result.fileVersion).toBe('1.12');
       expect(result.warnings.some((w) => w.code === 'xml.newer-minor' && w.text.includes('newer version'))).toBe(true);
       expect(result.doc.people[0].name.given).toBe('Ada');
-      expect(result.doc.view.lines).toBe('curved');
     });
 
     it('writes unknown content back unchanged', () => {
@@ -356,7 +437,7 @@ describe('XML format', () => {
     });
 
     it('refuses a newer major version unless forced', () => {
-      const newer = newerMinor.replace('formatVersion="1.9"', 'formatVersion="2.0"');
+      const newer = newerMinor.replace('formatVersion="1.12"', 'formatVersion="2.0"');
       expect(() => parseTree(newer)).toThrow(XmlFormatError);
       try {
         parseTree(newer);

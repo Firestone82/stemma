@@ -1,18 +1,18 @@
-.string {
-  fill: none;
-  stroke: var(--t-faint);
-  stroke-width: 1.2;
-  stroke-dasharray: 3 3;
-}
-
-.balloon {
+/* A family left off the chart: a card's place, dashed, that fills in when pointed at. */
+.slot {
   cursor: pointer;
   outline: none;
 
   &:hover .body,
   &:focus-visible .body {
+    fill: var(--t-card);
     stroke: var(--t-ink);
     stroke-dasharray: none;
+  }
+
+  &:hover .more,
+  &:focus-visible .more {
+    fill: var(--t-ink);
   }
 
   &:focus-visible .body {
@@ -21,17 +21,17 @@
 }
 
 .body {
-  fill: var(--t-card);
+  fill: color-mix(in srgb, var(--t-card) 45%, transparent);
   stroke: var(--t-line);
-  stroke-width: 1;
-  stroke-dasharray: 3 2;
-  filter: drop-shadow(0 1px 1.5px var(--t-shadow));
+  stroke-width: 1.2;
+  stroke-dasharray: 5 4;
 }
 
 .shield {
   fill: var(--tc, var(--tc-argent));
   stroke: var(--tc-argent-edge);
   stroke-width: 0;
+  pointer-events: none;
 
   &[data-tincture='argent'] {
     fill: var(--tc-argent);
@@ -42,7 +42,14 @@
 .name {
   fill: var(--t-ink);
   font-family: var(--font-sans, 'Alegreya Sans', system-ui, sans-serif);
-  font-size: 12.5px;
+  font-size: 14px;
   font-weight: 500;
+  pointer-events: none;
+}
+
+.more {
+  fill: var(--t-muted);
+  font-family: var(--font-sans, 'Alegreya Sans', system-ui, sans-serif);
+  font-size: 11.5px;
   pointer-events: none;
 }

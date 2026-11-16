@@ -1,5 +1,5 @@
 import { ChangeDetectionStrategy, Component, computed, inject, output, signal } from '@angular/core';
-import { normalizeQuery, searchText } from '../../../../core/model/names';
+import { normalizeQuery, searchText, unitingOf } from '../../../../core/model/names';
 import { Person } from '../../../../core/model/types';
 import { relativesOf } from '../../../../core/poster/scope';
 import { TreeStore } from '../../../../core/store/tree-store';
@@ -62,7 +62,7 @@ export class PeopleList {
       missing: missingText(this.i18n, p),
       problem: problems.get(p.id) ?? '',
     });
-    return groupByFamily(people, this.i18n.compare).map((g) => ({
+    return groupByFamily(people, this.i18n.compare, unitingOf(this.store.doc().view)).map((g) => ({
       key: g.key,
       label: g.key ? g.spellings.slice(0, 3).join(' / ') : this.t('overview.noSurname'),
       tincture: familyColors.get(g.key) ?? 'argent',

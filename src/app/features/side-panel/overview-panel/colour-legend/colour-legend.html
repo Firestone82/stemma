@@ -11,5 +11,17 @@
       }
     </ul>
     <p class="hint">{{ t('legend.familyHint') }}</p>
+    <div class="spellings" role="group" aria-labelledby="legend-spellings">
+      <h4 id="legend-spellings">{{ t('legend.spellings') }}</h4>
+      <p class="hint">{{ t('legend.spellingsHint') }}</p>
+      <div class="option">
+        <stemma-switch [checked]="united()" (checkedChange)="unite('uniteSpellings', $event)">{{ t('legend.unite') }}</stemma-switch>
+        <p class="hint">{{ t('legend.uniteHint') }}</p>
+      </div>
+      <div class="option">
+        <stemma-switch [checked]="foreign()" (checkedChange)="unite('uniteForeign', $event)">{{ t('legend.uniteForeign') }}</stemma-switch>
+        <p class="hint">{{ t('legend.uniteForeignHint') }}</p>
+      </div>
+    </div>
   </section>
 }

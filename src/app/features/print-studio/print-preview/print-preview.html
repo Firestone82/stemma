@@ -27,6 +27,7 @@
       (keydown.enter)="onClick($event)"
       (wheel)="onWheel($event)"
       (dblclick)="onDoubleClick($event)"
+      (contextmenu)="onContextMenu($event)"
       (pointerdown)="onPointerDown($event)"
       (pointermove)="onPointerMove($event)"
       (pointerup)="onPointerUp($event)"
@@ -34,46 +35,64 @@
     >
       <div class="lens" [style.transform]="lensTransform()">
         <div #sheet class="page"></div>
-        @if (legendShown(); as b) {
+        @for (b of boxes(); track b.which) {
           <div
-            class="legend-box"
+            class="page-box legend-box"
+            [class.title-box]="b.which === 'title'"
             [class.free]="b.free"
+            [class.pending]="b.pending"
             [class.moving]="!!boxDrag"
             [style.left.%]="b.x * 100"
             [style.top.%]="b.y * 100"
             [style.width.%]="b.w * 100"
             [style.height.%]="b.h * 100"
-            [title]="t('print.legendBox.hint')"
-            [attr.aria-label]="t('print.legendBox.hint')"
+            [title]="t(b.which === 'legend' ? 'print.legendBox.hint' : 'print.titleBox.hint')"
+            [attr.aria-label]="t(b.which === 'legend' ? 'print.legendBox.hint' : 'print.titleBox.hint')"
             role="group"
             tabindex="0"
-            (keydown)="onBoxKey($event)"
-            (pointerdown)="onBoxDown($event, 'move')"
+            (keydown)="onBoxKey($event, b.which)"
+            (pointerdown)="onBoxDown($event, b.which, 'move')"
             (pointermove)="onBoxMove($event)"
             (pointerup)="onBoxUp($event)"
             (pointercancel)="onBoxUp($event)"
             (click)="$event.stopPropagation()"
             (dblclick)="$event.stopPropagation()"
           >
-            @for (corner of corners; track corner) {
-              <span class="corner" [class]="corner" (pointerdown)="onBoxDown($event, corner)"></span>
+            @if (b.which === 'legend') {
+              @for (corner of corners; track corner) {
+                <span class="corner" [class]="corner" (pointerdown)="onBoxDown($event, b.which, corner)"></span>
+              }
             }
             @if (b.free) {
               <button
                 type="button"
                 class="box-reset"
-                [title]="t('print.legendBox.reset')"
-                [attr.aria-label]="t('print.legendBox.reset')"
+                [title]="t(b.which === 'legend' ? 'print.legendBox.reset' : 'print.titleBox.reset')"
+                [attr.aria-label]="t(b.which === 'legend' ? 'print.legendBox.reset' : 'print.titleBox.reset')"
                 (pointerdown)="$event.stopPropagation()"
-                (click)="legendMove.emit(null)"
+                (click)="resetBox(b.which)"
               >
                 <stemma-icon name="close" [size]="12" />
               </button>
             }
           </div>
         }
+        @if (guides().length) {
+          <svg class="guides" viewBox="0 0 1 1" preserveAspectRatio="none" aria-hidden="true">
+            @for (g of guides(); track $index) {
+              <line [class.equal]="g.equal" [attr.x1]="g.x1" [attr.y1]="g.y1" [attr.x2]="g.x2" [attr.y2]="g.y2" />
+            }
+          </svg>
+        }
       </div>
     </div>
+    @if (waiting()) {
+      <div class="moved-bar" role="group" [attr.aria-label]="t('print.boxMoved')">
+        <span>{{ t('print.boxMoved') }}</span>
+        <button type="button" class="btn small primary" (click)="apply.emit()">{{ t('print.boxApply') }}</button>
+        <button type="button" class="btn small" (click)="discard.emit()">{{ t('print.boxDiscard') }}</button>
+      </div>
+    }
     <div class="zoom" role="group" [attr.aria-label]="t('print.zoom.label')">
       <button
         type="button"
@@ -113,6 +132,12 @@
     <span class="omitted">
       {{ t('print.omitted', { count }) }}
       <button type="button" class="link" (click)="restore.emit()">{{ t('print.omittedRestore') }}</button>
+    </span>
+  }
+  @if (moved(); as count) {
+    <span class="omitted">
+      {{ t('print.movedCards', { count }) }}
+      <button type="button" class="link" (click)="unmove.emit()">{{ t('print.unmoveAll') }}</button>
     </span>
   }
 </p>

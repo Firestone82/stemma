@@ -66,8 +66,8 @@ describe('I18n', () => {
     // Notices from the core: translated when there is a message, else their English text.
     expect(i18n.notice(notice('two-parents', 'Simon already has two parents.', { child: 'Simon' }), 'op.')).toBe('Simon už má dva rodiče.');
     expect(i18n.notice(notice('brand-new', 'Something new happened.'), 'op.')).toBe('Something new happened.');
-    // Names supplied from elsewhere, such as print styles from a plug-in.
-    expect(i18n.textOr('theme.modern.name', 'Modern')).toBe('Moderní');
+    // Texts whose key comes from elsewhere: translated when there is a message, else the text given.
+    expect(i18n.textOr('print.showFrame', 'Frame')).toBe('Rám');
     expect(i18n.textOr('theme.unknown.name', 'Unknown')).toBe('Unknown');
 
     i18n.setLanguage('xx');

@@ -51,17 +51,29 @@
   min-height: 0;
 }
 
-/* The page as wide as it is at the full height; the settings take the rest (print-studio.ts). */
+/*
+ * The page's column is at least as wide as the page is at the full height (print-studio.ts). The settings
+ * are never wider than 640px: with a page upright the light table takes the room that leaves, not the settings.
+ */
 .body.fitted {
-  grid-template-columns: var(--preview-w) minmax(550px, 1fr);
+  grid-template-columns: minmax(var(--preview-w), 1fr) minmax(550px, 640px);
 }
 
+/* The settings: one card for each group, on a ground a shade darker than the cards. */
 .controls {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
   min-height: 0;
-  padding: 0 22px 24px;
+  padding: 14px 16px 24px;
   overflow-y: auto;
   overscroll-behavior: contain;
   border-left: 1px solid var(--rule);
+  background: var(--sheet-2);
+
+  > * {
+    flex: none;
+  }
 }
 
 /* The page is in a window of its own (preview-window/): the settings take the width, in a column. */
@@ -120,8 +132,40 @@
   }
 
   .controls {
-    padding: 0 16px 20px;
+    padding: 14px 12px 20px;
     border-top: 1px solid var(--rule);
     border-left: 0;
+  }
+}
+
+/* A card's menu (right click on the page): fixed where it was asked for. */
+.card-menu {
+  position: fixed;
+  width: 280px;
+
+  .menu-title {
+    margin: 4px 10px 6px;
+    overflow: hidden;
+    font-weight: 600;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .menu-label {
+    margin: 2px 10px 4px;
+    color: var(--ink-3);
+    font-size: var(--text-xs);
+  }
+
+  .menu-note {
+    margin: 4px 10px 6px;
+    color: var(--ink-3);
+    font-size: var(--text-xs);
+    line-height: 1.4;
+  }
+
+  .tick {
+    margin-left: auto;
+    color: var(--focus);
   }
 }

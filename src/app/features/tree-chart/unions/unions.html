@@ -37,6 +37,3 @@
     </svg:g>
   }
 }
-@for (l of labels(); track l.familyId) {
-  <svg:text class="label" [attr.lang]="lang()" [attr.x]="l.x" [attr.y]="l.y" text-anchor="middle" (click)="onPick(l.familyId, $event)">{{ l.text }}</svg:text>
-}

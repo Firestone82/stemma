@@ -1,4 +1,5 @@
-import { computeLayout } from '../../core/layout/layout';
+import { Layouter, WIDE } from '../../core/layout/engine';
+import { LAYOUT } from '../../core/layout/types';
 import { sampleDocument } from '../../core/model/sample';
 import { TreeIndex } from '../../core/model/tree-index';
 import { coupleCentre, fitView, floatOver, revealView } from './framing';
@@ -6,8 +7,8 @@ import { chartKey, neighbour } from './keyboard';
 
 describe('pointing the chart', () => {
   const doc = sampleDocument();
-  const layout = computeLayout(doc);
   const index = new TreeIndex(doc);
+  const layout = new Layouter(index, LAYOUT, 'I11', 'I15').run(WIDE);
   const card = (id: string) => layout.cards.find((c) => c.personId === id)!;
 
   it('fits the whole tree on screen, no larger than 110%', () => {
@@ -26,7 +27,7 @@ describe('pointing the chart', () => {
     const simon = coupleCentre(layout, index, 'I11')!;
     // Simon's current partner is Šárka (his marriage to Ruth ended).
     const union = layout.unions.find((u) => u.familyId === index.familyBetween('I11', 'I15')!.id)!;
-    expect(simon).toEqual({ x: union.cx, y: union.cy });
+    expect(simon).toEqual({ x: union.x, y: union.y });
     // Someone with no partner is centred on their card.
     const c = card('I29');
     expect(coupleCentre(layout, index, 'I29')).toEqual({ x: c.x + c.w / 2, y: c.y + c.h / 2 });

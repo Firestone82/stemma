@@ -73,6 +73,30 @@ describe('family colours', () => {
     expect(legend[2].count).toBe(3);
   });
 
+  it('gives the Polish and the Czech spelling of a name one colour and one entry, unless the tree keeps them apart', () => {
+    const b = new DocBuilder();
+    b.person('N1', 'Jan', 'Nowak', 'male');
+    b.person('N2', 'Josef', 'Nowak', 'male');
+    b.person('N3', 'Petr', 'Novák', 'male');
+    b.person('N4', 'Anna', 'Nováková', 'female');
+    b.person('M1', 'Karel', 'Mikula', 'male');
+    b.person('M2', 'Pavel', 'Mikula', 'male');
+    const doc = b.build();
+    const united = assignColors(doc, 'family', new Map());
+    expect(united.byPerson.get('N1')).toBe(united.byPerson.get('N3'));
+    expect(united.byPerson.get('N1')).toBe(united.byPerson.get('N4'));
+    expect(united.legend.filter((l) => l.key !== '').map((l) => l.count)).toEqual([4, 2]);
+    // (The German way writes v as w as well: with that on, Nowak and Novák are one family still.)
+    const apart = assignColors({ ...doc, view: { ...doc.view, uniteSpellings: false, uniteForeign: false } }, 'family', new Map());
+    expect(apart.byPerson.get('N1')).not.toBe(apart.byPerson.get('N3'));
+    expect(
+      apart.legend
+        .filter((l) => l.key !== '')
+        .map((l) => l.count)
+        .sort(),
+    ).toEqual([2, 2, 2]);
+  });
+
   it('leaves single members of a family neutral', () => {
     const { byPerson, legend } = assignColors(doc, 'family', new Map());
     expect(byPerson.get('I14')).toBe('argent'); // Ruth Kelly

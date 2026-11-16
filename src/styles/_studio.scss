@@ -1,17 +1,68 @@
 // Groups of settings in the print studio, the copy of the page that is printed, and the page in a window of its own.
 
+/* One group: a card of its own, with its heading. */
 .studio-group {
   display: grid;
   gap: 12px;
-  padding: 18px 0;
-  border-bottom: 1px solid var(--rule);
-
-  &:last-child {
-    border-bottom: 0;
-  }
+  padding: 16px 18px 18px;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-md);
+  background: var(--sheet);
 
   h3 {
     font-size: 17px;
+  }
+}
+
+/* A part of a group with a heading of its own, ruled off from what stands above it. */
+.studio-part {
+  display: grid;
+  gap: 12px;
+  margin-top: 4px;
+  padding-top: 14px;
+  border-top: 1px solid var(--rule);
+
+  h4 {
+    margin: 0;
+    color: var(--ink-2);
+    font-size: var(--text-xs);
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+}
+
+/* A switch with the line that explains it: one thing, the line close under the switch. */
+.studio-option {
+  display: grid;
+  gap: 0;
+
+  .hint {
+    padding-right: 46px;
+  }
+}
+
+/* Two fields side by side, level at the top whatever stands under either; their labels on one line each, so the inputs are level too. */
+.studio-pair {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  align-items: start;
+  gap: 10px 14px;
+
+  .field > label,
+  .field > .field-label {
+    display: block;
+    height: 18px;
+    overflow: hidden;
+    line-height: 18px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+
+@media (max-width: 380px) {
+  .studio-pair {
+    grid-template-columns: 1fr;
   }
 }
 

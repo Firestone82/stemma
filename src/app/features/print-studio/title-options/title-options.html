@@ -1,0 +1,26 @@
+@let s = model.settings();
+<h3 id="print-g-title">{{ t('print.titleGroup') }}</h3>
+<div class="field">
+  <label for="print-title">{{ t('print.titleField') }}</label>
+  <input id="print-title" class="input" autocomplete="off" [value]="s.title ?? ''" [placeholder]="treeTitle()" (input)="setText('title', $event)" />
+</div>
+<div class="field">
+  <label for="print-subtitle">{{ t('print.subtitle') }}</label>
+  <input
+    id="print-subtitle"
+    class="input"
+    autocomplete="off"
+    [value]="s.subtitle ?? ''"
+    [placeholder]="t('print.subtitlePlaceholder')"
+    (input)="setText('subtitle', $event)"
+  />
+</div>
+<div class="studio-pair">
+  <stemma-letter-size key="titleSize" />
+  @if (onPaper()) {
+    <div class="field">
+      <span class="field-label" id="print-title-place">{{ t('print.place') }}</span>
+      <stemma-anchor-picker labelledBy="print-title-place" [topOnly]="true" [value]="place()" (valueChange)="hold($event)" />
+    </div>
+  }
+</div>

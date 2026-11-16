@@ -40,13 +40,21 @@ export interface FormatVersion {
  * 1.7  Adds givenUnknown on <name> and dateUnknown on events: nobody knows the
  *      given name or the date, so they are not gaps to fill in.
  * 1.8  Adds legendBox to <print>: the families' names placed by hand on the
- *      page; packFamilies: generations need not stand in rows; and
+ *      page; packFamilies: generations need not stand in rows;
+ *      sidewaysBranches, sidewaysOn and sidewaysOff: branches drawn left to
+ *      right, where that helps or by hand; and
  *      showEmblems: cards without the family's emblem; and tiles and
- *      tilesBorderless: the PDF in pieces on smaller sheets; titleScale and
- *      legendScale: the page's lettering and the families' names bigger or
- *      smaller.
+ *      tilesBorderless: the PDF in pieces on smaller sheets; titleSize and
+ *      legendSize: the line height of the title and of the families' names,
+ *      in centimetres.
+ * 1.9  One way of drawing the tree and one print style. <view> and <print> say what the cards show
+ *      (showEmblems, showBirthNames, dates, showSex, sexColors, showRibbons) and, for prints, which parts
+ *      of the page there are (showTitle, showLegend, showFrame). The settings of the earlier
+ *      ways of drawing (styles, the drawn tree, generations in rows, stacked couples, sideways branches,
+ *      relationship names, portraits), <background> and <arrangement> are no longer read, and are gone
+ *      from a file once it is saved. People and families are as they were.
  */
-export const CURRENT_FORMAT: FormatVersion = { major: 1, minor: 8 };
+export const CURRENT_FORMAT: FormatVersion = { major: 1, minor: 9 };
 
 export function formatVersionString(v: FormatVersion = CURRENT_FORMAT): string {
   return `${v.major}.${v.minor}`;

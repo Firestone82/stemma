@@ -1,15 +1,18 @@
 import { Injectable, computed, effect, inject, signal, untracked } from '@angular/core';
 import { bloodRelatives } from '../../core/kinship/kinship';
+import { CutLine, cutOff } from '../../core/model/cut-off';
 import { updatePrint } from '../../core/model/operations';
 import { isBrokenUp, relationshipStatus } from '../../core/model/relationship';
-import { DEFAULT_PRINT, PrintSettings, effectivePrint } from '../../core/model/types';
+import { Anchor, DEFAULT_PRINT, LEGEND_GAP_CM, LegendBox, anchorShares, effectivePrint, PrintSettings } from '../../core/model/types';
+import { CARD_WIDTH } from '../../core/card/card-design';
 import { PAPERS, PX_PER_MM } from '../../core/poster/paper';
 import { escapeText } from '../../core/xml/xml-writer';
 import { pdfFromJpeg, pdfPages, tilePages } from '../../core/poster/pdf';
 import { TileGrid, tileGrid } from '../../core/poster/tiles';
-import { PosterInput, PosterResult, renderPoster } from '../../core/poster/poster';
+import { Steps } from '../../core/layout/steps';
+import { PosterInput, PosterResult, forgetLayouts, posterSteps } from '../../core/poster/poster';
 import { RELATIVES, Relatives, relativesSettings, scopeDocument } from '../../core/poster/scope';
-import { POSTER_THEMES } from '../../core/poster/themes';
+import { FONTS, palette } from '../../core/poster/heritage';
 import { FileIo, safeFilename } from '../../core/services/file-io';
 import { ImageExporter } from '../../core/services/image-export';
 import { TextMeasurer } from '../../core/services/text-measure';
@@ -21,8 +24,47 @@ import { UiState } from '../../state/ui-state';
 
 export type PrintOutput = 'print' | 'pdf' | 'png' | 'svg';
 
-/** Trees up to this many people have their page drawn at once; bigger ones behind a note (see PrintModel.drawing). */
-const DRAW_AT_ONCE = 60;
+/**
+ * The page is drawn a piece at a time, so many milliseconds of work and then whatever the window has waiting (a
+ * key pressed, a click, a frame to paint): the window never stops answering, however long the page takes.
+ */
+const SLICE_MS = 16;
+/** A page that takes longer than this gets a note over the one shown before (see PrintModel.drawing); most are there sooner. */
+const NOTE_AFTER_MS = 180;
+/**
+ * Settings that are typed. While only these change, a page that takes a while (the one before took longer than
+ * SLOW_MS) waits until the typing stops, so long after the last key; a quick one follows every key.
+ */
+const TYPED: ReadonlySet<string> = new Set<keyof PrintSettings>(['title', 'subtitle', 'titleSize', 'legendSize']);
+const TYPING_PAUSE_MS = 450;
+const SLOW_MS = 120;
+
+/** Whether the page asked for now differs from the one asked for before only in what is typed (TYPED). */
+export function onlyTyped(before: PosterInput, now: PosterInput): boolean {
+  const a = before.doc;
+  const b = now.doc;
+  // (Every change stamps the tree's `modified`, so its title and home person are compared and not `meta` as a whole.)
+  const same = a.people === b.people && a.families === b.families && a.view === b.view && a.meta.title === b.meta.title;
+  if (!same || a.meta.homePersonId !== b.meta.homePersonId || before.language !== now.language) return false;
+  const left = before.omit ?? new Set<string>();
+  const out = now.omit ?? new Set<string>();
+  if (left.size !== out.size || [...left].some((id) => !out.has(id))) return false;
+  const was = (before.settings ?? {}) as unknown as Record<string, unknown>;
+  const is = (now.settings ?? {}) as unknown as Record<string, unknown>;
+  return [...new Set([...Object.keys(was), ...Object.keys(is)])].every((key) => TYPED.has(key) || was[key] === is[key]);
+}
+
+/** Does `work` as a task of its own, after whatever the window has waiting, without the few milliseconds a timer would add each time. */
+const soon: (work: () => void) => void = (() => {
+  if (typeof MessageChannel === 'undefined') return (work: () => void) => void setTimeout(work);
+  const channel = new MessageChannel();
+  const queue: (() => void)[] = [];
+  channel.port1.onmessage = () => queue.shift()?.();
+  return (work: () => void) => {
+    queue.push(work);
+    channel.port2.postMessage(0);
+  };
+})();
 
 /** Resolution for PNG and PDF files of paper sizes. */
 const PRINT_DPI = 200;
@@ -31,6 +73,27 @@ const PRINT_DPI = 200;
  * The print studio's state and work: the page drawn from the print settings,
  * the choices offered, and making the files. Settings are saved with the tree.
  */
+/**
+ * The narrowest card wanted on a paper whose shorter side is so long, in millimetres: a smaller one is printed
+ * all the same, with a warning (see PrintModel.sizeNote). A bigger sheet is looked at from further away, so its
+ * cards may not be smaller; a small sheet is held in the hand, and can do with smaller ones. 40 mm on A1, about
+ * 26 on A4 and 46 on A0. For a card as wide as the usual (CARD_WIDTH); a narrower one (no shield) in proportion.
+ */
+export function minCardMm(shortMm: number, cardUnits = CARD_WIDTH): number {
+  return Math.round(40 * Math.pow(shortMm / 594, 0.4) * (cardUnits / CARD_WIDTH));
+}
+
+/**
+ * The smallest A paper, bigger than the one so big (`w`, `h`), on which cards now `cardMm` wide come out no
+ * narrower than that paper wants (the cards grow with the page about as much).
+ */
+export function paperFor(w: number, h: number, cardMm: number, cardUnits = CARD_WIDTH): (typeof PAPERS)[number] | undefined {
+  const short = Math.min(w, h);
+  return PAPERS.filter((p) => p.id.startsWith('A') && p.widthMm > short * 1.01)
+    .sort((a, b) => a.widthMm - b.widthMm)
+    .find((p) => cardMm * (p.widthMm / short) >= minCardMm(p.widthMm, cardUnits) * 0.99);
+}
+
 @Injectable({ providedIn: 'root' })
 export class PrintModel {
   private readonly store = inject(TreeStore);
@@ -47,6 +110,18 @@ export class PrintModel {
   readonly busy = signal<PrintOutput | null>(null);
 
   readonly settings = computed<PrintSettings>(() => ({ ...DEFAULT_PRINT, ...effectivePrint(this.store.doc()) }));
+
+  /**
+   * Changes that wait to be applied: where the title and the families' names stand and how big they are. Each
+   * would draw the page again, which takes a while for a big tree, and they are rarely right at the first go:
+   * they are shown on the page as it is (stagedBoxes) until applied, in one step, or discarded.
+   */
+  readonly staged = signal<Partial<PrintSettings>>({});
+  /** The settings as they will be once what waits is applied: what the settings show. */
+  readonly view = computed<PrintSettings>(() => ({ ...this.settings(), ...this.staged() }));
+  readonly waiting = computed(() => Object.keys(this.staged()).length > 0);
+  /** Boxes as they were applied, until the page drawn around them arrives: they stay there meanwhile. */
+  private readonly held = signal<Partial<Record<'legend' | 'title', LegendBox>>>({});
 
   /** What the page is drawn from, only while the studio is open and the fonts can be measured. */
   private readonly request = computed<PosterInput | null>(() => {
@@ -67,12 +142,19 @@ export class PrintModel {
   /** The page as last drawn. */
   readonly poster = signal<PosterResult | null>(null);
   /**
-   * Set while a big tree's page is drawn again: the page before stays, with a
-   * note over it, one frame drawn before the work, so the studio says it is
-   * working instead of freezing silently.
+   * Set while a page that takes a while is drawn: the page before stays, with
+   * a note over it. The work is done a piece at a time (SLICE_MS), so the
+   * studio keeps answering; a change of a setting meanwhile drops it and
+   * starts the page that is wanted now.
    */
   readonly drawing = signal(false);
+  /** Counts the pages asked for: work on any but the latest stops at its next piece. */
   private drawn = 0;
+  private asked: PosterInput | null = null;
+  private typing: ReturnType<typeof setTimeout> | undefined;
+  private noting: ReturnType<typeof setTimeout> | undefined;
+  /** How long the last page took to draw, in milliseconds of work. */
+  private took = 0;
 
   /** How many people were clicked away from this print. */
   readonly omittedCount = computed(() => this.ui.printOmitted().length);
@@ -82,51 +164,183 @@ export class PrintModel {
       const request = this.request();
       untracked(() => this.draw(request));
     });
-    // Another tree: nobody is left out of its prints yet.
+    // Another tree: nobody is left out of its prints yet, and nothing of the last one waits.
     effect(() => {
       this.store.loadId();
-      untracked(() => this.ui.printOmitted.set([]));
+      untracked(() => {
+        this.ui.clearPrintOmitted();
+        this.staged.set({});
+      });
     });
   }
 
   private draw(request: PosterInput | null): void {
+    // Whatever was being drawn is for settings that are no longer wanted.
     const turn = ++this.drawn;
+    clearTimeout(this.typing);
+    clearTimeout(this.noting);
+    const before = this.asked;
+    this.asked = request;
     if (!request) {
       this.poster.set(null);
       this.drawing.set(false);
+      // The studio is closed: the work kept for drawing its page again quickly is let go of.
+      forgetLayouts();
       return;
     }
-    // A small tree is drawn at once; a big one after the note has been shown, the latest settings only.
-    if (request.doc.people.length <= DRAW_AT_ONCE) {
-      this.poster.set(renderPoster(request));
-      this.drawing.set(false);
-      return;
-    }
-    this.drawing.set(true);
-    requestAnimationFrame(() =>
-      setTimeout(() => {
-        if (turn !== this.drawn) return;
-        try {
-          this.poster.set(renderPoster(request));
-        } finally {
-          if (turn === this.drawn) this.drawing.set(false);
-        }
-      }),
-    );
+    const start = () => {
+      if (turn !== this.drawn) return;
+      this.noting = setTimeout(() => {
+        if (turn === this.drawn) this.drawing.set(true);
+      }, NOTE_AFTER_MS);
+      this.work(turn, posterSteps(request), 0);
+    };
+    // While somebody is typing, a page that takes a while is drawn once they have stopped.
+    if (before && this.took > SLOW_MS && onlyTyped(before, request)) this.typing = setTimeout(start, TYPING_PAUSE_MS);
+    else start();
   }
 
-  /** Leaves a person out of this print (a click on their card); the person in the middle stays. */
+  /** The page's steps, so many milliseconds' worth at a time, until it is drawn or another page is asked for. */
+  private work(turn: number, steps: Steps<PosterResult>, spent: number): void {
+    if (turn !== this.drawn) return;
+    const from = performance.now();
+    const until = from + SLICE_MS;
+    const done = () => {
+      clearTimeout(this.noting);
+      this.drawing.set(false);
+      this.took = spent + performance.now() - from;
+    };
+    try {
+      for (;;) {
+        const step = steps.next();
+        if (step.done) {
+          this.poster.set(step.value);
+          this.held.set({});
+          done();
+          return;
+        }
+        if (performance.now() >= until) break;
+      }
+    } catch (error) {
+      done();
+      throw error;
+    }
+    soon(() => this.work(turn, steps, spent + performance.now() - from));
+  }
+
+  /** A change that waits to be applied, with any that wait already. */
+  stage(patch: Partial<PrintSettings>): void {
+    this.staged.update((s) => ({ ...s, ...patch }));
+  }
+
+  /** What waits, applied: one step, the page drawn again once. */
+  applyStaged(): void {
+    const patch = this.staged();
+    if (!Object.keys(patch).length) return;
+    this.held.set(this.stagedBoxes());
+    this.staged.set({});
+    this.set(patch, 'print place');
+  }
+
+  /** What waits, forgotten; true when anything did. */
+  discardStaged(): boolean {
+    const any = this.waiting();
+    this.staged.set({});
+    return any;
+  }
+
+  /**
+   * Where the title and the families' names will be once what waits is applied, as shares of the page, worked
+   * out from the page as it is: for showing them there before it is drawn again. Close to where the page will
+   * put them, not always exactly (the frame's corners, names that need more room than their box).
+   */
+  readonly stagedBoxes = computed<Partial<Record<'legend' | 'title', LegendBox>>>(() => {
+    const p = this.poster();
+    const staged = this.staged();
+    if (!p?.paper) return {};
+    if (!Object.keys(staged).length) return this.held();
+    const v = this.view();
+    const has = (...keys: (keyof PrintSettings)[]) => keys.some((k) => k in staged);
+    const ratio = (to: number, from: number) => (from > 0 ? to / from : 1);
+    const inner = p.inner;
+    const out: Partial<Record<'legend' | 'title', LegendBox>> = {};
+    let title = p.title;
+    if (p.title && has('titleAnchor', 'titleAt', 'titleSize')) {
+      const k = ratio(v.titleSize ?? p.lettering.autoTitleCm, p.lettering.titleCm);
+      const w = p.title.w * k;
+      const h = p.title.h * k;
+      title = {
+        ...(v.titleAnchor ? placeIn(inner, v.titleAnchor, w, h) : v.titleAt ? { x: v.titleAt.x - w / 2, y: v.titleAt.y, w, h } : placeIn(inner, 'top', w, h)),
+        free: true,
+      };
+      out.title = title;
+    }
+    if (p.legend && (has('legendBox', 'legendAnchor', 'legendSize', 'legendAlign', 'legendGap') || (out.title && v.legendAnchor))) {
+      const k = v.legendBox ? 1 : ratio(v.legendSize ?? p.lettering.autoLegendCm, p.lettering.legendCm);
+      const size = v.legendBox ?? { w: p.legend.w * k, h: p.legend.h * k };
+      let box: LegendBox = v.legendAnchor
+        ? placeIn(inner, v.legendAnchor, size.w, size.h)
+        : v.legendBox
+          ? { ...v.legendBox }
+          : { x: p.legend.x + (p.legend.w - size.w) / 2, y: p.legend.y + p.legend.h - size.h, w: size.w, h: size.h };
+      // Held at the top or the foot where the title is: under it, or over it.
+      if (v.legendAnchor && title) {
+        const gap = ((v.legendGap ?? LEGEND_GAP_CM) * 10) / p.paper.heightMm;
+        const across = box.x < title.x + title.w && title.x < box.x + box.w;
+        const meet = box.y < title.y + title.h + gap && title.y < box.y + box.h + gap;
+        if (across && meet) box = { ...box, y: box.y + box.h / 2 < 0.5 ? title.y + title.h + gap : title.y - gap - box.h };
+      }
+      out.legend = box;
+    }
+    return out;
+  });
+
+  /** Leaves a person out of this print (from their card's menu); the person in the middle stays. */
   omit(personId: string): void {
-    if (personId === this.centerId() || this.ui.printOmitted().includes(personId)) return;
-    this.ui.printOmitted.update((ids) => [...ids, personId]);
+    if (personId !== this.centerId()) this.ui.omitFromPrint([personId]);
+  }
+
+  /**
+   * A click on a line: everyone who hangs on it goes, in one step. A line joins a child to their parents (the
+   * stretch under the parents is every child's); taken away, whoever is no longer joined to the person in the
+   * middle is left out. Where the tree stays in one piece without it (cousins who married), only the children go.
+   */
+  omitBranch(cuts: readonly CutLine[]): void {
+    this.ui.omitFromPrint(cutOff(this.store.index(), this.poster()?.shown ?? [], this.centerId(), cuts));
+  }
+
+  /** Moves a card by hand, from where it is now: the lines to it follow. */
+  moveCard(personId: string, dx: number, dy: number): void {
+    const moves = { ...(this.settings().moves ?? {}) };
+    const at = moves[personId] ?? { x: 0, y: 0 };
+    const x = Math.round((at.x + dx) * 10) / 10;
+    const y = Math.round((at.y + dy) * 10) / 10;
+    if (Math.abs(x) < 0.5 && Math.abs(y) < 0.5) delete moves[personId];
+    else moves[personId] = { x, y };
+    // Every move is a step of its own to undo, however quickly one follows another.
+    this.set({ moves: Object.keys(moves).length ? moves : undefined }, `print move ${++this.moveCount}`);
+  }
+
+  /** Puts one card, or all of them, back where the layout has them. */
+  unmove(personId?: string): void {
+    const moves = { ...(this.settings().moves ?? {}) };
+    if (personId) delete moves[personId];
+    this.set({ moves: personId && Object.keys(moves).length ? moves : undefined });
+  }
+
+  private moveCount = 0;
+
+  readonly movedCount = computed(() => Object.keys(this.settings().moves ?? {}).length);
+
+  /** Someone's name, for the menu of their card. */
+  nameOf(personId: string): string {
+    return this.i18n.name(this.store.index().person(personId));
   }
 
   /** Brings everyone clicked away back. */
   restoreOmitted(): void {
-    this.ui.printOmitted.set([]);
+    this.ui.clearPrintOmitted();
   }
-
-  readonly themeId = computed(() => this.poster()?.theme.id ?? this.settings().theme);
 
   /** Everyone, for choosing who goes in the middle. */
   readonly people = computed(() =>
@@ -232,15 +446,22 @@ export class PrintModel {
     return p.paper ? { w: p.paper.widthMm, h: p.paper.heightMm } : { w: p.width / PX_PER_MM, h: p.height / PX_PER_MM };
   }
 
-  /** How big the names come out on paper, with a warning when they are too small to read. */
+  /**
+   * How big the names come out on paper, with a warning when they are too small to read, or the cards
+   * narrower than the paper wants (minCardMm), with the paper they would need.
+   */
   readonly sizeNote = computed(() => {
     const p = this.poster();
     if (!p?.paper) return null;
     const pt = Math.round(p.namePt * 10) / 10;
     const card = { w: Math.round(p.cardMm.w), h: Math.round(p.cardMm.h) };
-    return pt < 6
-      ? { warn: true, text: this.i18n.t('print.nameSizeSmall', { pt, ...card }) }
-      : { warn: false, text: this.i18n.t('print.nameSize', { pt, ...card }) };
+    if (pt < 6) return { warn: true, text: this.i18n.t('print.nameSizeSmall', { pt, ...card }) };
+    const min = minCardMm(Math.min(p.paper.widthMm, p.paper.heightMm), p.cardUnits.w);
+    if (p.cardMm.w < min * 0.99) {
+      const paper = paperFor(p.paper.widthMm, p.paper.heightMm, p.cardMm.w, p.cardUnits.w);
+      return { warn: true, text: this.i18n.t('print.cardSmall', { pt, ...card, min, paper: paper?.label ?? this.i18n.t('print.paperBeyond') }) };
+    }
+    return { warn: false, text: this.i18n.t('print.nameSize', { pt, ...card }) };
   });
 
   paperLabel(): string {
@@ -248,14 +469,15 @@ export class PrintModel {
     return PAPERS.find((p) => p.id.toLowerCase() === id.toLowerCase())?.label ?? 'A3';
   }
 
-  set(patch: Partial<PrintSettings>): void {
-    this.store.update((doc) => updatePrint(doc, patch), 'print');
+  set(patch: Partial<PrintSettings>, step = 'print'): void {
+    this.store.update((doc) => updatePrint(doc, patch), step);
+    this.ui.printEdited();
   }
 
   /** Waits for the fonts of all print styles, so text is measured with the real letters. */
   async loadFonts(): Promise<void> {
     if (this.fontsReady()) return;
-    const faces = new Set(POSTER_THEMES.flatMap((t) => t.fonts));
+    const faces = new Set(FONTS);
     try {
       await Promise.all([...faces].map((f) => document.fonts?.load(f)));
     } catch {
@@ -265,8 +487,9 @@ export class PrintModel {
   }
 
   close(): void {
+    this.staged.set({});
     this.ui.printOpen.set(false);
-    this.ui.printOmitted.set([]);
+    this.ui.clearPrintOmitted();
   }
 
   async output(kind: PrintOutput): Promise<void> {
@@ -305,7 +528,7 @@ export class PrintModel {
         return;
       }
       const size = this.exporter.rasterSize(p.width, p.height, p.paper ? PRINT_DPI : 192);
-      const canvas = await this.exporter.rasterize(svg, size.w, size.h, p.theme.palette.paper);
+      const canvas = await this.exporter.rasterize(svg, size.w, size.h, palette.paper);
       if (kind === 'png') {
         await this.save(safeFilename(base, 'png'), await this.exporter.toBlob(canvas, 'image/png'), 'image/png');
       } else {
@@ -351,7 +574,7 @@ interface PrintPageWords {
  * paper size set, so the browser's print dialog gets the page as it is. The
  * dialog opens by itself once the fonts are in.
  */
-function openPrintPage(win: Window, p: Pick<PosterResult, 'svg' | 'width' | 'height' | 'paper' | 'theme'>, words: PrintPageWords): void {
+function openPrintPage(win: Window, p: Pick<PosterResult, 'svg' | 'width' | 'height' | 'paper'>, words: PrintPageWords): void {
   const w = p.paper ? p.paper.widthMm : p.width / PX_PER_MM;
   const h = p.paper ? p.paper.heightMm : p.height / PX_PER_MM;
   const ratio = p.width / p.height;
@@ -366,7 +589,7 @@ function openPrintPage(win: Window, p: Pick<PosterResult, 'svg' | 'width' | 'hei
     `.bar button.primary { background: #2f6fdb; border-color: #2f6fdb; }` +
     `.bar button:hover { filter: brightness(1.15); }` +
     `.stage { padding: 74px 24px 24px; display: flex; justify-content: center; align-items: flex-start; }` +
-    `.sheet { width: min(100vw - 48px, calc((100vh - 98px) * ${ratio.toFixed(4)})); background: ${p.theme.palette.paper}; box-shadow: 0 10px 40px rgba(0,0,0,.5); }` +
+    `.sheet { width: min(100vw - 48px, calc((100vh - 98px) * ${ratio.toFixed(4)})); background: ${palette.paper}; box-shadow: 0 10px 40px rgba(0,0,0,.5); }` +
     `.sheet svg { display: block; width: 100%; height: auto; }` +
     `@media print { html, body { background: none; min-height: 0; } .bar { display: none; } .stage { padding: 0; display: block; }` +
     ` .sheet { width: ${w.toFixed(1)}mm; height: ${h.toFixed(1)}mm; box-shadow: none; } .sheet svg { width: ${w.toFixed(1)}mm; height: ${h.toFixed(1)}mm; } }`;
@@ -414,4 +637,10 @@ function printInPlace(p: Pick<PosterResult, 'svg' | 'width' | 'height' | 'paper'
   window.addEventListener('afterprint', cleanup);
   window.print();
   setTimeout(cleanup, 60_000);
+}
+
+/** A box so big at an anchor of the page inside its margin (`inner`), all as shares of the page. */
+function placeIn(inner: LegendBox, at: Anchor, w: number, h: number): LegendBox {
+  const to = anchorShares(at);
+  return { x: inner.x + to.x * (inner.w - w), y: inner.y + to.y * (inner.h - h), w, h };
 }

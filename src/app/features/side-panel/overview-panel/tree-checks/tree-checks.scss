@@ -2,12 +2,29 @@
   display: block;
 }
 
-.ok {
+/* Nothing to fix: a single line with a green tick, closer to its neighbours than a section with a heading. */
+.clear {
+  padding: 12px 0;
+}
+
+.all-good {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   margin: 0;
   color: var(--ink-2);
+  font-size: var(--text-sm);
+}
+
+.tick {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: color-mix(in srgb, #3a8f5d 18%, transparent);
+  color: #3a8f5d;
 }
 
 .gap {
@@ -117,4 +134,16 @@
 
 .hint {
   margin: 8px 0 0;
+}
+
+/* The dates ticked as unknown, which the lists above leave out, and the way to have them all asked about again. */
+.unknown-dates {
+  margin: 10px 0 0;
+  color: var(--ink-3);
+  font-size: var(--text-sm);
+
+  .link {
+    margin-left: 4px;
+    font-family: inherit;
+  }
 }

@@ -1,0 +1,57 @@
+:host {
+  display: block;
+}
+
+.notices {
+  display: grid;
+  gap: 6px;
+  margin: 12px 0 0;
+}
+
+.notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  font-size: var(--text-sm);
+  line-height: 1.4;
+
+  stemma-icon,
+  .flag {
+    flex: none;
+    margin-top: 2px;
+  }
+}
+
+/* A date that cannot be right: as in the tree's checks. */
+.error {
+  border-left: 3px solid var(--danger);
+  background: color-mix(in srgb, var(--danger) 9%, transparent);
+  color: var(--danger);
+
+  span {
+    color: var(--ink);
+  }
+}
+
+/* Something still to fill in: the same flag as on the cards and in the people list. */
+.gap {
+  border-left: 3px solid #d4851b;
+  background: color-mix(in srgb, #d4851b 10%, transparent);
+  color: var(--ink);
+}
+
+.flag {
+  display: inline-grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #d4851b;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+}

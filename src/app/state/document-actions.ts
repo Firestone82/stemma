@@ -146,8 +146,8 @@ export class DocumentActions {
   }
 
   /**
-   * Saves the tree as a GEDCOM file (.ged) for genealogy sites such as
-   * MyHeritage. Where .ged downloads are not allowed, it is saved as .ged.txt
+   * Saves the tree as a GEDCOM file (.ged), the format genealogy programs and
+   * sites read. Where .ged downloads are not allowed, it is saved as .ged.txt
    * to be renamed.
    */
   async exportGedcom(): Promise<void> {

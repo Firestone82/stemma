@@ -1,0 +1,21 @@
+<div class="fields" [class.two]="columns()">
+  <div class="field">
+    <span class="field-label" [id]="idPrefix() + '-dates'">{{ t('cards.dates') }}</span>
+    <stemma-segmented [labelledBy]="idPrefix() + '-dates'" [options]="dateOptions()" [value]="settings().dates" (valueChange)="setDates($event)" />
+  </div>
+  <div class="field">
+    <span class="field-label" [id]="idPrefix() + '-emblem'">{{ t('cards.emblemAlign') }}</span>
+    <stemma-segmented
+      [labelledBy]="idPrefix() + '-emblem'"
+      [options]="alignOptions()"
+      [value]="settings().emblemAlign"
+      [disabled]="!settings().showEmblems"
+      (valueChange)="setAlign($event)"
+    />
+  </div>
+</div>
+<div class="switches" [class.two]="columns()">
+  @for (s of switches(); track s.key) {
+    <stemma-switch [checked]="s.on" (checkedChange)="toggle(s.key, $event)">{{ t(s.label) }}</stemma-switch>
+  }
+</div>

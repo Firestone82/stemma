@@ -1,17 +1,15 @@
-import { arrangementOf } from '../model/arrangement';
 import { isValidDateValue } from '../model/dates';
 import { ID_PATTERN, newId } from '../model/ids';
 import {
-  BACKGROUND_FIT_VALUES,
-  Arrangement,
-  BackgroundFit,
-  BackgroundImage,
   CHILD_RELATION_VALUES,
-  COLOR_BY_VALUES,
+  DATE_STYLE_VALUES,
+  EMBLEM_ALIGN_VALUES,
+  DateStyle,
   ChildRelation,
   DEFAULT_PRINT,
+  LEGEND_GAP_MAX,
+  LETTERING_CM,
   DEFAULT_VIEW,
-  DENSITY_VALUES,
   END_REASON_VALUES,
   Extensions,
   FAMILY_KIND_VALUES,
@@ -19,19 +17,17 @@ import {
   FamilyChild,
   FamilyEnd,
   GenDate,
-  LINE_STYLE_VALUES,
   LegendBox,
   LifeEvent,
+  ANCHOR_VALUES,
+  Anchor,
   ORIENTATION_VALUES,
-  PORTRAIT_ALIGN_VALUES,
-  PORTRAIT_SHAPE_VALUES,
   Person,
   PersonName,
   PrintSettings,
   QUALIFIER_VALUES,
   Reach,
   SEX_VALUES,
-  TREE_STYLE_VALUES,
   TreeDocument,
   TreeMeta,
   ViewSettings,
@@ -79,61 +75,123 @@ export interface ParseResult {
   fromNewerVersion: boolean;
 }
 
-const SHOW_ATTRS = ['showDates', 'showPlaces', 'showPhotos', 'showGenerations', 'showRelationships', 'showUnions', 'showSex', 'sexColors', 'showTree'];
+/** What the cards show, on the chart and in prints. */
+const CARD_ATTRS = ['showEmblems', 'showBirthNames', 'unknownBirthNames', 'dates', 'emblemAlign', 'sexColors', 'showRibbons'];
+
+/** Read by builds of 1.9 and dropped again: the badge for mistakes (always on the chart, never in a print); the sex as a symbol (the accent and the card's edge say it). */
+const RETIRED_CARDS = ['showBadges', 'showSex'];
+
+/**
+ * Settings of earlier versions (format 1.0 to 1.8: other print styles, the drawn tree, generations in rows
+ * and the ways round them). They are no longer read, and are not kept for writing back either.
+ */
+const RETIRED_VIEW = [
+  'style',
+  'colorBy',
+  'lines',
+  'density',
+  'showDates',
+  'showPlaces',
+  'showPhotos',
+  'showGenerations',
+  'showRelationships',
+  'showUnions',
+  'showTree',
+  'tallGenerations',
+  'childlessOutside',
+  'fullDates',
+  'generationRows',
+];
+const RETIRED_PRINT = [
+  // Read as legendAlign="top".
+  'legendTop',
+  'centered',
+  'familyLayouts',
+  'generationRows',
+  'childrenBeside',
+  'theme',
+  'showDates',
+  'showPlaces',
+  'showPhotos',
+  'showGenerations',
+  'showRelationships',
+  'showUnions',
+  'showTree',
+  'portrait',
+  'portraitAlign',
+  'portraitSize',
+  'compactCouples',
+  'tallGenerations',
+  'childlessOutside',
+  'fullDates',
+  'packFamilies',
+  'sidewaysBranches',
+  'sidewaysOn',
+  'sidewaysOff',
+  'stackCouples',
+  'titleScale',
+  'legendScale',
+];
 
 const KNOWN = {
+  // <background> and <arrangement> (formats 1.3 and 1.4) are no longer read or written.
   root: { attrs: ['formatVersion', 'generator'], elements: ['meta', 'view', 'people', 'families', 'print', 'background', 'arrangement'] },
   meta: { attrs: [], elements: ['title', 'description', 'created', 'modified', 'homePerson'] },
   view: {
     attrs: [
-      'style',
-      'colorBy',
-      'lines',
-      'density',
-      ...SHOW_ATTRS,
+      ...CARD_ATTRS,
       'language',
       'branches',
       'inLawFamilies',
-      'tallGenerations',
-      'childlessOutside',
-      'fullDates',
       'siblingsOnly',
+      'uniteSpellings',
+      'uniteForeign',
+      'familyBackgrounds',
+      ...RETIRED_VIEW,
+      ...RETIRED_CARDS,
     ],
     elements: [],
   },
   print: {
     attrs: [
-      'theme',
+      ...CARD_ATTRS,
       'paper',
       'orientation',
       'center',
       'partner',
       'withPartner',
-      'centered',
+      'tight',
+      'fill',
+      'stackCouples',
+      'amidPartners',
+      'largeText',
+      'strongLines',
+      'freeWidths',
+      'legendAnchor',
+      'legendAlign',
+      'titleAnchor',
+      'unionText',
+      'titleAt',
+      'moves',
       'ancestors',
       'descendants',
       'branches',
       'inLawFamilies',
+      'siblingsOnly',
       'title',
       'subtitle',
-      ...SHOW_ATTRS,
-      'portrait',
-      'portraitAlign',
-      'portraitSize',
-      'compactCouples',
-      'tallGenerations',
+      'showTitle',
+      'showLegend',
+      'showFrame',
       'showHidden',
-      'childlessOutside',
-      'fullDates',
-      'siblingsOnly',
       'legendBox',
-      'packFamilies',
-      'showEmblems',
-      'stackCouples',
       'tiles',
       'tilesBorderless',
-      'titleScale',
-      'legendScale',
+      'titleSize',
+      'legendSize',
+      'legendGap',
+      ...RETIRED_PRINT,
+      ...RETIRED_CARDS,
     ],
     elements: [],
   },
@@ -145,8 +203,6 @@ const KNOWN = {
   end: { attrs: ['date', 'dateQualifier', 'dateText', 'dateUnknown', 'place', 'reason'], elements: [] },
   family: { attrs: ['id', 'type'], elements: ['partner', 'engagement', 'start', 'end', 'child', 'notes'] },
   child: { attrs: ['ref', 'relation', 'birthGroup'], elements: [] },
-  background: { attrs: ['mediaType', 'encoding', 'href', 'width', 'height', 'fit', 'opacity', 'name'], elements: [] },
-  arrangement: { attrs: [], elements: ['move', 'line', 'couple'] },
 } satisfies Record<string, { attrs: string[]; elements: string[] }>;
 
 type Known = (typeof KNOWN)[keyof typeof KNOWN];
@@ -250,10 +306,6 @@ class Reader {
     const doc: TreeDocument = { meta, view, people, families };
     const printEl = first(root, 'print');
     if (printEl) doc.print = this.readPrint(printEl);
-    const background = this.readBackground(first(root, 'background'));
-    if (background) doc.background = background;
-    const arrangementEl = first(root, 'arrangement');
-    if (arrangementEl) doc.arrangement = this.readArrangement(arrangementEl);
     setExt(doc, captureExt(root, KNOWN.root, ['xmlns']));
     const sectionExt: TreeDocument['sectionExt'] = {};
     const pe = peopleEl ? captureExt(peopleEl, KNOWN.people) : undefined;
@@ -280,32 +332,35 @@ class Reader {
     return meta;
   }
 
+  /**
+   * What the cards show. Files from before format 1.9 said it differently: dates as showDates and fullDates,
+   * no shield as showEmblems="false"; those are read once, so a tree looks the same when it is first opened.
+   */
+  private readCards<T extends ViewSettings | PrintSettings>(el: Element, into: T, fallback: T): void {
+    into.showEmblems = boolAttr(el, 'showEmblems', fallback.showEmblems);
+    into.showBirthNames = boolAttr(el, 'showBirthNames', fallback.showBirthNames);
+    const legacy: DateStyle = !boolAttr(el, 'showDates', true) ? 'none' : boolAttr(el, 'fullDates', false) ? 'full' : fallback.dates;
+    into.dates = this.enumAttr(el, 'dates', DATE_STYLE_VALUES, legacy);
+    into.emblemAlign = this.enumAttr(el, 'emblemAlign', EMBLEM_ALIGN_VALUES, fallback.emblemAlign);
+    into.sexColors = boolAttr(el, 'sexColors', fallback.sexColors);
+    into.showRibbons = boolAttr(el, 'showRibbons', fallback.showRibbons);
+    into.unknownBirthNames = boolAttr(el, 'unknownBirthNames', fallback.unknownBirthNames);
+  }
+
   readView(el: Element | undefined): ViewSettings {
     const view: ViewSettings = { ...DEFAULT_VIEW };
     if (!el) return view;
-    view.style = this.enumAttr(el, 'style', TREE_STYLE_VALUES, DEFAULT_VIEW.style);
-    view.colorBy = this.enumAttr(el, 'colorBy', COLOR_BY_VALUES, DEFAULT_VIEW.colorBy);
-    view.lines = this.enumAttr(el, 'lines', LINE_STYLE_VALUES, DEFAULT_VIEW.lines);
-    view.density = this.enumAttr(el, 'density', DENSITY_VALUES, DEFAULT_VIEW.density);
-    view.showDates = boolAttr(el, 'showDates', DEFAULT_VIEW.showDates);
-    view.showPlaces = boolAttr(el, 'showPlaces', DEFAULT_VIEW.showPlaces);
-    view.showPhotos = boolAttr(el, 'showPhotos', DEFAULT_VIEW.showPhotos);
-    view.showGenerations = boolAttr(el, 'showGenerations', DEFAULT_VIEW.showGenerations);
-    view.showRelationships = boolAttr(el, 'showRelationships', DEFAULT_VIEW.showRelationships);
-    view.showUnions = boolAttr(el, 'showUnions', DEFAULT_VIEW.showUnions);
-    view.showSex = boolAttr(el, 'showSex', DEFAULT_VIEW.showSex);
-    view.sexColors = boolAttr(el, 'sexColors', DEFAULT_VIEW.sexColors);
-    view.showTree = boolAttr(el, 'showTree', DEFAULT_VIEW.showTree);
+    this.readCards(el, view, DEFAULT_VIEW);
     view.branches = this.reachAttr(el, 'branches', DEFAULT_VIEW.branches);
     view.inLawFamilies = boolAttr(el, 'inLawFamilies', DEFAULT_VIEW.inLawFamilies);
-    view.tallGenerations = boolAttr(el, 'tallGenerations', DEFAULT_VIEW.tallGenerations);
-    view.childlessOutside = boolAttr(el, 'childlessOutside', DEFAULT_VIEW.childlessOutside);
-    view.fullDates = boolAttr(el, 'fullDates', DEFAULT_VIEW.fullDates);
     view.siblingsOnly = boolAttr(el, 'siblingsOnly', DEFAULT_VIEW.siblingsOnly);
+    view.uniteSpellings = boolAttr(el, 'uniteSpellings', DEFAULT_VIEW.uniteSpellings);
+    view.uniteForeign = boolAttr(el, 'uniteForeign', DEFAULT_VIEW.uniteForeign);
+    view.familyBackgrounds = boolAttr(el, 'familyBackgrounds', DEFAULT_VIEW.familyBackgrounds);
     const language = el.getAttribute('language')?.trim();
     if (language) {
       if (LANGUAGE_TAG.test(language)) view.language = language;
-      else this.warnings.push(notice('xml.bad-language', `The language "${language}" is not a language code; English was used.`, { language }));
+      else this.warnings.push(unknownValue(language, 'language', DEFAULT_VIEW.language));
     }
     setExt(view, captureExt(el, KNOWN.view));
     return view;
@@ -313,10 +368,8 @@ class Reader {
 
   readPrint(el: Element): PrintSettings {
     const print: PrintSettings = { ...DEFAULT_PRINT };
-    // Style and paper are open lists: a newer version may add some. Unknown ones are
-    // kept as they are and drawn with the defaults.
-    const theme = el.getAttribute('theme')?.trim();
-    if (theme) print.theme = theme;
+    this.readCards(el, print, DEFAULT_PRINT);
+    // Paper is an open list: a newer version may add some. Unknown ones are kept as they are and drawn with the default.
     const paper = el.getAttribute('paper')?.trim();
     if (paper) print.paper = paper;
     print.orientation = this.enumAttr(el, 'orientation', ORIENTATION_VALUES, DEFAULT_PRINT.orientation);
@@ -325,47 +378,63 @@ class Reader {
     const partner = el.getAttribute('partner')?.trim();
     if (!boolAttr(el, 'withPartner', true)) print.partnerId = null;
     else if (partner) print.partnerId = partner;
-    print.centered = boolAttr(el, 'centered', DEFAULT_PRINT.centered);
     print.ancestors = this.reachAttr(el, 'ancestors', DEFAULT_PRINT.ancestors);
     print.descendants = this.reachAttr(el, 'descendants', DEFAULT_PRINT.descendants);
     print.branches = this.reachAttr(el, 'branches', DEFAULT_PRINT.branches);
     print.inLawFamilies = boolAttr(el, 'inLawFamilies', DEFAULT_PRINT.inLawFamilies);
+    print.siblingsOnly = boolAttr(el, 'siblingsOnly', DEFAULT_PRINT.siblingsOnly);
     const title = el.getAttribute('title');
     if (title?.trim()) print.title = title;
     const subtitle = el.getAttribute('subtitle');
-    if (subtitle?.trim()) print.subtitle = subtitle;
-    print.showDates = boolAttr(el, 'showDates', DEFAULT_PRINT.showDates);
-    print.showPlaces = boolAttr(el, 'showPlaces', DEFAULT_PRINT.showPlaces);
-    print.showPhotos = boolAttr(el, 'showPhotos', DEFAULT_PRINT.showPhotos);
-    print.showUnions = boolAttr(el, 'showUnions', DEFAULT_PRINT.showUnions);
-    print.showRelationships = boolAttr(el, 'showRelationships', DEFAULT_PRINT.showRelationships);
-    print.showGenerations = boolAttr(el, 'showGenerations', DEFAULT_PRINT.showGenerations);
-    print.showSex = boolAttr(el, 'showSex', DEFAULT_PRINT.showSex);
-    print.sexColors = boolAttr(el, 'sexColors', DEFAULT_PRINT.sexColors);
-    print.showTree = boolAttr(el, 'showTree', DEFAULT_PRINT.showTree);
-    print.portrait = this.enumAttr(el, 'portrait', PORTRAIT_SHAPE_VALUES, DEFAULT_PRINT.portrait);
-    print.portraitAlign = this.enumAttr(el, 'portraitAlign', PORTRAIT_ALIGN_VALUES, DEFAULT_PRINT.portraitAlign);
-    const size = Number(el.getAttribute('portraitSize'));
-    print.portraitSize = size > 0 && Number.isFinite(size) ? Math.min(3, Math.max(0.5, size)) : DEFAULT_PRINT.portraitSize;
-    print.compactCouples = boolAttr(el, 'compactCouples', DEFAULT_PRINT.compactCouples);
-    print.tallGenerations = boolAttr(el, 'tallGenerations', DEFAULT_PRINT.tallGenerations);
+    if (subtitle !== null) print.subtitle = subtitle;
+    print.showTitle = boolAttr(el, 'showTitle', DEFAULT_PRINT.showTitle);
+    print.showLegend = boolAttr(el, 'showLegend', DEFAULT_PRINT.showLegend);
+    print.showFrame = boolAttr(el, 'showFrame', DEFAULT_PRINT.showFrame);
     print.showHidden = boolAttr(el, 'showHidden', DEFAULT_PRINT.showHidden);
-    print.childlessOutside = boolAttr(el, 'childlessOutside', DEFAULT_PRINT.childlessOutside);
-    print.fullDates = boolAttr(el, 'fullDates', DEFAULT_PRINT.fullDates);
-    print.siblingsOnly = boolAttr(el, 'siblingsOnly', DEFAULT_PRINT.siblingsOnly);
+    print.fill = boolAttr(el, 'fill', DEFAULT_PRINT.fill);
+    print.stackCouples = boolAttr(el, 'stackCouples', DEFAULT_PRINT.stackCouples);
+    print.amidPartners = boolAttr(el, 'amidPartners', DEFAULT_PRINT.amidPartners);
+    print.largeText = boolAttr(el, 'largeText', DEFAULT_PRINT.largeText);
+    print.strongLines = boolAttr(el, 'strongLines', DEFAULT_PRINT.strongLines);
+    print.freeWidths = boolAttr(el, 'freeWidths', DEFAULT_PRINT.freeWidths);
+    // An anchor that is not one is left out, with a warning, like any value that is not known.
+    const anchor = (name: string): Anchor | undefined => {
+      const value = this.enumAttr(el, name, ['none', ...ANCHOR_VALUES] as const, 'none');
+      return value === 'none' ? undefined : value;
+    };
+    const titleAnchor = anchor('titleAnchor');
+    const legendAnchor = anchor('legendAnchor');
+    // legendTop (a few days in 1.9): the names from the top of their box.
+    const legendAlign = anchor('legendAlign') ?? (boolAttr(el, 'legendTop', false) ? 'top' : undefined);
+    if (titleAnchor) print.titleAnchor = titleAnchor;
+    if (legendAnchor) print.legendAnchor = legendAnchor;
+    if (legendAlign && legendAlign !== 'center') print.legendAlign = legendAlign;
+    print.tight = boolAttr(el, 'tight', DEFAULT_PRINT.tight);
+    print.unionText = boolAttr(el, 'unionText', DEFAULT_PRINT.unionText);
+    const titleAt = (el.getAttribute('titleAt') ?? '').trim().split(/\s+/).map(Number);
+    if (titleAt.length === 2 && titleAt.every((v) => Number.isFinite(v) && v >= 0 && v <= 1)) print.titleAt = { x: titleAt[0], y: titleAt[1] };
+    // "I12:30,-14.5 I40:0,66": cards moved by hand.
+    const moves: Record<string, { x: number; y: number }> = {};
+    for (const part of (el.getAttribute('moves') ?? '').split(/\s+/)) {
+      const cut = part.lastIndexOf(':');
+      const [x, y] = part
+        .slice(cut + 1)
+        .split(',')
+        .map(Number);
+      if (cut > 0 && Number.isFinite(x) && Number.isFinite(y)) moves[part.slice(0, cut)] = { x, y };
+    }
+    if (Object.keys(moves).length) print.moves = moves;
     const box = parseLegendBox(el.getAttribute('legendBox'));
     if (box) print.legendBox = box;
-    if (boolAttr(el, 'packFamilies', false)) print.packFamilies = true;
-    if (!boolAttr(el, 'showEmblems', true)) print.showEmblems = false;
-    // Couples with children stacked were a setting of their own while 1.8 was being made: now part of compactCouples.
-    if (boolAttr(el, 'stackCouples', false)) print.compactCouples = true;
     const tiles = el.getAttribute('tiles')?.trim();
     if (tiles) print.tiles = tiles;
     if (boolAttr(el, 'tilesBorderless', false)) print.tilesBorderless = true;
-    for (const key of ['titleScale', 'legendScale'] as const) {
+    for (const key of ['titleSize', 'legendSize'] as const) {
       const value = Number(el.getAttribute(key));
-      if (el.hasAttribute(key) && Number.isFinite(value) && value > 0) print[key] = Math.min(3, Math.max(0.5, value));
+      if (el.hasAttribute(key) && Number.isFinite(value) && value > 0) print[key] = Math.min(LETTERING_CM.max, Math.max(LETTERING_CM.min, value));
     }
+    const gap = Number(el.getAttribute('legendGap'));
+    if (el.hasAttribute('legendGap') && Number.isFinite(gap) && gap >= 0) print.legendGap = Math.min(LEGEND_GAP_MAX, gap);
     setExt(print, captureExt(el, KNOWN.print));
     return print;
   }
@@ -414,59 +483,6 @@ class Reader {
     const data = el ? embedded(el) : undefined;
     if (data === null) this.warnings.push(notice('xml.bad-photo', 'A photo could not be read and was left out.'));
     return data ?? undefined;
-  }
-
-  /** The picture behind the chart; left out (with a note) when its data cannot be read. */
-  readBackground(el: Element | undefined): BackgroundImage | undefined {
-    if (!el) return undefined;
-    const href = embedded(el);
-    if (href === null) this.warnings.push(notice('xml.bad-background', 'The background picture could not be read and was left out.'));
-    if (!href) return undefined;
-    const size = (name: string) => {
-      const v = Number(el.getAttribute(name));
-      return Number.isFinite(v) && v > 0 ? v : 1000;
-    };
-    const opacity = Number(el.getAttribute('opacity') ?? 1);
-    const background: BackgroundImage = {
-      href,
-      width: size('width'),
-      height: size('height'),
-      fit: this.enumAttr(el, 'fit', BACKGROUND_FIT_VALUES, 'cover') as BackgroundFit,
-      opacity: Number.isFinite(opacity) ? Math.min(1, Math.max(0, opacity)) : 1,
-    };
-    const name = el.getAttribute('name');
-    if (name) background.name = name;
-    setExt(background, captureExt(el, KNOWN.background));
-    return background;
-  }
-
-  /** Changes made by hand to the layout; entries that cannot be read are left out. */
-  readArrangement(el: Element): Arrangement {
-    const moves: Record<string, number> = {};
-    const lines: Record<string, number> = {};
-    const left: Record<string, string> = {};
-    const num = (e: Element, name: string) => {
-      const v = Number(e.getAttribute(name));
-      return e.hasAttribute(name) && Number.isFinite(v) ? v : undefined;
-    };
-    for (const m of elements(el, 'move')) {
-      const person = m.getAttribute('person');
-      const dx = num(m, 'dx');
-      if (person && dx !== undefined) moves[person] = dx;
-    }
-    for (const l of elements(el, 'line')) {
-      const family = l.getAttribute('family');
-      const dy = num(l, 'dy');
-      if (family && dy !== undefined) lines[family] = dy;
-    }
-    for (const c of elements(el, 'couple')) {
-      const family = c.getAttribute('family');
-      const person = c.getAttribute('left');
-      if (family && person) left[family] = person;
-    }
-    const arrangement: Arrangement = { moves, lines, left };
-    setExt(arrangement, captureExt(el, KNOWN.arrangement));
-    return arrangement;
   }
 
   readFamily(el: Element): Family {
@@ -676,17 +692,6 @@ function repair(doc: TreeDocument, warnings: Notice[]): void {
 
   const empty = doc.families.filter((f) => f.partners.length + f.children.length === 0).length;
   if (empty) doc.families = doc.families.filter((f) => f.partners.length + f.children.length > 0);
-
-  // Changes made by hand to the layout follow renamed people; those for anyone or any family not in the file go.
-  if (doc.arrangement) {
-    const a = doc.arrangement;
-    const moves: Record<string, number> = {};
-    for (const [ref, dx] of Object.entries(a.moves)) {
-      const id = personIdMap.get(ref);
-      if (id) moves[id] = dx;
-    }
-    doc.arrangement = { ...arrangementOf({ ...doc, arrangement: { ...a, moves } }) };
-  }
 
   const cycle = findAncestryCycle(doc);
   if (cycle) {

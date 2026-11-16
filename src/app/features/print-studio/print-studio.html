@@ -2,6 +2,7 @@
   <header class="head">
     <button type="button" class="btn ghost back" (click)="model.close()"><stemma-icon name="chevronLeft" [size]="17" />{{ t('print.back') }}</button>
     <h2 id="studio-title">{{ t('print.title') }}</h2>
+    <stemma-history-buttons />
     <stemma-output-actions class="actions" />
   </header>
 
@@ -9,6 +10,13 @@
     @if (preview.isOpen()) {
       <div class="away" role="status">
         <p>{{ t('print.window.note') }}</p>
+        @if (model.waiting()) {
+          <p class="waiting">
+            {{ t('print.boxMoved') }}
+            <button type="button" class="btn small primary" (click)="model.applyStaged()">{{ t('print.boxApply') }}</button>
+            <button type="button" class="btn small" (click)="model.discardStaged()">{{ t('print.boxDiscard') }}</button>
+          </p>
+        }
         <button type="button" class="btn small" (click)="preview.close()"><stemma-icon name="popIn" [size]="15" />{{ t('print.window.back') }}</button>
       </div>
     } @else {
@@ -23,19 +31,52 @@
         [canPopOut]="preview.available()"
         [popOutFailed]="preview.failed()"
         (popOut)="preview.open()"
-        (pick)="model.omit($event)"
+        (cardMenu)="openMenu($event)"
         (restore)="model.restoreOmitted()"
         [legend]="model.poster()?.legend ?? null"
-        (legendMove)="model.set({ legendBox: $event ?? undefined })"
+        [title]="model.poster()?.title ?? null"
+        (boxesPlace)="placeBoxes($event)"
+        [inner]="model.poster()?.inner ?? null"
+        [staged]="model.stagedBoxes()"
+        [waiting]="model.waiting()"
+        (apply)="model.applyStaged()"
+        (discard)="model.discardStaged()"
+        [namesIn]="model.poster()?.namesIn ?? null"
+        [namesStyle]="namesStyle()"
+        [cardUnits]="model.poster()?.cardUnits ?? null"
+        [moved]="model.movedCount()"
+        (unmove)="model.unmove()"
+        [lines]="model.poster()?.lines ?? []"
+        (lineCut)="model.omitBranch($event)"
+        (cardMove)="model.moveCard($event.personId, $event.dx, $event.dy)"
       />
     }
 
     <div class="controls">
-      <stemma-style-picker [current]="model.themeId()" (choose)="model.set({ theme: $event })" />
       <stemma-centre-options />
       <stemma-reach-options />
       <stemma-card-options />
       <stemma-paper-options />
+      @if (model.settings().showTitle) {
+        <stemma-title-options />
+      }
+      @if (model.settings().showLegend) {
+        <stemma-names-options />
+      }
     </div>
   </div>
 </section>
+
+@if (menu(); as m) {
+  <div class="menu card-menu" role="menu" [attr.aria-label]="m.name" [style.left.px]="m.x" [style.top.px]="m.y">
+    <p class="menu-title">{{ m.name }}</p>
+    @if (menuMoved()) {
+      <button type="button" class="menu-item" role="menuitem" (click)="unmove()">{{ t('print.menu.unmove') }}</button>
+    }
+    @if (m.id !== model.centerId()) {
+      <button type="button" class="menu-item" role="menuitem" (click)="hide(m.id)"><stemma-icon name="noPrint" />{{ t('print.menu.hide') }}</button>
+    } @else {
+      <p class="menu-note">{{ t('print.menu.centre') }}</p>
+    }
+  </div>
+}

@@ -151,8 +151,6 @@ export function scopeDocument(doc: TreeDocument, index: TreeIndex, options: Scop
       view: doc.view,
       people: included.size === doc.people.length ? doc.people : doc.people.filter((p) => included.has(p.id)),
       families,
-      ...(doc.background ? { background: doc.background } : {}),
-      ...(doc.arrangement ? { arrangement: doc.arrangement } : {}),
     },
     people: included,
   };

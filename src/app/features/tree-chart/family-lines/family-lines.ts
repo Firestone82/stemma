@@ -1,13 +1,16 @@
 import { ChangeDetectionStrategy, Component, computed, inject, input, output } from '@angular/core';
-import { LayoutResult } from '../../../core/layout/layout-types';
-import { connectorPaths, linkPath } from '../../../core/layout/paths';
+import { roundedPath, sharedPaths } from '../../../core/layout/lines';
+import { isPortal } from '../../../core/model/family-view';
+import { LayoutResult } from '../../../core/layout/types';
 import { TreeStore } from '../../../core/store/tree-store';
-import { ChartModel } from '../../../state/chart-model';
+
+/** How round the corners of the lines are. */
+const CORNER = 7;
 
 /**
- * Lines from parents to their children. The lines of the selected person's
- * ancestors and descendants are drawn darker, on top. In a family view of
- * several families, a click on a line takes a family back out (see `cuts`).
+ * Lines from parents to their children. The direct line of the person the chart is drawn around is a
+ * little heavier; the lines of the selected person's ancestors and descendants are drawn darker, on top.
+ * In a family view of several families, a click on a line takes a family back out (see `cuts`).
  */
 @Component({
   // eslint-disable-next-line @angular-eslint/component-selector -- drawn inside an <svg> (or on a <button>), so an attribute selector
@@ -18,7 +21,6 @@ import { ChartModel } from '../../../state/chart-model';
 })
 export class FamilyLines {
   private readonly store = inject(TreeStore);
-  private readonly model = inject(ChartModel);
 
   readonly layout = input.required<LayoutResult>();
   /** Families whose lines can be clicked, with what the click does as the tooltip. */
@@ -33,33 +35,62 @@ export class FamilyLines {
     return new Set([s.id, ...index.ancestors(s.id), ...index.descendants(s.id)]);
   });
 
+  /** The person the pointer is on: the lines of their families (their parents' and their own) light up. */
+  readonly hover = input<string | null>(null);
+
+  private readonly lit = computed<ReadonlySet<string>>(() => {
+    const id = this.hover();
+    if (!id) return new Set();
+    const index = this.store.index();
+    return new Set([...index.parentFamilies(id), ...index.partnerFamilies(id)].map((f) => f.id));
+  });
+
   protected readonly drops = computed(() => {
     const lineage = this.lineage();
+    const lit = this.lit();
     const index = this.store.index();
-    const out: { key: string; d: string; relation: string; onPath: boolean }[] = [];
-    for (const c of this.layout().connectors) {
-      const fam = index.family(c.familyId);
-      const parentsOnPath = !!lineage && !!fam && fam.partners.some((p) => lineage.has(p));
-      for (const p of connectorPaths(c, 'square', 10)) {
-        out.push({ key: `${c.familyId}|${p.childId}`, d: p.d, relation: p.relation, onPath: parentsOnPath && lineage!.has(p.childId) });
-      }
-    }
-    return out.sort((a, b) => Number(a.onPath) - Number(b.onPath));
+    const rated = this.layout().lines.map((l) => {
+      const fam = index.family(l.familyId);
+      const onPath = !!lineage && lineage.has(l.childId) && !!fam && fam.partners.some((p) => lineage.has(p));
+      const hover = lit.has(l.familyId);
+      return { line: l, onPath, hover, weight: Number(l.trunk) + 2 * Number(onPath) + 4 * Number(hover) - 0.5 * Number(l.relation !== 'biological') };
+    });
+    // Every stretch is drawn once (see sharedPaths), by the line that matters most there; those go on top.
+    rated.sort((a, b) => b.weight - a.weight);
+    const paths = sharedPaths(
+      rated.map((r) => r.line),
+      CORNER,
+    );
+    return rated
+      .map((r, i) => ({
+        key: r.line.key,
+        d: paths[i],
+        relation: r.line.relation,
+        trunk: r.line.trunk,
+        onPath: r.onPath,
+        hover: r.hover,
+        off: isPortal(r.line.childId) || isPortal(r.line.familyId),
+      }))
+      .filter((p) => p.d)
+      .reverse();
   });
 
   /** The lines that can be clicked, one group per family. */
   protected readonly cuttable = computed(() => {
     const cuts = this.cuts();
     if (!cuts.size) return [];
-    return this.layout()
-      .connectors.filter((c) => cuts.has(c.familyId))
-      .map((c) => ({ familyId: c.familyId, title: cuts.get(c.familyId)!, paths: connectorPaths(c, 'square', 10).map((p) => p.d) }));
+    const byFamily = new Map<string, string[]>();
+    for (const l of this.layout().lines) {
+      if (!cuts.has(l.familyId)) continue;
+      const paths = byFamily.get(l.familyId) ?? [];
+      paths.push(roundedPath(l.points, CORNER));
+      byFamily.set(l.familyId, paths);
+    }
+    return [...byFamily].map(([familyId, paths]) => ({ familyId, title: cuts.get(familyId)!, paths }));
   });
 
   protected onCut(familyId: string, event: Event): void {
     event.stopPropagation();
     this.takeOut.emit(familyId);
   }
-
-  protected readonly secondary = computed(() => this.layout().links.map((l) => ({ key: `${l.familyId}|${l.childId}`, d: linkPath(l), relation: l.relation })));
 }

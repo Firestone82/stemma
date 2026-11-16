@@ -1,21 +1,26 @@
 import { ChangeDetectionStrategy, Component, ElementRef, computed, effect, inject, signal, untracked, viewChild } from '@angular/core';
 import { I18n } from '../../i18n/i18n';
 import { Icon } from '../../shared/icon/icon';
+import { HistoryButtons } from '../top-bar/history-buttons/history-buttons';
 import { CardOptions } from './card-options/card-options';
 import { CentreOptions } from './centre-options/centre-options';
+import { NamesOptions } from './names-options/names-options';
 import { OutputActions } from './output-actions/output-actions';
 import { PaperOptions } from './paper-options/paper-options';
 import { PrintModel } from './print-model';
-import { PrintPreview } from './print-preview/print-preview';
+import { BoxesPlaced, PrintPreview, placedSettings } from './print-preview/print-preview';
 import { PreviewWindow } from './preview-window/preview-window';
 import { ReachOptions } from './reach-options/reach-options';
-import { StylePicker } from './style-picker/style-picker';
+import { TitleOptions } from './title-options/title-options';
 
 /** The settings are never narrower than this. */
 const MIN_CONTROLS = 550;
 /** Around the page in the preview: its padding left and right, and above and below with the gap and the summary line under it. */
 const PREVIEW_PAD_X = 56;
 const PREVIEW_PAD_Y = 24 + 14 + 12 + 22;
+/** About how big a card's menu is, to keep it on the screen. */
+const MENU_W = 280;
+const MENU_H = 290;
 
 /**
  * Print and export, as a page of its own (at #/print, see PrintRoute) in
@@ -28,11 +33,11 @@ const PREVIEW_PAD_Y = 24 + 14 + 12 + 22;
  */
 @Component({
   selector: 'stemma-print-studio',
-  imports: [Icon, PrintPreview, StylePicker, CentreOptions, ReachOptions, CardOptions, PaperOptions, OutputActions],
+  imports: [Icon, HistoryButtons, PrintPreview, CentreOptions, ReachOptions, CardOptions, PaperOptions, TitleOptions, NamesOptions, OutputActions],
   templateUrl: './print-studio.html',
   styleUrl: './print-studio.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  host: { '(document:keydown.escape)': 'onEscape()' },
+  host: { '(document:keydown.escape)': 'onEscape()', '(document:pointerdown)': 'onPointerDown($event)' },
 })
 export class PrintStudio {
   protected readonly model = inject(PrintModel);
@@ -67,9 +72,63 @@ export class PrintStudio {
   }
 
   /** Escape leaves the page, unless a dialog is open over it; zoomed into the preview, it first goes back to the whole page. */
+  /** The menu of a card in the page (right click): who it is, and leaving them out. */
+  protected readonly menu = signal<{ id: string; name: string; x: number; y: number } | null>(null);
+
+  protected openMenu(at: { personId: string; x: number; y: number }): void {
+    this.menu.set({
+      id: at.personId,
+      name: this.model.nameOf(at.personId),
+      // Kept on the screen.
+      x: Math.max(8, Math.min(at.x, window.innerWidth - MENU_W - 8)),
+      y: Math.max(8, Math.min(at.y, window.innerHeight - MENU_H - 8)),
+    });
+  }
+
+  /** The title or the families' names placed by hand in the page (or put back): waiting, with the other changes that wait, until applied. */
+  protected placeBoxes(placed: BoxesPlaced): void {
+    this.model.stage(placedSettings(placed));
+  }
+
+  /** How the names are drawn into a box being changed: as they will be once what waits is applied. */
+  protected readonly namesStyle = computed(() => {
+    const v = this.model.view();
+    const p = this.model.poster();
+    // A size typed in is that size; otherwise in a box sized by hand as big as the box lets them be, elsewhere as the page sizes them.
+    return { align: v.legendAlign ?? 'center', cm: v.legendSize ?? (v.legendBox ? null : (p?.lettering.autoLegendCm ?? null)) } as const;
+  });
+
+  /** Whether the menu's card has been moved by hand. */
+  protected readonly menuMoved = computed(() => {
+    const m = this.menu();
+    return !!m && !!this.model.settings().moves?.[m.id];
+  });
+
+  protected unmove(): void {
+    const m = this.menu();
+    this.menu.set(null);
+    if (m) this.model.unmove(m.id);
+  }
+
+  /** A press anywhere but in a card's menu closes it. */
+  protected onPointerDown(event: PointerEvent): void {
+    if (this.menu() && !(event.target as Element | null)?.closest('.card-menu')) this.menu.set(null);
+  }
+
+  protected hide(personId: string): void {
+    this.menu.set(null);
+    this.model.omit(personId);
+  }
+
   protected onEscape(): void {
+    if (this.menu()) {
+      this.menu.set(null);
+      return;
+    }
     if (document.querySelector('dialog[open]')) return;
     const preview = this.previewPane();
+    // What waits to be applied is forgotten first; then the closer look; then the studio.
+    if (this.model.discardStaged()) return;
     if (preview?.zoomedIn()) preview.resetZoom();
     else this.model.close();
   }

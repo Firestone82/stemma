@@ -19,16 +19,19 @@ export class Shortcuts {
     const key = e.key.toLowerCase();
     if (mod && key === 'z') {
       e.preventDefault();
-      // In the print studio, the last card clicked away comes back first.
-      if (!e.shiftKey && this.ui.printOpen() && this.ui.printOmitted().length) this.ui.printOmitted.update((ids) => ids.slice(0, -1));
-      else if (e.shiftKey) this.people.redo();
-      else this.people.undo();
+      if (e.shiftKey) this.redo();
+      else this.undo();
     } else if (mod && key === 'y') {
       e.preventDefault();
-      this.people.redo();
+      this.redo();
     } else if (mod && key === 's') {
       e.preventDefault();
       void this.documents.saveXml();
+    } else if (mod && key === 'n' && !e.shiftKey) {
+      // A new tree, after a warning when the tree has anyone in it (DocumentActions.newTree). Not from the print
+      // studio, nor over a dialog. (A browser tab may keep Ctrl+N for a new window; the installed app has it.)
+      e.preventDefault();
+      if (!this.ui.printOpen() && !this.ui.dialog()) this.documents.newTree();
     } else if (mod && key === 'o') {
       e.preventDefault();
       void this.documents.openFile();
@@ -44,6 +47,17 @@ export class Shortcuts {
         this.people.askDelete(person.id);
       }
     }
+  }
+
+  /** In the print studio, people clicked away and changes to the page are undone in the order they were done. */
+  private undo(): void {
+    if (this.ui.printOpen()) this.ui.undoInPrint();
+    else this.people.undo();
+  }
+
+  private redo(): void {
+    if (this.ui.printOpen()) this.ui.redoInPrint();
+    else this.people.redo();
   }
 
   /** Escape closes the innermost thing that is open. Dialogs close themselves. */

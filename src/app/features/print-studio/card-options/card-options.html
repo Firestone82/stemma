@@ -1,18 +1,25 @@
 <h3 id="print-g-cards">{{ t('print.cards') }}</h3>
-<div class="switches">
-  @for (s of switches(); track s.key) {
-    <stemma-switch [checked]="s.on" [disabled]="s.disabled" (checkedChange)="toggle(s.key, $event)">{{ t(s.label) }}</stemma-switch>
-  }
-</div>
-<div class="portraits">
-  <div class="field">
-    <span class="field-label" id="print-dates">{{ t('print.dates') }}</span>
-    <stemma-segmented labelledBy="print-dates" [options]="dateOptions()" [value]="dates()" (valueChange)="setDates($event)" />
+<stemma-card-settings idPrefix="print-cards" [columns]="true" [settings]="settings()" (settingsChange)="setCards($event)" />
+<div class="studio-part" role="group" aria-labelledby="print-g-size">
+  <h4 id="print-g-size">{{ t('print.cardSize') }}</h4>
+  <div class="studio-option">
+    <stemma-switch [checked]="settings().largeText" (checkedChange)="model.set({ largeText: $event })">{{ t('print.largeText') }}</stemma-switch>
+    <span class="hint">{{ t('print.largeTextHint') }}</span>
+  </div>
+  <div class="studio-option">
+    <stemma-switch [checked]="settings().freeWidths" (checkedChange)="model.set({ freeWidths: $event })">{{ t('print.freeWidths') }}</stemma-switch>
+    <span class="hint">{{ t('print.freeWidthsHint') }}</span>
+  </div>
+  <div class="studio-option">
+    <stemma-switch [checked]="settings().strongLines" (checkedChange)="model.set({ strongLines: $event })">{{ t('print.strongLines') }}</stemma-switch>
+    <span class="hint">{{ t('print.strongLinesHint') }}</span>
   </div>
 </div>
-@if (showTree()) {
-  <div class="background">
-    <span class="field-label">{{ t('background.title') }}</span>
-    <stemma-background-picker idPrefix="print-bg" />
+<div class="studio-part" role="group" aria-labelledby="print-g-page">
+  <h4 id="print-g-page">{{ t('print.page') }}</h4>
+  <div class="switches">
+    @for (s of switches(); track s.key) {
+      <stemma-switch [checked]="s.on" (checkedChange)="toggle(s.key, $event)">{{ t(s.label) }}</stemma-switch>
+    }
   </div>
-}
+</div>

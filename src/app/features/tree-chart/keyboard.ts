@@ -1,5 +1,5 @@
 /** Keys on the chart: zooming, showing everything, and moving between relatives with the arrows. */
-import { LayoutCard } from '../../core/layout/layout-types';
+import { LayoutCard } from '../../core/layout/types';
 import { TreeIndex } from '../../core/model/tree-index';
 
 export type Direction = 'up' | 'down' | 'left' | 'right';
@@ -19,21 +19,32 @@ export function chartKey(e: KeyboardEvent): ChartKey {
   return direction ? { kind: 'move', direction } : null;
 }
 
-/** The person to move to: a parent going up, the nearest child going down, the row neighbour sideways. */
+/** The person to move to: a parent going up, the nearest child going down, the nearest card to the left or right sideways. */
 export function neighbour(index: TreeIndex, cards: readonly LayoutCard[], id: string, direction: Direction): string | undefined {
-  const me = cards.find((c) => c.personId === id);
+  const me = cards.find((c) => c.personId === id && !c.ghost);
   if (!me) return undefined;
   // Only people on the chart: the Relatives setting may leave a parent out.
-  if (direction === 'up') return index.parents(id).find((p) => cards.some((c) => c.personId === p.id))?.id;
+  if (direction === 'up') return index.parents(id).find((p) => cards.some((c) => c.personId === p.id && !c.ghost))?.id;
   if (direction === 'down') {
     const kids = index
       .children(id)
-      .map((p) => cards.find((c) => c.personId === p.id))
+      .map((p) => cards.find((c) => c.personId === p.id && !c.ghost))
       .filter((c): c is LayoutCard => !!c);
     kids.sort((a, b) => Math.abs(a.x - me.x) - Math.abs(b.x - me.x));
     return kids[0]?.personId;
   }
-  const row = cards.filter((c) => c.y === me.y).sort((a, b) => a.x - b.x);
-  const i = row.findIndex((c) => c.personId === id);
-  return (direction === 'left' ? row[i - 1] : row[i + 1])?.personId;
+  // Sideways: the nearest card on that side, one at about the same height before one far above or below.
+  const sign = direction === 'left' ? -1 : 1;
+  let best: LayoutCard | undefined;
+  let bestCost = Infinity;
+  for (const c of cards) {
+    const dx = (c.x - me.x) * sign;
+    if (c === me || c.ghost || dx <= 0) continue;
+    const cost = dx + Math.abs(c.y - me.y) * 4;
+    if (cost < bestCost) {
+      bestCost = cost;
+      best = c;
+    }
+  }
+  return best?.personId;
 }

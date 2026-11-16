@@ -12,29 +12,24 @@ import {
   untracked,
   viewChild,
 } from '@angular/core';
-import { LayoutCard, LayoutResult } from '../../core/layout/layout-types';
+import { surnameKey, unitingOf } from '../../core/model/names';
+import { familyBackgrounds, paintBackgrounds } from './family-patches';
+import { FONT_SANS } from '../../core/card/card-design';
+import { LayoutCard } from '../../core/layout/types';
 import { TextMeasurer } from '../../core/services/text-measure';
-import { FONT_SANS } from '../../state/card-metrics';
 import { FamilyView } from '../../state/family-view';
-import { unionMarkerPoint } from '../../core/layout/paths';
 import { TreeStore } from '../../core/store/tree-store';
 import { I18n } from '../../i18n/i18n';
-import { Icon } from '../../shared/icon/icon';
-import { ArrangeActions } from '../../state/arrange-actions';
+import { balloonIdOf, isPortal } from '../../core/model/family-view';
 import { ChartModel } from '../../state/chart-model';
 import { ChartBusy } from '../../state/chart-busy';
 import { PersonActions } from '../../state/person-actions';
 import { Relation, UiState } from '../../state/ui-state';
-import { ArrangeDrag, DRAG_START, blockOf, lowestLineMove, previewLayout } from './arrange';
-import { ArrangeBar } from './arrange-bar/arrange-bar';
-import { ArrangeHandles } from './arrange-handles/arrange-handles';
 import { ContextMenu, ContextMenuItem } from './context-menu/context-menu';
 import { FamilyLines } from './family-lines/family-lines';
-import { FamilyBalloons } from './family-balloons/family-balloons';
-import { BalloonText, boundsWithBalloons, placeBalloons } from './family-balloons/place-balloons';
+import { FamilyBalloons, FamilySlot } from './family-balloons/family-balloons';
 import { FamilyBar } from './family-bar/family-bar';
 import { Screen, coupleCentre, fitView, floatOver, revealView } from './framing';
-import { GenerationBands } from './generation-bands/generation-bands';
 import { ChartGestures } from './gestures';
 import { chartKey, neighbour } from './keyboard';
 import { LayoutMotion } from './layout-motion';
@@ -54,29 +49,12 @@ import { ZoomControls } from './zoom-controls/zoom-controls';
  */
 @Component({
   selector: 'stemma-chart',
-  imports: [
-    GenerationBands,
-    FamilyLines,
-    Unions,
-    Placeholders,
-    PersonCard,
-    QuickAdd,
-    ZoomControls,
-    RelativesFilter,
-    ArrangeHandles,
-    ArrangeBar,
-    ContextMenu,
-    FamilyBalloons,
-    FamilyBar,
-    Icon,
-  ],
+  imports: [FamilyLines, Unions, Placeholders, PersonCard, QuickAdd, ZoomControls, RelativesFilter, ContextMenu, FamilyBalloons, FamilyBar],
   templateUrl: './tree-chart.html',
   styleUrl: './tree-chart.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: {
     '[class.is-panning]': 'gestures.panning()',
-    '[class.arranging]': 'ui.arranging()',
-    '[class.is-dragging]': '!!drag()',
     '(keydown)': 'onKey($event)',
   },
 })
@@ -85,7 +63,6 @@ export class TreeChart {
   protected readonly model = inject(ChartModel);
   protected readonly ui = inject(UiState);
   private readonly people = inject(PersonActions);
-  protected readonly arrange = inject(ArrangeActions);
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
   private readonly i18n = inject(I18n);
   private readonly measure = inject(TextMeasurer);
@@ -111,14 +88,8 @@ export class TreeChart {
   protected readonly displayed = this.motion.displayed;
   protected readonly flashId = signal<string | null>(null);
 
-  /** What is being dragged by hand while arranging, and how far. */
-  protected readonly drag = signal<ArrangeDrag | null>(null);
-  /** The layout on screen with whatever is being dragged where the pointer has it. */
-  protected readonly shown = computed(() => previewLayout(this.displayed(), this.drag()));
-  /** A press on a card or a line while arranging; it becomes a drag once the pointer moves. */
-  private press: { pointerId: number; x: number; y: number; card?: string; line?: string; started: boolean } | null = null;
-  /** The click that ends a drag is not a click on the chart. */
-  private swallowArrangeClick = false;
+  /** The layout the chart draws. */
+  protected readonly shown = this.displayed;
 
   protected readonly worldTransform = computed(() => {
     const { x, y, k } = this.viewport.view();
@@ -138,31 +109,46 @@ export class TreeChart {
 
   protected readonly selectedCard = computed<LayoutCard | undefined>(() => {
     const id = this.selectedId();
-    return id ? this.shown().cards.find((c) => c.personId === id) : undefined;
+    return id ? this.shown().cards.find((c) => c.personId === id && !c.ghost) : undefined;
   });
 
   protected readonly selectedUnion = computed(() => {
     const s = this.store.selection();
     if (s?.kind !== 'family') return null;
     const u = this.shown().unions.find((x) => x.familyId === s.id);
-    return u ? unionMarkerPoint(u) : null;
+    return u ? { x: u.x, y: u.y } : null;
   });
+
+  /** The person whose card the pointer is on: their families' lines light up. */
+  protected readonly hoverId = signal<string | null>(null);
 
   // -- the family view's balloons -------------------------------------------
 
   /** In the family view: the chart shows some families, not the whole tree. */
   protected readonly familyActive = computed(() => this.model.familyKeys().length > 0);
 
-  /** The words and shields on each balloon. */
-  private readonly balloonTexts = computed<ReadonlyMap<string, BalloonText>>(() => {
+  /** The words and shields on each balloon, short enough for a card. */
+  private readonly balloonTexts = computed<ReadonlyMap<string, { text: string; width: number; shields: string[] }>>(() => {
     this.measure.fontsVersion();
     const names = this.model.familyNames();
     const tinctures = this.model.familyTinctures();
-    const out = new Map<string, BalloonText>();
+    const width = (text: string) => this.measure.width(text, BALLOON_FONT);
+    const out = new Map<string, { text: string; width: number; shields: string[] }>();
     for (const b of this.model.balloons()) {
       const labels = b.keys.map((k) => names.get(k)?.label ?? k);
-      const text = labels.length <= 2 ? labels.join(', ') : `${labels[0]}, ${labels[1]} +${labels.length - 2}`;
-      out.set(b.id, { text, width: this.measure.width(text, BALLOON_FONT), shields: b.keys.slice(0, 3).map((k) => tinctures.get(k) ?? 'argent') });
+      const shields = b.keys.slice(0, 3).map((k) => tinctures.get(k) ?? 'argent');
+      const room = this.model.design().width - 18 - shields.length * 13;
+      // All the names; then the first two and how many more; then the first; then as much of it as fits.
+      const tries = [labels.join(', ')];
+      if (labels.length > 2) tries.push(`${labels[0]}, ${labels[1]} +${labels.length - 2}`);
+      if (labels.length > 1) tries.push(`${labels[0]} +${labels.length - 1}`);
+      let text = tries.find((t) => width(t) <= room);
+      if (text === undefined) {
+        let cut = tries[tries.length - 1];
+        while (cut.length > 1 && width(`${cut}…`) > room) cut = cut.slice(0, -1);
+        text = `${cut}…`;
+      }
+      out.set(b.id, { text, width: width(text), shields });
     }
     return out;
   });
@@ -180,21 +166,19 @@ export class TreeChart {
     );
   });
 
-  private placeOn(layout: LayoutResult) {
-    const balloons = this.model.balloons();
-    if (!balloons.length) return [];
-    const texts = this.balloonTexts();
-    const index = this.store.index();
-    return placeBalloons(
-      layout,
-      balloons,
-      (b) => texts.get(b.id)!,
-      (familyId) => index.family(familyId)?.partners ?? [],
-    );
-  }
+  protected readonly showFamilies = (count: number) => this.t('familyView.show', { count });
 
-  /** The balloons where they are on screen; while dragging they wait for the drop. */
-  protected readonly placedBalloons = computed(() => (this.drag() ? [] : this.placeOn(this.shown())));
+  /** The families left off, each where the layout put its stand-in: the place its first card would have. */
+  protected readonly familySlots = computed<FamilySlot[]>(() => {
+    const balloons = new Map(this.model.balloons().map((b) => [b.id, b]));
+    const texts = this.balloonTexts();
+    return this.shown().placeholders.flatMap((p) => {
+      if (!isPortal(p.familyId)) return [];
+      const b = balloons.get(balloonIdOf(p.familyId));
+      const text = b && texts.get(b.id);
+      return b && text ? [{ id: b.id, kind: b.kind, x: p.x, y: p.y, w: p.w, h: p.h, ...text }] : [];
+    });
+  });
 
   /** A balloon brings its families onto the chart, with the nearest of them (the father, the first child, the partner) in view. */
   protected onBalloonPick(id: string): void {
@@ -224,7 +208,7 @@ export class TreeChart {
   protected readonly quickAdd = computed(() => {
     const c = this.selectedCard();
     const person = this.store.selectedPerson();
-    if (!c || !person || this.gestures.panning() || this.ui.adding() || this.ui.narrow() || this.ui.arranging()) return null;
+    if (!c || !person || this.gestures.panning() || this.ui.adding() || this.ui.narrow()) return null;
     const view = this.viewport.view();
     // Zoomed far out the buttons would cover the neighbours; the panel has the same actions.
     if (view.k < 0.5) return null;
@@ -304,7 +288,7 @@ export class TreeChart {
     if (this.viewport.view().k >= 0.45) return;
     const doc = this.store.doc();
     const id = doc.meta.homePersonId ?? doc.people[0]?.id;
-    const c = id ? this.model.layout().cards.find((x) => x.personId === id) : undefined;
+    const c = id ? this.model.layout().cards.find((x) => x.personId === id && !x.ghost) : undefined;
     if (!c) return;
     const { w, h } = this.visible();
     this.viewport.centreOn(c.x + c.w / 2, c.y + c.h / 2, 0.72, w, h, false);
@@ -317,13 +301,12 @@ export class TreeChart {
       return;
     }
     this.pendingFit = false;
-    const gutter = this.model.view().showGenerations ? 40 : 0;
     const layout = this.model.layout();
-    this.viewport.go(fitView(boundsWithBalloons(layout.bounds, this.placeOn(layout)), screen, gutter), animate);
+    this.viewport.go(fitView(layout.bounds, screen), animate);
   }
 
   private centreOnPerson(personId: string): void {
-    const c = this.model.layout().cards.find((x) => x.personId === personId);
+    const c = this.model.layout().cards.find((x) => x.personId === personId && !x.ghost);
     if (!c) return;
     const { w, h } = this.visible();
     this.viewport.centreOn(c.x + c.w / 2, c.y + c.h / 2, Math.max(this.viewport.view().k, 0.75), w, h, true);
@@ -339,7 +322,7 @@ export class TreeChart {
   }
 
   private ensureVisible(personId: string): void {
-    const c = this.model.layout().cards.find((x) => x.personId === personId);
+    const c = this.model.layout().cards.find((x) => x.personId === personId && !x.ghost);
     const view = c ? revealView(c, this.viewport.view(), this.visible()) : null;
     if (view) this.viewport.go(view, true);
   }
@@ -374,92 +357,20 @@ export class TreeChart {
   // -- pointer ----------------------------------------------------------------
 
   protected onPointerDown(e: PointerEvent): void {
-    if (this.ui.arranging() && this.pressToArrange(e)) return;
     this.gestures.down(e);
   }
 
   protected onPointerMove(e: PointerEvent): void {
-    if (this.press?.pointerId === e.pointerId) this.dragToArrange(e);
-    else this.gestures.move(e);
+    this.gestures.move(e);
   }
 
   protected onPointerUp(e: PointerEvent): void {
-    if (this.press?.pointerId === e.pointerId) this.releaseToArrange(e);
-    else this.gestures.up(e);
-  }
-
-  /** While arranging, a press on a card or on a family's line may become a drag of it. */
-  private pressToArrange(e: PointerEvent): boolean {
-    if (this.press || (e.pointerType === 'mouse' && e.button !== 0)) return false;
-    const target = e.target as Element | null;
-    const line = target?.closest('[data-line]')?.getAttribute('data-line') ?? undefined;
-    const card = line ? undefined : (target?.closest('[data-person]')?.getAttribute('data-person') ?? undefined);
-    if (!line && !card) return false;
-    this.press = { pointerId: e.pointerId, x: e.clientX, y: e.clientY, card, line, started: false };
-    try {
-      this.svgRef().nativeElement.setPointerCapture(e.pointerId);
-    } catch {
-      // Dragging works without capture, only less well outside the chart.
-    }
-    return true;
-  }
-
-  private dragToArrange(e: PointerEvent): void {
-    const p = this.press!;
-    const sx = e.clientX - p.x;
-    const sy = e.clientY - p.y;
-    if (!p.started && Math.hypot(sx, sy) < DRAG_START) return;
-    const k = this.viewport.view().k;
-    const layout = this.displayed();
-    if (p.card) {
-      if (!p.started) this.motion.stop();
-      const drag = this.drag();
-      const block = drag?.kind === 'card' ? drag : blockOf(layout, this.store.index(), p.card);
-      this.drag.set({ kind: 'card', members: block.members, families: block.families, dx: sx / k });
-    } else if (p.line) {
-      this.drag.set({ kind: 'line', familyId: p.line, dy: Math.max(lowestLineMove(layout, p.line), sy / k) });
-    }
-    p.started = true;
-  }
-
-  private releaseToArrange(e: PointerEvent): void {
-    const p = this.press!;
-    this.press = null;
-    try {
-      this.svgRef().nativeElement.releasePointerCapture(e.pointerId);
-    } catch {
-      // Already released.
-    }
-    const drag = this.drag();
-    if (!p.started || !drag) {
-      // A press that did not move is a click: on a card it selects them.
-      this.drag.set(null);
-      if (p.card && e.type === 'pointerup') this.onCardPick(p.card, e);
-      this.swallowArrangeClick = true;
-      setTimeout(() => (this.swallowArrangeClick = false), 50);
-      return;
-    }
-    // The glide to the new layout starts from where the pointer left things.
-    this.motion.displayed.set(this.shown());
-    this.drag.set(null);
-    this.swallowArrangeClick = true;
-    setTimeout(() => (this.swallowArrangeClick = false), 50);
-    if (drag.kind === 'card') this.arrange.moveCouple(drag.members, drag.dx);
-    else this.arrange.moveLine(drag.familyId, drag.dy);
-  }
-
-  protected toggleArrange(): void {
-    this.ui.arranging.update((on) => !on);
-  }
-
-  protected onTurn(e: { familyId: string; personId: string }): void {
-    this.arrange.turnCouple(e.familyId, e.personId);
+    this.gestures.up(e);
   }
 
   // -- picking ----------------------------------------------------------------
 
   protected onBackgroundClick(): void {
-    if (this.swallowArrangeClick) return;
     if (this.gestures.swallowClick()) return;
     this.ui.adding.set(null);
     this.store.selectPerson(null);
@@ -467,7 +378,6 @@ export class TreeChart {
 
   protected onCardPick(personId: string, event: Event): void {
     event.stopPropagation();
-    if (this.swallowArrangeClick) return;
     if (this.gestures.swallowClick()) return;
     if (this.ui.adding()?.personId !== personId) this.ui.adding.set(null);
     this.store.selectPerson(personId);
@@ -560,7 +470,6 @@ export class TreeChart {
   protected onContextMenu(event: MouseEvent, personId?: string): void {
     event.preventDefault();
     event.stopPropagation();
-    if (this.ui.arranging()) return;
     const box = this.host.nativeElement.getBoundingClientRect();
     if (personId) {
       if (this.ui.adding()?.personId !== personId) this.ui.adding.set(null);
@@ -610,10 +519,6 @@ export class TreeChart {
   // -- keyboard ---------------------------------------------------------------
 
   protected onKey(e: KeyboardEvent): void {
-    if (this.ui.arranging() && this.arrangeKey(e)) {
-      e.preventDefault();
-      return;
-    }
     const key = chartKey(e);
     if (!key) return;
     if (key.kind === 'zoom') this.zoom(key.factor);
@@ -629,31 +534,68 @@ export class TreeChart {
   }
 
   /**
-   * While arranging: Escape is done; Alt with an arrow moves the selected couple
-   * sideways, or the selected couple's line (click their marker) up and down.
+   * Behind the cards of each family (ViewSettings.familyBackgrounds): boxes round the cards of the family that
+   * stand together, filled out unit by unit (see familyBackgrounds), as rectangles that never overlap (see
+   * paintBackgrounds): plain shapes, so a zoom only scales them.
    */
-  private arrangeKey(e: KeyboardEvent): boolean {
-    if ((e.target as Element | null)?.closest?.('input, textarea, select')) return false;
-    if (e.key === 'Escape' && !this.press) {
-      this.ui.arranging.set(false);
-      return true;
+  protected readonly clusters = computed(() => {
+    if (!this.model.view().familyBackgrounds) return { painted: [], stripes: [] };
+    const layout = this.shown();
+    const index = this.store.index();
+    // Everyone in their own family; and whoever married into a family, in that family too (the couple stands in
+    // one box, and only the one who married in is striped in the colours of both).
+    const of = new Map<string, Set<string>>();
+    const born = this.model.familyKeyOf();
+    const united = unitingOf(this.store.doc().view);
+    const nowIn = (id: string) => surnameKey(index.person(id)?.name.surname, united);
+    /** Of a couple, the one who married into the other's family: who took the other's name; or else the wife. */
+    const marriedIn = (a: string, b: string): string | undefined => {
+      const took = (x: string, y: string) => !!born.get(y) && nowIn(x) === born.get(y) && born.get(x) !== born.get(y);
+      if (took(a, b)) return a;
+      if (took(b, a)) return b;
+      const sex = (x: string) => index.person(x)?.sex;
+      if (sex(a) === 'female' && sex(b) === 'male') return a;
+      if (sex(b) === 'female' && sex(a) === 'male') return b;
+      return undefined;
+    };
+    const add = (personId: string, tincture: string) => {
+      if (tincture === 'argent') return;
+      const set = of.get(personId) ?? new Set<string>();
+      set.add(tincture);
+      of.set(personId, set);
+    };
+    for (const c of layout.cards) add(c.personId, this.tinctureOf(c.personId));
+    for (const u of layout.unions) {
+      const [a, b] = index.family(u.familyId)?.partners ?? [];
+      if (!a || !b) continue;
+      const into = marriedIn(a, b);
+      if (into) add(into, this.tinctureOf(into === a ? b : a));
     }
-    const selection = this.store.selection();
-    if (selection?.kind === 'family' && e.altKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
-      const dy = e.key === 'ArrowUp' ? Math.max(lowestLineMove(this.displayed(), selection.id), -10) : 10;
-      this.arrange.moveLine(selection.id, dy);
-      return true;
-    }
-    const id = this.selectedId();
-    if (!id || !e.altKey || (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight')) return false;
-    const { members } = blockOf(this.displayed(), this.store.index(), id);
-    this.arrange.moveCouple(members, e.key === 'ArrowLeft' ? -20 : 20);
-    return true;
-  }
+    // A child and its parents: one patch of their family, however far apart they stand.
+    const at = new Map<string, number[]>();
+    layout.cards.forEach((c, i) => at.set(c.personId, [...(at.get(c.personId) ?? []), i]));
+    const links: [number, number][] = [];
+    for (const l of layout.lines)
+      for (const parent of index.family(l.familyId)?.partners ?? [])
+        for (const a of at.get(l.childId) ?? []) for (const b of at.get(parent) ?? []) links.push([a, b]);
+    const painted = paintBackgrounds(
+      familyBackgrounds(
+        layout.cards,
+        layout.cards.map((c) => [...(of.get(c.personId) ?? [])]),
+        CLUSTER_PAD,
+        links,
+      ),
+    );
+    const pairs = new Map<string, { id: string; a: string; b: string }>();
+    for (const p of painted) if (p.with) pairs.set(`${p.tincture}-${p.with}`, { id: `stemma-stripes-${p.tincture}-${p.with}`, a: p.tincture, b: p.with });
+    return { painted, stripes: [...pairs.values()] };
+  });
 
   protected tinctureOf(personId: string) {
     return this.model.colors().byPerson.get(personId) ?? 'argent';
   }
 }
 
-const BALLOON_FONT = `500 12.5px ${FONT_SANS}`;
+const BALLOON_FONT = `500 14px ${FONT_SANS}`;
+/** How far a family's background reaches round each of its cards: about half the room between cards standing together. */
+const CLUSTER_PAD = 10;

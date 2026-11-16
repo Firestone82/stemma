@@ -1,6 +1,7 @@
 import { chartLanguage, kinLabel } from '../lang/language';
-import { connectorPaths } from '../layout/paths';
-import { computeLayout } from '../layout/layout';
+import { Layouter, WIDE } from '../layout/engine';
+import { LAYOUT } from '../layout/types';
+import { TreeIndex } from './tree-index';
 import { DocBuilder } from '../testing/fixtures';
 import { birthCount, birthGroupOf, leaveBirth, linkBirth, shareBirth, splitBirth } from './births';
 import { updatePerson } from './operations';
@@ -59,14 +60,13 @@ describe('children born together', () => {
 
   it('draws twins side by side with a line each and names them on the chart', () => {
     const doc = linkBirth(family(), 'F1', ['A', 'C']);
-    const layout = computeLayout(doc);
-    const c = layout.connectors.find((x) => x.familyId === 'F1')!;
-    const paths = connectorPaths(c, 'square', 10);
-    const dropOf = (id: string) => c.drops.find((d) => d.childId === id)!;
-    // Each twin's line ends under their own card, like any other child's.
+    const layout = new Layouter(new TreeIndex(doc), LAYOUT, doc.people[0].id).run(WIDE);
+    // Each twin's line ends at their own card, like any other child's.
     for (const id of ['A', 'C']) {
-      const target = dropOf(id).points[dropOf(id).points.length - 1];
-      expect(paths.find((p) => p.childId === id)!.d.endsWith(`L${target.x},${target.y}`)).toBe(true);
+      const card = layout.cards.find((k) => k.personId === id)!;
+      const line = layout.lines.find((l) => l.familyId === 'F1' && l.childId === id)!;
+      const end = line.points[line.points.length - 1];
+      expect(end).toEqual({ x: card.x + card.w / 2, y: card.y });
     }
     const cards = layout.cards.filter((k) => ['A', 'C'].includes(k.personId)).sort((a, b) => a.x - b.x);
     expect(cards[1].x - cards[0].x).toBeLessThan(2 * cards[0].w);

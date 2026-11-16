@@ -20,16 +20,6 @@
   &[data-relation='unknown'] {
     stroke-dasharray: 2 4;
   }
-
-  &.secondary {
-    stroke-dasharray: 3 4;
-    opacity: 0.85;
-  }
-
-  &.on-path {
-    stroke: var(--t-line-path);
-    stroke-width: 2.1;
-  }
 }
 
 /* In a family view: the lines that take a family back out light up under the pointer. */
@@ -54,4 +44,17 @@
   stroke: transparent;
   stroke-width: 14;
   pointer-events: stroke;
+}
+
+/* To a family the family view leaves off: as faint as the button it leads to. */
+.link.off-chart {
+  stroke: var(--t-faint);
+  stroke-width: 1.2;
+  stroke-dasharray: 3 3;
+}
+
+/* The families of the person the pointer is on. */
+.link.lit {
+  stroke: var(--focus);
+  stroke-width: 2.4;
 }

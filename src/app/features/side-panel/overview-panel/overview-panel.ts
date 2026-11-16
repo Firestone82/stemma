@@ -15,7 +15,7 @@ const TIPS: readonly MessageKey[] = [
   'overview.tip.select',
   'overview.tip.centre',
   'overview.tip.relatives',
-  'overview.tip.arrange',
+  'overview.tip.layout',
   'overview.tip.print',
   'overview.tip.move',
   'overview.tip.keys',

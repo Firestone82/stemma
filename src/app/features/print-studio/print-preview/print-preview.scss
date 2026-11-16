@@ -74,13 +74,31 @@
     height: 100%;
   }
 
-  /* A click on a card leaves that person out of this print. */
+  /* A card can be dragged to another place; a click opens its menu. */
   ::ng-deep [data-person] {
-    cursor: pointer;
+    cursor: grab;
 
     &:hover {
-      opacity: 0.55;
+      opacity: 0.8;
     }
+  }
+
+  /* A click on a line takes away everyone who hangs on it: the lines that would go, while the pointer is on one. */
+  .page.on-line {
+    cursor: pointer;
+  }
+
+  ::ng-deep path.cut {
+    stroke: #c0392b;
+    stroke-width: 3.2;
+  }
+
+  /* While a card is dragged: the line it is level with another card on. */
+  ::ng-deep .move-guides line {
+    stroke: #d2452f;
+    stroke-width: 1.2;
+    stroke-dasharray: 5 4;
+    pointer-events: none;
   }
 }
 
@@ -117,6 +135,34 @@
   &.moving {
     background: color-mix(in srgb, var(--focus) 14%, transparent);
   }
+
+  /* Moved, and not applied yet: where it will go, shown whether the pointer is over the page or not. */
+  &.pending {
+    border-style: solid;
+    border-color: var(--focus);
+    background: color-mix(in srgb, var(--focus) 16%, transparent);
+  }
+}
+
+/* A box was moved: apply it (the page is drawn again) or put it back. */
+.moved-bar {
+  position: absolute;
+  left: 50%;
+  bottom: 14px;
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: calc(100% - 28px);
+  padding: 8px 10px 8px 16px;
+  border: 1px solid var(--rule);
+  border-radius: 999px;
+  background: var(--sheet);
+  box-shadow: var(--shadow-2);
+  color: var(--ink);
+  font-weight: 500;
+  transform: translateX(-50%);
+  white-space: nowrap;
 }
 
 .corner {
@@ -311,5 +357,29 @@
 @media (prefers-reduced-motion: reduce) {
   .spinner {
     animation: none;
+  }
+}
+
+/* While the title or the families' names are moved: from the box's corner to the margin, and through the middle of the page. */
+.guides {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+
+  line {
+    stroke: color-mix(in srgb, var(--focus) 55%, transparent);
+    stroke-width: 1px;
+    stroke-dasharray: 4 3;
+    vector-effect: non-scaling-stroke;
+  }
+
+  /* Two margins of one length, or the middle of the page: a solid line. */
+  line.equal {
+    stroke: #d2452f;
+    stroke-width: 1.5px;
+    stroke-dasharray: none;
   }
 }

@@ -1,446 +1,656 @@
-import { DocBuilder, wideFamily } from '../testing/fixtures';
-import { moveCards } from '../model/arrangement';
 import { sampleDocument } from '../model/sample';
-import { TreeIndex } from '../model/tree-index';
-import { DEFAULT_PRINT, Person, PrintSettings, TreeDocument } from '../model/types';
-import { computeLayout } from '../layout/layout';
-import { pdfFromJpeg } from './pdf';
-import { flipLayout, renderPoster, siblingsAround } from './poster';
-import { RELATIVES, relativesOf, relativesSettings, scopeDocument } from './scope';
-import { kinship } from '../kinship/kinship';
-import { POSTER_THEMES, posterTheme } from './themes';
-import { threeSpouses } from '../testing/fixtures';
+import { DEFAULT_PRINT, PrintSettings, TreeDocument } from '../model/types';
+import { DocBuilder, pedigree, randomFamily } from '../testing/fixtures';
+import { PX_PER_MM } from './paper';
+import { PosterInput, posterSteps, renderPoster } from './poster';
 
-const measure = (text: string, font: string) => text.length * Number(/(\d+(?:\.\d+)?)px/.exec(font)?.[1] ?? 12) * 0.5;
+/** A measurer that is good enough without a browser: every letter about half its size wide. */
+const measure = (t: string, font: string) => {
+  const size = Number(/(\d+(?:\.\d+)?)px/.exec(font)?.[1] ?? 12);
+  return t.length * size * 0.5;
+};
 
-describe('print scope', () => {
-  const doc = sampleDocument();
-  const index = new TreeIndex(doc);
-  const ids = (s: { people: ReadonlySet<string> }) => [...s.people].sort();
+function render(doc: TreeDocument, settings: Partial<PrintSettings> = {}, more: Partial<PosterInput> = {}) {
+  return renderPoster({ doc, settings: { ...DEFAULT_PRINT, ...settings }, measure, now: new Date('2026-01-01T00:00:00Z'), ...more });
+}
 
-  it('keeps the direct line and partners', () => {
-    const s = scopeDocument(doc, index, { centerId: 'I11', partnerId: 'I15', ancestors: 1, descendants: 1, branches: 0 });
-    // Simon, Šárka, their parents, Simon's children, and the partners of all of them.
-    expect(ids(s)).toEqual(['I11', 'I14', 'I15', 'I16', 'I17', 'I20', 'I21', 'I22', 'I25', 'I26', 'I6', 'I9'].sort());
-    expect(s.doc.people.map((p) => p.id)).not.toContain('I12');
-    expect(s.doc.families.every((f) => f.partners.every((p) => s.people.has(p)))).toBe(true);
+const cardsIn = (svg: string) => [...svg.matchAll(/<g class="card" data-person="([^"]+)"/g)].map((m) => m[1]);
+
+describe('the printed page', () => {
+  it('draws everyone once on the paper asked for, in the Heritage style', () => {
+    const doc = sampleDocument();
+    const p = render(doc, { paper: 'A3', orientation: 'landscape' });
+    expect(p.svg.startsWith('<svg xmlns="http://www.w3.org/2000/svg" width="420mm" height="297mm"')).toBe(true);
+    expect(p.paper).toEqual({ widthMm: 420, heightMm: 297, landscape: true });
+    expect(p.width).toBeCloseTo(420 * PX_PER_MM);
+    expect(cardsIn(p.svg).sort()).toEqual(doc.people.map((x) => x.id).sort());
+    expect(p.people).toBe(29);
+    expect(p.total).toBe(29);
+    expect(p.generations).toBe(5);
+    expect(p.centerId).toBe('I11');
+    expect(p.partnerId).toBe('I15');
+    // The title, the frame and the families' names.
+    expect(p.svg).toContain('The Ashworth family');
+    expect(p.svg).toContain('Ashworth</text>');
+    expect(p.text).toContain('Simon');
   });
 
-  it("keeps a former partner's side to the people one would have known", () => {
-    // Ruth divorced Simon: his parents, brother and sister (with her husband) and his
-    // descendants stay; his grandparents, aunts, uncles, cousins, nieces and nephews go.
-    const everything = { centerId: 'I14', partnerId: 'I11', ancestors: 'all', descendants: 'all', branches: 'all' } as const;
-    const near = scopeDocument(doc, index, { ...everything, nearFormerPartner: true });
-    for (const id of ['I14', 'I11', 'I6', 'I9', 'I12', 'I13', 'I18', 'I20', 'I21', 'I22', 'I15', 'I27', 'I29']) expect(near.people.has(id)).toBe(true);
-    for (const id of ['I1', 'I2', 'I3', 'I4', 'I5', 'I7', 'I8', 'I10', 'I19', 'I23', 'I24']) expect(near.people.has(id)).toBe(false);
-    expect(near.doc.families.every((f) => f.partners.every((p) => near.people.has(p)))).toBe(true);
-    // Without the option, or for a couple still together, nothing changes.
-    expect(scopeDocument(doc, index, everything).people.has('I1')).toBe(true);
-    const together = { centerId: 'I11', partnerId: 'I15', ancestors: 'all', descendants: 'all', branches: 2 } as const;
-    expect(ids(scopeDocument(doc, index, { ...together, nearFormerPartner: true }))).toEqual(ids(scopeDocument(doc, index, together)));
+  it('has only lines between the cards: no branches, leaves or picture behind the tree', () => {
+    const p = render(sampleDocument());
+    expect(p.svg).not.toMatch(/<image|leaf|branch|canopy/);
   });
 
-  it('adds siblings, nieces and nephews one branch out', () => {
-    const s = scopeDocument(doc, index, { centerId: 'I11', partnerId: 'I15', ancestors: 1, descendants: 1, branches: 1 });
-    for (const id of ['I12', 'I13', 'I18', 'I23', 'I24']) expect(s.people.has(id)).toBe(true);
-    // Brothers and sisters only: the nieces and nephews stay out.
-    const only = scopeDocument(doc, index, { centerId: 'I11', partnerId: 'I15', ancestors: 2, descendants: 1, branches: 1, siblingsOnly: true });
-    const kin = kinship(index, 'I11');
-    for (const id of only.people) {
-      const k = kin.get(id);
-      if (k?.kind === 'line') expect(Math.min(k.up, k.down) === 1 && k.up !== k.down, id).toBe(false);
+  it('picks the orientation that gives the bigger cards, and fills the sheet better than the tree as it comes', () => {
+    const doc = randomFamily(7, 40);
+    const best = render(doc, { paper: 'A3', orientation: 'auto' });
+    const land = render(doc, { paper: 'A3', orientation: 'landscape' });
+    const port = render(doc, { paper: 'A3', orientation: 'portrait' });
+    expect(best.cardMm.w).toBeGreaterThanOrEqual(Math.max(land.cardMm.w, port.cardMm.w) * 0.98);
+    expect(best.coverage).toBeGreaterThan(0.12);
+  });
+
+  it('prints bigger cards on bigger paper, from A4 to A1', () => {
+    const doc = randomFamily(3, 40);
+    const widths = ['A4', 'A3', 'A2', 'A1'].map((paper) => render(doc, { paper, orientation: 'landscape' }).cardMm.w);
+    for (let i = 1; i < widths.length; i++) expect(widths[i]).toBeGreaterThan(widths[i - 1] * 1.25);
+  });
+
+  it('keeps everything inside the page', () => {
+    for (const doc of [sampleDocument(), pedigree(5), randomFamily(5, 50)]) {
+      for (const orientation of ['landscape', 'portrait'] as const) {
+        const p = render(doc, { paper: 'A4', orientation });
+        const m = /<g transform="translate\(([-\d.]+),([-\d.]+)\) scale\(([-\d.]+)\)">/.exec(p.svg)!;
+        const [tx, ty, s] = [Number(m[1]), Number(m[2]), Number(m[3])];
+        for (const c of p.svg.matchAll(/<g class="card" data-person="[^"]+" transform="translate\(([-\d.]+),([-\d.]+)\)"/g)) {
+          const x = tx + Number(c[1]) * s;
+          const y = ty + Number(c[2]) * s;
+          expect(x).toBeGreaterThan(0);
+          expect(y).toBeGreaterThan(0);
+          expect(x + 188 * s).toBeLessThan(p.width);
+          expect(y + 40 * s).toBeLessThan(p.height);
+        }
+      }
     }
-    expect(only.people.size).toBeLessThan(
-      scopeDocument(doc, index, { centerId: 'I11', partnerId: 'I15', ancestors: 2, descendants: 1, branches: 1 }).people.size,
+  });
+
+  it('shows on the cards what the settings say', () => {
+    const doc = sampleDocument();
+    const all = render(doc).svg;
+    // Shields with initials, the surname at birth, years, the sex as an accent, ribbons.
+    expect(all).toContain('>SA</text>');
+    expect(all).toContain('née Nováková');
+    expect(all).toContain('1898 – 1971');
+    const none = render(doc, { showEmblems: false, showBirthNames: false, dates: 'none', sexColors: false, showRibbons: false }).svg;
+    expect(none).not.toContain('>SA</text>');
+    expect(none).not.toContain('née Nováková');
+    expect(none).not.toContain('1898 – 1971');
+    expect(none.length).toBeLessThan(all.length);
+    // Cards without lines are lower, so they come out bigger on the same paper.
+    expect(render(doc, { dates: 'none', showBirthNames: false, paper: 'A3', orientation: 'portrait' }).namePt).toBeGreaterThanOrEqual(
+      // About as big at the least: among pages about as good the fuller one is taken.
+      render(doc, { paper: 'A3', orientation: 'portrait' }).namePt * 0.98,
     );
-    // Aunts and uncles need the grandparents' generation.
-    expect(s.people.has('I7')).toBe(false);
-    const wider = scopeDocument(doc, index, { centerId: 'I11', partnerId: 'I15', ancestors: 2, descendants: 1, branches: 1 });
-    expect(wider.people.has('I7')).toBe(true);
-    expect(wider.people.has('I19')).toBe(false);
   });
 
-  it('leaves out people hidden from prints, unless the print is about them', () => {
-    // Šárka's partner Simon hidden: she and his children stay, as a one-parent family.
-    const hidden: TreeDocument = { ...doc, people: doc.people.map((p) => (p.id === 'I11' ? { ...p, hiddenFromPrint: true } : p)) };
-    const hiddenIndex = new TreeIndex(hidden);
-    const s = scopeDocument(hidden, hiddenIndex, { centerId: 'I15', ancestors: 'all', descendants: 'all', branches: 'all' });
-    expect(s.people.has('I11')).toBe(false);
-    expect(s.people.has('I15')).toBe(true);
-    expect(s.people.size).toBe(doc.people.length - 1);
-    const family = s.doc.families.find((f) => f.partners.includes('I15'))!;
-    expect(family.partners).toEqual(['I15']);
-    expect(family.children.length).toBeGreaterThan(0);
-    // Nobody is hidden from a print about themselves.
-    const own = scopeDocument(hidden, hiddenIndex, { centerId: 'I11', ancestors: 1, descendants: 1, branches: 0 });
-    expect(own.people.has('I11')).toBe(true);
-    // The print can show the hidden people all the same.
-    const shown = scopeDocument(hidden, hiddenIndex, { centerId: 'I15', ancestors: 'all', descendants: 'all', branches: 'all', showHidden: true });
-    expect(shown.people.has('I11')).toBe(true);
-    expect(shown.people.size).toBe(doc.people.length);
-    // People clicked away in the studio are left out of that print alone, even with the hidden ones shown.
-    const omitted = scopeDocument(doc, index, {
-      centerId: 'I15',
-      ancestors: 'all',
-      descendants: 'all',
-      branches: 'all',
-      showHidden: true,
-      omit: new Set(['I11', 'I15']),
-    });
-    expect(omitted.people.has('I11')).toBe(false);
-    expect(omitted.people.has('I15')).toBe(true);
-  });
-
-  it('takes everyone when nothing is limited', () => {
-    const s = scopeDocument(doc, index, { centerId: 'I11', ancestors: 'all', descendants: 'all', branches: 'all' });
-    expect(s.people.size).toBe(doc.people.length);
-  });
-
-  it('leaves out the families of those who married in, but not their partners', () => {
-    // Marco's parents, and a later wife of his.
-    const person = (id: string, sex: Person['sex']): Person => ({ id, sex, name: { given: id, surname: 'Ferri' } });
-    const married: TreeDocument = {
-      ...doc,
-      people: [...doc.people, person('P1', 'male'), person('P2', 'female'), person('P3', 'female')],
-      families: [
-        ...doc.families,
-        { id: 'F90', kind: 'marriage', partners: ['P1', 'P2'], children: [{ personId: 'I18', relation: 'biological' }] },
-        { id: 'F91', kind: 'marriage', partners: ['I18', 'P3'], children: [] },
-      ],
+  it('frames the couple the page is drawn around as one, a little away from their cards, with no colour on the cards themselves', () => {
+    const p = render(sampleDocument(), { paper: 'A3', orientation: 'landscape' });
+    const frames = [...p.svg.matchAll(/<rect class="focus-frame" x="([-\d.]+)" y="([-\d.]+)" width="([\d.]+)" height="([\d.]+)"/g)].map((m) =>
+      m.slice(1).map(Number),
+    );
+    expect(frames).toHaveLength(1);
+    const card = (id: string) => {
+      const m = new RegExp(`<g class="card" data-person="${id}" transform="translate\\(([-\\d.]+),([-\\d.]+)\\)"`).exec(p.svg)!;
+      return { x: Number(m[1]), y: Number(m[2]) };
     };
-    const options = { centerId: 'I11', partnerId: 'I15', ancestors: 'all', descendants: 'all' } as const;
-    const all = scopeDocument(married, new TreeIndex(married), { ...options, ...relativesSettings('everyone') });
-    const kin = scopeDocument(married, new TreeIndex(married), { ...options, ...relativesSettings('relatives') });
-    expect(all.people.size).toBe(32);
-    // Everyone else has a relationship name as seen from Simon: Marco is his brother-in-law.
-    expect([...all.people].filter((id) => !kin.people.has(id)).sort()).toEqual(['P1', 'P2']);
-    expect(kin.people.has('P3')).toBe(true);
-    expect(kin.doc.families.some((f) => f.id === 'F90')).toBe(false);
-    // Nearer steps leave them out anyway.
-    const cousins = scopeDocument(married, new TreeIndex(married), { ...options, ...relativesSettings('cousins') });
-    expect(cousins.people.has('P1')).toBe(false);
-  });
-
-  it('saves each step of Relatives as side branches and in-law families', () => {
-    for (const r of RELATIVES) expect(relativesOf(relativesSettings(r))).toBe(r);
-    expect(relativesOf({ branches: 3, inLawFamilies: true, siblingsOnly: false })).toBe('everyone');
-    expect(relativesSettings('relatives')).toEqual({ branches: 'all', inLawFamilies: false, siblingsOnly: false });
-    expect(relativesSettings('siblings')).toEqual({ branches: 1, inLawFamilies: true, siblingsOnly: true });
-  });
-});
-
-describe('printed page', () => {
-  const doc = sampleDocument(new Date('2026-01-01T00:00:00Z'));
-  const settings = (patch: Partial<PrintSettings> = {}): PrintSettings => ({ ...DEFAULT_PRINT, ...patch });
-
-  it('draws every style as well-formed SVG with the title and everyone in it', () => {
-    for (const theme of POSTER_THEMES) {
-      const result = renderPoster({ doc, settings: settings({ theme: theme.id }), measure, now: new Date(2026, 9, 10) });
-      const dom = new DOMParser().parseFromString(result.svg, 'image/svg+xml');
-      expect(dom.getElementsByTagName('parsererror')).toHaveLength(0);
-      expect(result.svg).toContain('The Ashworth family');
-      expect(result.people).toBe(29);
-      expect(result.paper?.landscape).toBe(true);
-      expect(result.svg).toContain('width="420mm"');
-      expect(result.centerId).toBe('I11');
-      expect(result.partnerId).toBe('I15');
+    const [x, y, w, h] = frames[0];
+    const [a, b] = [card('I11'), card('I15')].sort((u, v) => u.x - v.x);
+    // Round both, the same few units from each side of them.
+    expect(a.x - x).toBeCloseTo(8, 1);
+    expect(y).toBeCloseTo(a.y - 8, 1);
+    expect(x + w - (b.x + p.cardUnits.w)).toBeCloseTo(8, 1);
+    expect(h).toBeCloseTo(p.cardUnits.h + 16, 1);
+    expect(p.svg).not.toContain('focus-ring');
+    // The layout keeps room round them for it: no other card reaches into the frame.
+    const others = [...p.svg.matchAll(/<g class="card" data-person="([^"]+)" transform="translate\(([-\d.]+),([-\d.]+)\)"/g)]
+      .filter((m) => m[1] !== 'I11' && m[1] !== 'I15')
+      .map((m) => ({ x: Number(m[2]), y: Number(m[3]) }));
+    const inside = others.filter((o) => o.x < x + w && o.x + p.cardUnits.w > x && o.y < y + h && o.y + p.cardUnits.h > y);
+    expect(inside).toEqual([]);
+    // The lines from their parents end on the frame: none comes down past its top onto their cards.
+    for (const child of ['I11', 'I15']) {
+      const d = new RegExp(`d="([^"]+)"[^>]*data-child="${child}"`).exec(p.svg)?.[1] ?? '';
+      const ys = [...d.matchAll(/[ML,V]\s*(-?[\d.]+)(?=[^\d.]|$)/g)];
+      expect(d).not.toBe('');
+      const last = Number(/(-?[\d.]+)$/.exec(d)![1]);
+      expect(last).toBeCloseTo(y, 1);
+      expect(ys.length).toBeGreaterThan(0);
     }
   });
 
-  it('brings the couple towards the middle of the page when asked, without leaving the page empty beside the tree', () => {
-    // Ruth has nobody of her own in the tree; Simon's family is all on one side of them.
-    const placed = (centered: boolean) => {
-      const result = renderPoster({ doc, settings: settings({ centerId: 'I14', partnerId: 'I11', centered, theme: 'heirloom' }), measure });
-      const dom = new DOMParser().parseFromString(result.svg, 'image/svg+xml');
-      const lefts = [...dom.querySelectorAll('[data-person]')].map((card) => {
-        const chart = card.closest('g[transform*="scale"]:not([data-person])')!;
-        const [, tx, , s] = /translate\(([-\d.]+),([-\d.]+)\) scale\(([-\d.]+)\)/.exec(chart.getAttribute('transform')!)!.map(Number);
-        const [, cx] = /translate\(([-\d.]+),/.exec(card.getAttribute('transform')!)!.map(Number);
-        return { id: card.getAttribute('data-person')!, left: tx + cx * s, s };
+  it('draws the lines heavier and the marks between partners bigger when asked', () => {
+    const doc = sampleDocument();
+    const widths = (svg: string) =>
+      [...svg.matchAll(/data-family="[^"]+"/g)].length && [...svg.matchAll(/stroke-width="([\d.]+)"[^>]*data-family/g)].map((m) => Number(m[1]));
+    const plain = render(doc, { paper: 'A3' });
+    const strong = render(doc, { paper: 'A3', strongLines: true });
+    const thin = (svg: string) => Math.min(...(widths(svg) || [0]));
+    expect(thin(strong.svg)).toBeCloseTo(thin(plain.svg) * 1.7, 2);
+    // The marks need more room between partners: the gap between a couple's cards is wider.
+    const gap = (r: typeof plain) => {
+      const at = (id: string) => Number(new RegExp(`data-person="${id}" transform="translate\\(([-\\d.]+),`).exec(r.svg)![1]);
+      return Math.abs(at('I15') - at('I11')) - r.cardUnits.w;
+    };
+    expect(gap(strong)).toBeGreaterThanOrEqual(43);
+    expect(gap(plain)).toBeLessThan(35);
+    const plate = (svg: string) => Number(/<rect x="-([\d.]+)" y="-[\d.]+" width="[\d.]+" height="[\d.]+" rx="[\d.]+" fill="#eee1c3"\/>/.exec(svg)?.[1]);
+    expect(plate(strong.svg)).toBeGreaterThan(plate(plain.svg) * 1.2);
+  });
+
+  it('writes dates in full where asked', () => {
+    const doc = sampleDocument();
+    const full = /1898-03-14|14\. 3\. 1898|14 March 1898|14 Mar 1898/;
+    // With letters narrow enough for the long dates to fit the card.
+    const narrow = (t: string, font: string) => measure(t, font) * 0.6;
+    expect(render(doc, { dates: 'full' }, { measure: narrow }).svg).toMatch(full);
+    expect(render(doc, { dates: 'years' }, { measure: narrow }).svg).not.toMatch(full);
+    // Where they do not fit, the years.
+    expect(render(doc, { dates: 'full' }, { measure: (t, f) => measure(t, f) * 3 }).svg).not.toMatch(full);
+  });
+
+  it('never puts the badge for a mistake on paper', () => {
+    const doc = sampleDocument();
+    // Simon, born after he died: a mistake the chart marks.
+    doc.people.find((p) => p.id === 'I11')!.death = { date: { value: '1900' } };
+    expect(render(doc).svg).not.toMatch(/<circle r="7.5"/);
+  });
+
+  it('packs the families tightly when asked: the cards come out bigger', () => {
+    const doc = sampleDocument();
+    const plain = render(doc, { paper: 'A3', orientation: 'landscape' });
+    const tight = render(doc, { paper: 'A3', orientation: 'landscape', tight: true });
+    expect(tight.cardMm.w).toBeGreaterThan(plain.cardMm.w);
+  });
+
+  it('says how each couple stands in a word, when asked', () => {
+    const doc = sampleDocument();
+    expect(render(doc).svg).not.toMatch(/>married</);
+    const svg = render(doc, { unionText: true }).svg;
+    expect(svg).toMatch(/>married</);
+    expect(svg).toMatch(/>divorced</);
+  });
+
+  it('puts the title where it was moved by hand, and gives the tree the room it took', () => {
+    const doc = sampleDocument();
+    const plain = render(doc, { paper: 'A3', orientation: 'landscape' });
+    expect(plain.title).toMatchObject({ free: false });
+    expect(plain.title!.x + plain.title!.w / 2).toBeCloseTo(0.5, 2);
+    const moved = render(doc, { paper: 'A3', orientation: 'landscape', titleAt: { x: 0.25, y: 0.85 } });
+    expect(moved.title).toMatchObject({ free: true });
+    expect(moved.title!.x + moved.title!.w / 2).toBeCloseTo(0.25, 2);
+    expect(moved.title!.y).toBeCloseTo(0.85, 2);
+    // The tree keeps clear of the title wherever it is: about as big either way.
+    expect(moved.cardMm.w).toBeGreaterThan(plain.cardMm.w * 0.97);
+    // The page inside its margin, for lining the title and the names up.
+    expect(moved.inner.x).toBeGreaterThan(0);
+    expect(moved.inner.x * 2 + moved.inner.w).toBeCloseTo(1, 6);
+  });
+
+  it('keeps the tree out of the title’s and the names’ boxes instead of giving each a strip of the page', () => {
+    const doc = sampleDocument();
+    // With the title in the middle or moved to a corner, the tree has the page around it: the cards about as big.
+    const middle = render(doc, { paper: 'A3', orientation: 'landscape' });
+    const corner = render(doc, { paper: 'A3', orientation: 'landscape', titleAt: { x: 0.2, y: 0.06 } });
+    expect(corner.cardMm.w).toBeGreaterThan(middle.cardMm.w * 0.97);
+    // No card stands in either box, wherever they are.
+    for (const r of [middle, corner]) {
+      const chart = /<g transform="translate\(([-\d.]+)[ ,]([-\d.]+)\) scale\(([\d.]+)\)">/.exec(r.svg)!;
+      const [ox, oy, k] = [Number(chart[1]), Number(chart[2]), Number(chart[3])];
+      const cards = [...r.svg.matchAll(/<g class="card" data-person="[^"]+" transform="translate\(([-\d.]+),([-\d.]+)\)"/g)].map((m) => ({
+        x: ox + Number(m[1]) * k,
+        y: oy + Number(m[2]) * k,
+        w: r.cardUnits.w * k,
+        h: r.cardUnits.h * k,
+      }));
+      expect(cards).toHaveLength(r.people);
+      for (const box of [r.title!, r.legend!]) {
+        const b = { x: box.x * r.width, y: box.y * r.height, w: box.w * r.width, h: box.h * r.height };
+        expect(cards.filter((c) => c.x < b.x + b.w && c.x + c.w > b.x && c.y < b.y + b.h && c.y + c.h > b.y)).toEqual([]);
+      }
+    }
+  });
+
+  it('moves a card by hand: it stands where it was put, its line led after it, everyone else where they were', () => {
+    const doc = sampleDocument();
+    const at = (svg: string, id: string) => {
+      const m = new RegExp(`data-person="${id}" transform="translate\\(([^,]+),([^)]+)\\)"`).exec(svg)!;
+      return { x: Number(m[1]), y: Number(m[2]) };
+    };
+    const plain = render(doc, { paper: 'A3', orientation: 'landscape' });
+    // Leo, a little to the right and down.
+    const moved = render(doc, { paper: 'A3', orientation: 'landscape', moves: { I29: { x: 60, y: 25 } } });
+    expect(at(moved.svg, 'I29').x).toBeCloseTo(at(plain.svg, 'I29').x + 60, 3);
+    expect(at(moved.svg, 'I29').y).toBeCloseTo(at(plain.svg, 'I29').y + 25, 3);
+    for (const id of cardsIn(plain.svg)) if (id !== 'I29') expect(at(moved.svg, id)).toEqual(at(plain.svg, id));
+    expect(moved.cardMm.w).toBeCloseTo(plain.cardMm.w, 6);
+    // His line ends on his card where it now is.
+    const end = moved.lines.find((l) => l.childId === 'I29')!.points.at(-1)!;
+    const card = at(moved.svg, 'I29');
+    expect(end.x).toBeGreaterThan(card.x - 1);
+    expect(end.x).toBeLessThan(card.x + moved.cardUnits.w + 1);
+    expect(end.y).toBeGreaterThan(card.y - 1);
+    expect(end.y).toBeLessThan(card.y + moved.cardUnits.h + 1);
+    // A move of someone who is not on the page changes nothing.
+    expect(render(doc, { paper: 'A3', orientation: 'landscape', moves: { nobody: { x: 60, y: 25 } } }).svg).toBe(plain.svg);
+  });
+
+  it('draws the direct lines of the two in the middle in their own colours, and every other line plain', () => {
+    const doc = sampleDocument();
+    const r = render(doc, { paper: 'A3', orientation: 'landscape' });
+    const stroke = (child: string) => new RegExp(`<path [^>]*stroke="([^"]+)"[^>]*data-child="${child}"`).exec(r.svg)![1];
+    const width = (child: string) => Number(new RegExp(`<path [^>]*stroke-width="([^"]+)"[^>]*data-child="${child}"`).exec(r.svg)![1]);
+    // Simon's line, and his father's above it; Šárka's; and Harold, a great-uncle off both.
+    expect(stroke('I11')).toBe(stroke('I6'));
+    expect(stroke('I15')).not.toBe(stroke('I11'));
+    expect(stroke('I8')).not.toBe(stroke('I11'));
+    expect(stroke('I8')).not.toBe(stroke('I15'));
+    // Their own children are no part of where they come from.
+    expect(stroke('I22')).toBe(stroke('I8'));
+    expect(width('I11')).toBeGreaterThan(width('I8'));
+    // The line up from Simon's grandmother to parents nobody knows is his line too.
+    expect(stroke('I2')).toBe(stroke('I11'));
+    // The two cards the page is drawn around have one frame round both of them.
+    expect([...r.svg.matchAll(/class="focus-frame"/g)]).toHaveLength(1);
+  });
+
+  it('tells which family and child every line belongs to, and gives the lines whole for finding what hangs on one', () => {
+    const doc = sampleDocument();
+    const r = render(doc, { paper: 'A3', orientation: 'landscape' });
+    const drawn = [...r.svg.matchAll(/<path [^>]*data-family="([^"]+)" data-child="([^"]+)"/g)].map((m) => `${m[1]} ${m[2]}`);
+    const whole = r.lines.map((l) => `${l.familyId} ${l.childId}`);
+    expect(new Set(drawn)).toEqual(new Set(whole));
+    // One line for every child of a family on the page.
+    const children = doc.families.flatMap((f) => f.children.map((c) => `${f.id} ${c.personId}`));
+    expect(new Set(whole)).toEqual(new Set(children));
+    // Brothers and sisters leave their parents at one point: the stretch they share.
+    const [a, b] = r.lines.filter((l) => l.familyId === 'F5');
+    expect(a.points[0]).toEqual(b.points[0]);
+    expect(r.shown).toHaveLength(r.people);
+  });
+
+  it('stands every couple side by side unless couples may be stacked, and draws everyone whichever way partners stand', () => {
+    const doc = randomFamily(6, 70);
+    const at = (svg: string) =>
+      new Map(
+        [...svg.matchAll(/<g class="card" data-person="([^"]+)" transform="translate\(([-\d.]+),([-\d.]+)\)"/g)].map((m) => [
+          m[1],
+          { x: Number(m[2]), y: Number(m[3]) },
+        ]),
+      );
+    /** Couples whose two cards stand one straight over the other. */
+    const stacked = (svg: string) => {
+      const cards = at(svg);
+      return doc.families.filter((f) => {
+        const [a, b] = f.partners.map((p) => cards.get(p));
+        return !!a && !!b && Math.abs(a.x - b.x) < 0.5 && Math.abs(a.y - b.y) > 1;
+      }).length;
+    };
+    const plain = render(doc, { paper: 'A4', orientation: 'portrait' });
+    expect(stacked(plain.svg)).toBe(0);
+    for (const settings of [{ stackCouples: true }, { amidPartners: false }, { stackCouples: true, amidPartners: false }]) {
+      const other = render(doc, { paper: 'A4', orientation: 'portrait', ...settings });
+      expect(other.people).toBe(plain.people);
+      expect(new Set(cardsIn(other.svg))).toEqual(new Set(cardsIn(plain.svg)));
+    }
+  }, 60_000);
+
+  it('searches longer for a fuller page when asked: the cards no smaller, and the same page when drawn again', () => {
+    const doc = randomFamily(6, 70);
+    const plain = render(doc, { paper: 'A3', orientation: 'landscape' });
+    const full = render(doc, { paper: 'A3', orientation: 'landscape', fill: true });
+    expect(full.people).toBe(plain.people);
+    expect(full.cardMm.w).toBeGreaterThan(plain.cardMm.w * 0.995);
+    expect(render(doc, { paper: 'A3', orientation: 'landscape', fill: true }).svg).toBe(full.svg);
+  }, 60_000);
+
+  it('sizes the title and the family names to the sheet and to the cards when no size is set', () => {
+    const doc = sampleDocument();
+    const cm = (paper: string) => render(doc, { paper, orientation: 'landscape' }).lettering!;
+    const [a4, a3, a1] = [cm('A4'), cm('A3'), cm('A1')];
+    // Bigger paper, bigger lettering; the title always well over the family names.
+    expect(a3.titleCm).toBeGreaterThan(a4.titleCm);
+    expect(a1.titleCm).toBeGreaterThan(a3.titleCm);
+    expect(a3.legendCm).toBeGreaterThan(a4.legendCm);
+    for (const l of [a4, a3, a1]) expect(l.titleCm).toBeGreaterThan(l.legendCm * 2);
+    // On a small sheet the paper decides: a title 4.2% of the shorter side high (a line a fifth more).
+    expect(a4.titleCm).toBeCloseTo(21 * 0.042 * 1.2, 1);
+    // On a big sheet full of small cards the lettering keeps to the cards, but never under 2.2% of the shorter side.
+    const big = randomFamily(4, 120);
+    const crowded = render(big, { paper: 'A1', orientation: 'landscape' });
+    const names = (crowded.namePt * 0.3528) / 10;
+    expect(crowded.lettering!.titleCm).toBeLessThan(59.4 * 0.042 * 1.2);
+    expect(crowded.lettering!.titleCm).toBeGreaterThanOrEqual(59.4 * 0.022 * 1.2 - 0.01);
+    expect(crowded.lettering!.titleCm).toBeGreaterThanOrEqual(names * 3.6 * 1.2 - 0.02);
+    expect(crowded.lettering!.legendCm).toBeGreaterThanOrEqual(names * 1.7 * 1.2 - 0.02);
+    // A size that is set is the size, whatever the sheet and the cards.
+    const set = render(big, { paper: 'A1', orientation: 'landscape', titleSize: 3, legendSize: 1 }).lettering;
+    expect(set).toMatchObject({ titleCm: expect.closeTo(3, 5), legendCm: expect.closeTo(1, 5) });
+    // With it, what the page would have chosen: about what it does choose when no size is set.
+    expect(set.autoTitleCm).toBeCloseTo(crowded.lettering.titleCm, 0);
+    expect(set.autoLegendCm).toBeCloseTo(crowded.lettering.legendCm, 0);
+    expect(crowded.lettering.autoTitleCm).toBeCloseTo(crowded.lettering.titleCm, 1);
+    expect(crowded.lettering.autoLegendCm).toBeCloseTo(crowded.lettering.legendCm, 1);
+  });
+
+  it('stands the family names where asked in a box bigger than they need: in a corner of it, along a side, in the middle', () => {
+    const doc = sampleDocument();
+    // A box much bigger than the names need.
+    const box = { paper: 'A3', orientation: 'landscape', legendSize: 0.6, legendBox: { x: 0.05, y: 0.3, w: 0.6, h: 0.6 } } as const;
+    /** Where the first of the names is drawn: its mark's left, the baseline of its label. */
+    const first = (svg: string) => {
+      const m = /<g class="pp-legend">.*?<text x="([\d.]+)" y="([\d.]+)"/s.exec(svg);
+      return { x: Number(m?.[1]), y: Number(m?.[2]) };
+    };
+    /** The same for the last (the families without a name of their own). */
+    const last = (svg: string) => {
+      const m = /<text x="([\d.]+)" y="([\d.]+)"[^>]*>Other families<\/text>/.exec(svg.slice(svg.indexOf('<g class="pp-legend">')));
+      return { x: Number(m?.[1]), y: Number(m?.[2]) };
+    };
+    const middle = render(doc, box);
+    const W = middle.width;
+    const H = middle.height;
+    const at = { left: 0.05 * W, top: 0.3 * H, right: 0.65 * W, foot: 0.9 * H };
+    const topLeft = render(doc, { ...box, legendAlign: 'top-left' });
+    expect(first(topLeft.svg).x).toBeLessThan(at.left + 0.04 * W);
+    expect(first(topLeft.svg).y).toBeLessThan(at.top + 0.04 * H);
+    const footRight = render(doc, { ...box, legendAlign: 'bottom-right' });
+    expect(last(footRight.svg).y).toBeGreaterThan(at.foot - 0.03 * H);
+    expect(last(footRight.svg).y).toBeLessThan(at.foot);
+    // (The names stand in as many columns as the box is wide enough for, so there is only so far to go across.)
+    expect(first(footRight.svg).x).toBeGreaterThan(first(topLeft.svg).x + 0.02 * W);
+    // In the middle when nothing is asked: as far from the top as from the foot.
+    expect(first(middle.svg).y - at.top).toBeGreaterThan(0.1 * H);
+    expect(Math.abs(first(middle.svg).y - at.top - (at.foot - last(middle.svg).y))).toBeLessThan(0.03 * H);
+    // Only where the names stand: the tree is the same.
+    expect(topLeft.cardMm).toEqual(middle.cardMm);
+    expect(footRight.cardMm).toEqual(middle.cardMm);
+  });
+
+  it('puts the family names held at the top under the title where the two would meet, so far apart as asked', () => {
+    const doc = sampleDocument();
+    const page = { paper: 'A3', orientation: 'landscape', showFrame: false, legendSize: 0.5, titleAnchor: 'top-right', legendAnchor: 'top-right' } as const;
+    const mm = (share: number) => share * 297;
+    for (const legendGap of [undefined, 0, 2]) {
+      const r = render(doc, { ...page, legendGap });
+      const t = r.title!;
+      const l = r.legend!;
+      // Under the title, its right edge on the margin like the title's, the gap between them.
+      expect(l.y).toBeGreaterThan(t.y + t.h - 0.001);
+      expect(mm(l.y - t.y - t.h)).toBeCloseTo((legendGap ?? 0.5) * 10, 1);
+      expect(l.x + l.w).toBeCloseTo(r.inner.x + r.inner.w, 3);
+    }
+    // Where they would not meet, the names keep to the top of the page.
+    const apart = render(doc, { ...page, titleAnchor: 'top-left' });
+    expect(apart.legend!.y).toBeCloseTo(apart.inner.y, 3);
+    // Held at the foot, with the title at the top: nothing to keep clear of.
+    const foot = render(doc, { ...page, legendAnchor: 'bottom-right' }).legend!;
+    expect(foot.y + foot.h).toBeCloseTo(apart.inner.y + apart.inner.h, 3);
+  });
+
+  it('draws the family names into any box asked for, as they would stand there', () => {
+    const r = render(sampleDocument(), { paper: 'A3', orientation: 'landscape' });
+    const at = (markup: string) => [...markup.matchAll(/<text x="([\d.]+)" y="([\d.]+)"[^>]*font-size="([\d.]+)"/g)].map((m) => m.slice(1).map(Number));
+    const wide = at(r.namesIn({ x: 0.1, y: 0.1, w: 0.8, h: 0.1 }, { cm: null }));
+    const tall = at(r.namesIn({ x: 0.1, y: 0.1, w: 0.1, h: 0.8 }, { cm: null }));
+    expect(wide.length).toBe(tall.length);
+    // In a wide box they stand in a row or two, in a tall one in a column.
+    expect(new Set(wide.map((t) => t[1])).size).toBeLessThan(new Set(tall.map((t) => t[1])).size);
+    // So big as asked, and in the corner asked.
+    const fixed = at(r.namesIn({ x: 0.1, y: 0.1, w: 0.8, h: 0.8 }, { cm: 0.6, align: 'bottom-right' }));
+    expect(fixed[0][2]).toBeCloseTo((0.6 * 10 * (96 / 25.4)) / 1.2, 1);
+    expect(Math.max(...fixed.map((t) => t[1])) / r.height).toBeGreaterThan(0.85);
+  });
+
+  it('holds the title at its anchor whatever size it is: against the margin at a side, at the top or the foot', () => {
+    const doc = sampleDocument();
+    const page = { paper: 'A3', orientation: 'landscape' } as const;
+    const plain = render(doc, page);
+    const inner = plain.inner;
+    // By itself: across the top, in the middle, not placed by anyone.
+    expect(plain.title!.x + plain.title!.w / 2).toBeCloseTo(0.5, 3);
+    expect(plain.title!.free).toBe(false);
+    for (const titleSize of [1.2, 2.4]) {
+      const right = render(doc, { ...page, titleSize, titleAnchor: 'top-right' }).title!;
+      expect(right.x + right.w).toBeCloseTo(inner.x + inner.w, 3);
+      expect(right.y).toBeCloseTo(inner.y, 3);
+      expect(right.free).toBe(true);
+      const left = render(doc, { ...page, titleSize, titleAnchor: 'bottom-left' }).title!;
+      expect(left.x).toBeCloseTo(inner.x, 3);
+      expect(left.y + left.h).toBeCloseTo(inner.y + inner.h, 3);
+    }
+    // The anchor decides, not where the title was once dragged to.
+    const both = render(doc, { ...page, titleAnchor: 'top-left', titleAt: { x: 0.7, y: 0.4 } }).title!;
+    expect(both.x).toBeCloseTo(inner.x, 3);
+    expect(both.y).toBeCloseTo(inner.y, 3);
+    // The title is drawn where its box is.
+    const drawn = render(doc, { ...page, titleAnchor: 'top-right' });
+    const x = Number(/<g class="pp-title"><text x="([\d.]+)"/.exec(drawn.svg)?.[1]);
+    expect(x / drawn.width).toBeCloseTo(drawn.title!.x + drawn.title!.w / 2, 3);
+  });
+
+  it('holds the family names at their anchor: a block just big enough, or their box at its size, bigger where they need more', () => {
+    const doc = sampleDocument();
+    const page = { paper: 'A3', orientation: 'landscape', showFrame: false } as const;
+    const inner = render(doc, page).inner;
+    const ends = (l: { x: number; y: number; w: number; h: number }) => ({ left: l.x, top: l.y, right: l.x + l.w, foot: l.y + l.h });
+    // A block of the names, at the place, whatever size they are.
+    const small = render(doc, { ...page, legendSize: 0.5, legendAnchor: 'bottom-right' }).legend!;
+    const big = render(doc, { ...page, legendSize: 0.9, legendAnchor: 'bottom-right' }).legend!;
+    for (const l of [small, big]) {
+      expect(ends(l).right).toBeCloseTo(inner.x + inner.w, 3);
+      expect(ends(l).foot).toBeCloseTo(inner.y + inner.h, 3);
+      expect(l.free).toBe(true);
+    }
+    expect(big.w * big.h).toBeGreaterThan(small.w * small.h * 2);
+    const middle = render(doc, { ...page, legendAnchor: 'left' }).legend!;
+    expect(middle.x).toBeCloseTo(inner.x, 3);
+    expect(middle.y + middle.h / 2).toBeCloseTo(inner.y + inner.h / 2, 3);
+    // A box sized by hand keeps its size there; where it was does not matter.
+    const sized = render(doc, { ...page, showTitle: false, legendSize: 0.5, legendAnchor: 'top-left', legendBox: { x: 0.5, y: 0.5, w: 0.4, h: 0.3 } }).legend!;
+    expect(sized).toMatchObject({ x: expect.closeTo(inner.x, 3), y: expect.closeTo(inner.y, 3), w: expect.closeTo(0.4, 3), h: expect.closeTo(0.3, 3) });
+    // Names that need more than the box has: the box grows away from the anchor.
+    const tight = render(doc, { ...page, legendSize: 1.2, legendAnchor: 'bottom-left', legendBox: { x: 0.5, y: 0.5, w: 0.3, h: 0.05 } }).legend!;
+    expect(tight.h).toBeGreaterThan(0.1);
+    expect(tight.x).toBeCloseTo(inner.x, 3);
+    expect(tight.y + tight.h).toBeCloseTo(inner.y + inner.h, 3);
+    // Without an anchor the box lies where it was put, as ever.
+    expect(render(doc, { ...page, legendBox: { x: 0.5, y: 0.5, w: 0.4, h: 0.3 } }).legend).toMatchObject({ x: 0.5, y: 0.5, free: true });
+    // On a page with a frame, names in a corner keep clear of the flourish there: a little in from the margin, whatever the title's size
+    // (the flourishes grow with it); along a side there is none to keep clear of.
+    for (const titleSize of [1.5, 3]) {
+      const framed = { ...page, showFrame: true, titleSize, legendSize: 0.5 } as const;
+      const corner = render(doc, { ...framed, legendAnchor: 'bottom-left' }).legend!;
+      const clear = corner.x - inner.x;
+      expect(clear).toBeGreaterThanOrEqual(0);
+      expect(clear).toBeLessThan(titleSize === 3 ? 0.1 : 0.03);
+      if (titleSize === 3) expect(clear).toBeGreaterThan(0.002);
+      const foot = render(doc, { ...framed, legendAnchor: 'bottom' }).legend!;
+      expect(foot.y + foot.h).toBeCloseTo(inner.y + inner.h, 3);
+    }
+  });
+
+  it('prints the words on the cards a size bigger when asked: taller cards of the same width', () => {
+    const doc = sampleDocument();
+    const usual = render(doc, { paper: 'A3', orientation: 'landscape' });
+    const large = render(doc, { paper: 'A3', orientation: 'landscape', largeText: true });
+    expect(large.cardUnits.w).toBe(usual.cardUnits.w);
+    expect(large.cardUnits.h).toBeGreaterThan(usual.cardUnits.h * 1.1);
+    // Names a fifth bigger for cards of one size; on this page (wider than it is full) nearly all of that is kept.
+    expect(large.namePt / large.cardMm.w).toBeCloseTo((usual.namePt / usual.cardMm.w) * 1.2, 2);
+    expect(large.namePt).toBeGreaterThan(usual.namePt * 1.05);
+    expect(cardsIn(large.svg).sort()).toEqual(cardsIn(usual.svg).sort());
+  });
+
+  it('widens the card of someone whose names do not fit when asked, and only theirs', () => {
+    const doc = sampleDocument();
+    const long = 'Maximilian Bartholomew';
+    const named = (given: string) => ({ ...doc, people: doc.people.map((p) => (p.id === 'I20' ? { ...p, name: { ...p.name, given } } : p)) });
+    const widthsIn = (svg: string) =>
+      new Map(
+        [...svg.matchAll(/<g class="card" data-person="([^"]+)"[^>]*>(?:<rect class="focus-ring"[^>]*\/>)?<rect width="([\d.]+)"/g)].map((m) => [
+          m[1],
+          Number(m[2]),
+        ]),
+      );
+    const one = render(named(long), { paper: 'A3', orientation: 'landscape' });
+    // Every card one width: the long name cut short.
+    expect(new Set(widthsIn(one.svg).values()).size).toBe(1);
+    expect(one.svg.includes(`>${long}<`)).toBe(false);
+    expect(/>Maximilian[^<]*…</.test(one.svg)).toBe(true);
+    const free = render(named(long), { paper: 'A3', orientation: 'landscape', freeWidths: true });
+    const widths = widthsIn(free.svg);
+    expect(free.svg.includes(`>${long}<`)).toBe(true);
+    expect(widths.get('I20')).toBeGreaterThan(free.cardUnits.w);
+    expect(widths.get('I20')).toBeLessThanOrEqual(free.cardUnits.w * 1.5);
+    expect([...widths].filter(([id, w]) => id !== 'I20' && w !== free.cardUnits.w)).toEqual([]);
+    // A name longer than any card: as wide as a card gets, and cut short there.
+    const most = render(named(`${long} ${long} ${long}`), { paper: 'A3', orientation: 'landscape', freeWidths: true });
+    expect(widthsIn(most.svg).get('I20')).toBeCloseTo(most.cardUnits.w * 1.5);
+    expect(/>Maximilian[^<]*…</.test(most.svg)).toBe(true);
+  });
+
+  it('draws the page a piece at a time to the same result, and the same tree again with little of the work', () => {
+    const doc = randomFamily(11, 90);
+    const input = { doc, settings: { ...DEFAULT_PRINT, paper: 'A2', orientation: 'landscape' as const }, measure, now: new Date('2026-01-01T00:00:00Z') };
+    const count = (steps: ReturnType<typeof posterSteps>) => {
+      for (let n = 0; ; n++) {
+        const step = steps.next();
+        if (step.done) return { steps: n, page: step.value };
+      }
+    };
+    const first = count(posterSteps(input));
+    expect(first.steps).toBeGreaterThan(50);
+    expect(first.page.svg === renderPoster(input).svg).toBe(true);
+    // Another title on the same tree: its layouts are there already.
+    const retitled = count(posterSteps({ ...input, settings: { ...input.settings, title: 'Another title for the page' } }));
+    expect(retitled.page.svg.includes('Another title for the page')).toBe(true);
+    expect(retitled.page.cardMm.w).toBeCloseTo(first.page.cardMm.w, 1);
+    // A switch that changes nothing about the layout: nothing to fit at all.
+    const plain = count(posterSteps({ ...input, settings: { ...input.settings, showRibbons: false } }));
+    expect(plain.steps).toBeLessThan(first.steps / 10);
+  }, 60_000);
+
+  it('puts the family names where the tree leaves room: across the foot, or as a block in a corner when that keeps the cards bigger', () => {
+    const corners = (r: ReturnType<typeof render>) => {
+      const l = r.legend!;
+      // At the top: against the margin there, or right under the title.
+      const t = r.title;
+      const top = l.y < 0.12 || (!!t && Math.abs(l.y - (t.y + t.h)) < 0.05);
+      return { left: l.x < 0.1, right: l.x + l.w > 0.9, top, bottom: l.y + l.h > 0.88, middle: Math.abs(l.x + l.w / 2 - 0.5) < 0.02 };
+    };
+    // A small tree with a few names: the rows across the foot, in the middle.
+    const small = render(sampleDocument(), { paper: 'A3', orientation: 'landscape' });
+    expect(small.legend).toMatchObject({ free: false });
+    // Wherever they are put, no card stands on them, and they are on the page.
+    for (const doc of [sampleDocument(), randomFamily(4, 120), randomFamily(6, 70)]) {
+      const r = render(doc, { paper: 'A3', orientation: 'landscape' });
+      const at = corners(r);
+      expect(at.middle || at.left || at.right).toBe(true);
+      expect(at.top || at.bottom).toBe(true);
+      const l = r.legend!;
+      expect(l.x).toBeGreaterThanOrEqual(0);
+      expect(l.y).toBeGreaterThanOrEqual(0);
+      expect(l.x + l.w).toBeLessThanOrEqual(1);
+      expect(l.y + l.h).toBeLessThanOrEqual(1);
+      const chart = /<g transform="translate\(([-\d.]+)[ ,]([-\d.]+)\) scale\(([\d.]+)\)">/.exec(r.svg)!;
+      const [ox, oy, k] = [Number(chart[1]), Number(chart[2]), Number(chart[3])];
+      const box = { x: l.x * r.width, y: l.y * r.height, w: l.w * r.width, h: l.h * r.height };
+      const over = [...r.svg.matchAll(/<g class="card" data-person="[^"]+" transform="translate\(([-\d.]+),([-\d.]+)\)"/g)].filter((m) => {
+        const x = ox + Number(m[1]) * k;
+        const y = oy + Number(m[2]) * k;
+        return x < box.x + box.w && x + r.cardUnits.w * k > box.x && y < box.y + box.h && y + r.cardUnits.h * k > box.y;
       });
-      const s = lefts[0].s;
-      const cardW = 178 * s;
-      const couple = lefts.filter((l) => l.id === 'I14' || l.id === 'I11');
-      const middle = (Math.min(...couple.map((x) => x.left)) + Math.max(...couple.map((x) => x.left)) + cardW) / 2;
-      const span = Math.max(...lefts.map((l) => l.left)) + cardW - Math.min(...lefts.map((l) => l.left));
-      return { off: Math.abs(middle - result.width / 2) / result.width, s, filled: span / result.width };
-    };
-    const centred = placed(true);
-    const plain = placed(false);
-    // The cards are as big either way: keeping the couple in the middle never shrinks the tree.
-    expect(centred.s).toBeCloseTo(plain.s, 2);
-    expect(centred.off).toBeLessThanOrEqual(plain.off + 0.001);
-    // The tree reaches across the page, margins aside.
-    expect(centred.filled).toBeGreaterThan(0.8);
-  });
-
-  it('tries the person in the middle at the other places among their brothers and sisters', () => {
-    // Simon is the eldest of three.
-    const orders = siblingsAround(doc, new TreeIndex(doc), 'I11').map((d) => d.families.find((f) => f.id === 'F4')!.children.map((c) => c.personId));
-    expect(orders).toEqual([
-      ['I12', 'I11', 'I13'],
-      ['I12', 'I13', 'I11'],
-    ]);
-    // An only child.
-    expect(siblingsAround(doc, new TreeIndex(doc), 'I22')).toEqual([]);
-  });
-
-  it('writes surnames at birth and the counts in the language the tree was saved in, without relationship names', () => {
-    const cs = { ...doc, view: { ...doc.view, language: 'cs' } };
-    const result = renderPoster({ doc: cs, settings: settings({ showRelationships: true }), measure });
-    expect(result.svg).toContain('5 generací, 29 osob');
-    // The surname at birth on its own line.
-    expect(result.svg).toContain('>roz. Nováková<');
-    // Prints have no relationship names, whatever the old setting says.
-    expect(result.svg).not.toContain('Tchyně');
-  });
-
-  it('writes in the language it is given, whatever the tree was saved in', () => {
-    const result = renderPoster({ doc, settings: settings(), language: 'cs', measure });
-    expect(doc.view.language).toBe('en');
-    expect(result.svg).toContain('5 generací');
-    expect(result.svg).not.toContain('5 generations');
-  });
-
-  it('shows how a couple stands by their marker alone, without a note', () => {
-    const result = renderPoster({ doc, settings: settings(), measure });
-    for (const note of ['>married<', '>divorced<', '>engaged<']) expect(result.svg).not.toContain(note);
-  });
-
-  it('draws childless couples in the room of one card on request, the partner stacked under the card', () => {
-    // Šárka's son Tomáš and his fiancée Mia have nobody under them.
-    const childless = { ...doc, families: doc.families.map((f) => (f.id === 'F11' ? { ...f, children: [] } : f)) };
-    const couple = childless.families.find((f) => f.id === 'F11')!.partners;
-    const positions = (svg: string) =>
-      new Map([...svg.matchAll(/data-person="([^"]+)" transform="translate\(([-\d.]+),([-\d.]+)\)/g)].map((m) => [m[1], { x: +m[2], y: +m[3] }]));
-    const usual = positions(renderPoster({ doc: childless, settings: settings(), measure }).svg);
-    // Laid out to fit, or with tall generations: always (on paper otherwise only in rows where it makes the cards bigger).
-    const compactSvg = renderPoster({ doc: childless, settings: settings({ compactCouples: true, paper: 'fit' }), measure }).svg;
-    const tall = positions(renderPoster({ doc: childless, settings: settings({ compactCouples: true, tallGenerations: true }), measure }).svg);
-    const [e, g] = couple.map((id) => tall.get(id)!);
-    expect(e.y).not.toBe(g.y);
-    const compact = positions(compactSvg);
-    const [a, b] = couple.map((id) => usual.get(id)!);
-    expect(a.y).toBe(b.y);
-    const [c, d] = couple.map((id) => compact.get(id)!);
-    // One under the other, the lower one stepped in by its line.
-    expect(c.y).not.toBe(d.y);
-    expect(Math.abs(c.x - d.x)).toBeLessThan(Math.abs(a.x - b.x));
-    // Both are still there, by name.
-    for (const name of ['Tomáš', 'Mia']) expect(compactSvg).toContain(`>${name}<`);
-  });
-
-  it('draws the title and the family names bigger on request, in every style (the title as far as it fits)', () => {
-    const fontSizes = (svg: string, text: string) => {
-      const m = svg.match(new RegExp(`font-size="([\\d.]+)"[^>]*>(?:<[^>]+>)*${text}`));
-      return m ? +m[1] : NaN;
-    };
-    for (const theme of POSTER_THEMES) {
-      const plain = renderPoster({ doc, settings: settings({ theme: theme.id }), measure, now: new Date(2026, 9, 10) });
-      const big = renderPoster({ doc, settings: settings({ theme: theme.id, titleScale: 2, legendScale: 1.5 }), measure, now: new Date(2026, 9, 10) });
-      expect(fontSizes(big.svg, 'The Ashworth family'), theme.id).toBeGreaterThan(fontSizes(plain.svg, 'The Ashworth family') * 1.2);
-      expect(big.people).toBe(plain.people);
+      expect(over).toEqual([]);
+      // Every family's name is there once, wherever the names stand.
+      expect([...r.svg.matchAll(/class="pp-legend"/g)].length).toBeLessThanOrEqual(1);
     }
-  });
+    // Placed by hand they stay where they were put.
+    const byHand = render(randomFamily(4, 120), { paper: 'A3', orientation: 'landscape', legendBox: { x: 0.3, y: 0.4, w: 0.3, h: 0.1 } });
+    expect(byHand.legend).toMatchObject({ free: true, x: expect.closeTo(0.3, 5), y: expect.closeTo(0.4, 5) });
+  }, 60_000);
 
-  it('draws curved lines when the chart has them, in styles with lines of their own kind', () => {
-    const lineData = (svg: string) => [...svg.matchAll(/<path d="([^"]+)" fill="none" stroke="#4b3828"/g)].map((m) => m[1]);
-    const square = lineData(renderPoster({ doc, settings: settings({ theme: 'heirloom', showTree: false }), measure }).svg);
-    const curved = lineData(renderPoster({ doc, settings: settings({ theme: 'heirloom', showTree: false }), lines: 'curved', measure }).svg);
-    expect(square.some((d) => d.includes('Q'))).toBe(true);
-    expect(curved.length).toBe(square.length);
-    expect(curved.some((d) => d.includes('Q'))).toBe(false);
-    expect(curved.some((d) => d.includes('C'))).toBe(true);
-    // The Heraldic cord follows the chart's lines too.
-    const now = new Date(2026, 9, 11);
-    const heraldic = (lines: 'square' | 'curved') => renderPoster({ doc: threeSpouses(), settings: settings({ theme: 'heraldic' }), lines, measure, now }).svg;
-    expect(heraldic('curved')).not.toBe(heraldic('square'));
-  });
-
-  it('draws the family lines as branches of the tree in the Heirloom style, and as lines when the tree is off', () => {
-    const lineData = (svg: string) => [...svg.matchAll(/<path d="([^"]+)" fill="none" stroke="#4b3828"/g)].map((m) => m[1]);
-    const withTree = renderPoster({ doc, settings: settings({ theme: 'heirloom', showTree: true }), measure });
-    const without = renderPoster({ doc, settings: settings({ theme: 'heirloom', showTree: false }), measure });
-    expect(lineData(without.svg).length).toBeGreaterThan(lineData(withTree.svg).length);
-    expect(withTree.svg).toContain('pp-tree-room');
-    expect(without.svg).not.toContain('pp-tree-room');
-  });
-
-  it('can turn a layout upside down for styles that grow upwards', () => {
-    const layout = computeLayout(doc);
-    const flipped = flipLayout(layout);
-    const top = (l: typeof layout, id: string) => l.cards.find((c) => c.personId === id)!.y;
-    expect(top(layout, 'I1')).toBeLessThan(top(layout, 'I29'));
-    expect(top(flipped, 'I1')).toBeGreaterThan(top(flipped, 'I29'));
-    expect(flipped.bounds).toEqual(layout.bounds);
-  });
-
-  it('draws the tree behind the chart and marks sex on the cards', () => {
-    const plain = renderPoster({ doc, settings: settings({ showTree: false, showSex: false, sexColors: false }), measure });
-    const decorated = renderPoster({ doc, settings: settings({ showTree: true, showSex: true, sexColors: true }), measure });
-    expect(decorated.svg.length).toBeGreaterThan(plain.svg.length);
-    const { palette, tree } = posterTheme('heirloom');
-    expect(decorated.svg).toContain(palette.cardMale);
-    expect(plain.svg).not.toContain(palette.cardMale);
-    // Wood, leaves and blossom in the style's colours.
-    expect(decorated.svg).toContain(`fill="${tree!.wood}"`);
-    expect(decorated.svg).toContain(`fill="${tree!.leaves[0]}"`);
-    expect(decorated.svg).toContain(`fill="${tree!.bloom![0]}"`);
-    expect(plain.svg).not.toContain('pp-tree-room');
-    expect(plain.svg).not.toContain(`fill="${tree!.leaves[0]}"`);
-    // A style without a tree of its own draws none.
-    const modern = renderPoster({ doc, settings: settings({ theme: 'modern', showTree: true }), measure });
-    expect(modern.svg).not.toContain('pp-tree-room');
-  });
-
-  it('prints no portraits, and gives no room to lines a person has nothing for', () => {
-    const photo = 'data:image/jpeg;base64,/9j/4AAQ';
-    const withPhoto = { ...doc, people: doc.people.map((p) => (p.id === 'I11' ? { ...p, photo } : p)) };
-    for (const theme of ['heirloom', 'heraldic', 'modern']) {
-      const printed = renderPoster({ doc: withPhoto, settings: settings({ theme, showPhotos: true, portraitSize: 2 }), measure }).svg;
-      expect(printed).not.toContain('pp-photo-I11');
-      expect(printed).not.toContain('/9j/4AAQ');
-    }
-    // Edith was born Barlow and has that line; Thomas has none, so his dates follow his surname directly.
-    const lineY = (svg: string, name: string) => {
-      const at = svg.indexOf(`>${name}<`);
-      return Number(/ y="([\d.]+)"/.exec(svg.slice(svg.lastIndexOf('<text', at)))![1]);
-    };
-    const heirloom = renderPoster({ doc, settings: settings(), measure }).svg;
-    const edithGap = lineY(heirloom, '1901 – 1988') - lineY(heirloom, 'Ashworth');
-    const thomasGap = lineY(heirloom, '1898 – 1971') - lineY(heirloom.slice(heirloom.indexOf('>Thomas<')), 'Ashworth');
-    expect(edithGap).toBeGreaterThan(thomasGap);
-  });
-
-  it("puts a picture of one's own behind the chart instead of the drawn tree", () => {
-    const withPicture = { ...doc, background: { href: 'data:image/png;base64,iVBORw0K', width: 2000, height: 1000, fit: 'cover' as const, opacity: 0.5 } };
-    const printed = renderPoster({ doc: withPicture, settings: settings({ showTree: true }), measure });
-    expect(printed.svg).toContain('<image href="data:image/png;base64,iVBORw0K"');
-    expect(printed.svg).toContain('opacity="0.5"');
-    expect(printed.svg).not.toContain('pp-tree-room');
-    const without = renderPoster({ doc: withPicture, settings: settings({ showTree: false }), measure });
-    expect(without.svg).not.toContain('iVBORw0K');
-  });
-
-  it('sizes a page to the tree, and falls back to known styles and papers', () => {
-    const fit = renderPoster({ doc, settings: settings({ paper: 'fit' }), measure });
-    expect(fit.paper).toBeUndefined();
-    expect(fit.svg).not.toContain('mm"');
-    const unknown = renderPoster({ doc, settings: settings({ theme: 'watercolour', paper: 'B7' }), measure });
-    expect(unknown.theme.id).toBe('heirloom');
-    expect(Math.round(unknown.paper!.widthMm)).toBe(420);
-    expect(posterTheme('modern').id).toBe('modern');
-  });
-
-  it('prints someone whose name nobody knows as Unknown, on a dashed card', () => {
-    const unknown = { ...doc, people: doc.people.map((p) => (p.id === 'I16' ? { ...p, name: { ...p.name, given: '' } } : p)) };
-    for (const theme of POSTER_THEMES) {
-      const known = renderPoster({ doc, settings: settings({ theme: theme.id }), measure });
-      const printed = renderPoster({ doc: unknown, settings: settings({ theme: theme.id }), measure });
-      expect(printed.svg).toContain('>Unknown<');
-      expect(printed.svg).toContain('stroke-dasharray="4 2.6"');
-      expect(known.svg).not.toContain('stroke-dasharray="4 2.6"');
-    }
-    const cs = renderPoster({ doc: { ...unknown, view: { ...unknown.view, language: 'cs' } }, settings: settings(), measure });
-    expect(cs.svg).toContain('>Neznámý<');
-  });
-
-  it('prints the changes made by hand to the layout', () => {
-    const plain = renderPoster({ doc, settings: settings(), measure });
-    const arranged = moveCards(doc, ['I18', 'I12'], 200);
-    expect(renderPoster({ doc: arranged, settings: settings(), measure }).svg).not.toBe(plain.svg);
-    const part = scopeDocument(arranged, new TreeIndex(arranged), { centerId: 'I11', ancestors: 1, descendants: 1, branches: 1 });
-    expect(part.doc.arrangement?.moves).toEqual({ I18: 200, I12: 200 });
-  });
-
-  it("puts the families' names in a box placed by hand, bigger in a bigger box, and says where they are", () => {
-    for (const theme of ['heirloom', 'heraldic', 'modern']) {
-      const auto = renderPoster({ doc, settings: settings({ theme }), measure });
-      expect(auto.legend?.free).toBe(false);
-      expect(auto.svg).not.toContain('pp-legend');
-      const small = renderPoster({ doc, settings: settings({ theme, legendBox: { x: 0.05, y: 0.05, w: 0.15, h: 0.06 } }), measure });
-      const big = renderPoster({ doc, settings: settings({ theme, legendBox: { x: 0.05, y: 0.05, w: 0.4, h: 0.2 } }), measure });
-      expect(small.legend).toEqual({ x: expect.closeTo(0.05), y: expect.closeTo(0.05), w: expect.closeTo(0.15), h: expect.closeTo(0.06), free: true });
-      expect(small.svg).toContain('class="pp-legend"');
-      const sizeOf = (svg: string) => Number(/class="pp-legend".*?font-size="([\d.]+)"/.exec(svg)?.[1]);
-      expect(sizeOf(big.svg)).toBeGreaterThan(sizeOf(small.svg));
-      // Each family once: in the box, not under or beside the tree as well.
-      const label = /class="pp-legend".*?<text[^>]*>([^<]+)</.exec(small.svg)![1];
-      const count = (svg: string) => svg.split(`>${label}<`).length - 1;
-      expect(count(small.svg)).toBe(count(auto.svg));
-    }
-  });
-
-  it('packs families together on request, never making the cards smaller, without generation numbers', () => {
-    const wide = wideFamily(7);
-    for (const paper of ['A4', 'A3']) {
-      const base = settings({ paper, orientation: 'portrait', showGenerations: true, centerId: undefined });
-      const plain = renderPoster({ doc: wide, settings: base, measure });
-      const packed = renderPoster({ doc: wide, settings: { ...base, packFamilies: true }, measure });
-      expect(packed.namePt).toBeGreaterThanOrEqual(plain.namePt);
-      expect(packed.people).toBe(plain.people);
-      expect(plain.svg).toMatch(/>I<\/text>/);
-      expect(packed.svg).not.toMatch(/>I<\/text>/);
-    }
-  });
-
-  it('prints cards without emblems narrower, the family in the band along the top', () => {
-    for (const theme of ['heirloom', 'heraldic', 'modern']) {
-      const withEmblems = renderPoster({ doc, settings: settings({ theme }), measure });
-      const without = renderPoster({ doc, settings: settings({ theme, showEmblems: false }), measure });
-      expect(without.namePt).toBeGreaterThanOrEqual(withEmblems.namePt);
-      // The initials were only ever in the emblem.
-      const initials = withEmblems.svg.match(/font-weight="700"[^>]*>[A-ZÁ-Ž?]{1,3}</g)?.length ?? 0;
-      const left = without.svg.match(/font-weight="700"[^>]*>[A-ZÁ-Ž?]{1,3}</g)?.length ?? 0;
-      expect(left).toBeLessThan(initials);
-    }
-  });
-
-  it("gives the tree the room of the families' names once they are moved", () => {
-    // Six generations, one couple each: the height decides the size.
+  it('says “née Unknown” for a married woman whose own surname nobody knows, unless switched off', () => {
     const b = new DocBuilder();
-    for (let g = 0; g < 6; g++) {
-      b.person(`A${g}`, `Adam${g}`, 'Line', 'male');
-      b.person(`B${g}`, `Beth${g}`, `Wife${g}`, 'female');
-      if (g) b.family(`F${g}`, [`A${g - 1}`, `B${g - 1}`], [`A${g}`]);
-    }
-    const deep = b.build('Deep');
-    const base = settings({ theme: 'heraldic', orientation: 'landscape' });
-    const below = renderPoster({ doc: deep, settings: base, measure });
-    const moved = renderPoster({ doc: deep, settings: { ...base, legendBox: { x: 0.02, y: 0.02, w: 0.2, h: 0.1 } }, measure });
-    expect(moved.namePt).toBeGreaterThan(below.namePt);
+    b.person('H', 'Pavel', 'Nowak', 'male');
+    b.person('W', 'Anna', 'Nowaková', 'female');
+    b.person('S', 'Bruno', 'Novák', 'male');
+    b.person('D', 'Soňa', 'Nováková', 'female');
+    b.person('X', 'Jan', 'Mikula', 'male');
+    b.person('Y', 'Petr', 'Mikula', 'male');
+    b.family('F1', ['H', 'W'], ['S']);
+    b.family('F2', ['S'], ['D']);
+    b.family('F3', ['X'], ['Y']);
+    const doc = b.build();
+    doc.meta.homePersonId = 'S';
+    const plain = render(doc, { paper: 'A4', orientation: 'landscape' });
+    expect(plain.svg).toContain('née Unknown');
+    expect(render(doc, { paper: 'A4', orientation: 'landscape' }, { language: 'cs' }).svg).toContain('roz. Neznámá');
+    expect(render(doc, { paper: 'A4', orientation: 'landscape', unknownBirthNames: false }).svg).not.toContain('née Unknown');
+    expect(render(doc, { paper: 'A4', orientation: 'landscape', showBirthNames: false }).svg).not.toContain('née Unknown');
+    // Father Nowak, son Novák, granddaughter Nováková are one family (see the colours' own tests); apart, the page still has everyone.
+    const apart = render({ ...doc, view: { ...doc.view, uniteSpellings: false } }, { paper: 'A4', orientation: 'landscape' });
+    expect(apart.people).toBe(plain.people);
   });
 
-  it('keeps the title in proportion to the names, and says how big a card is', () => {
-    const result = renderPoster({ doc, settings: settings({ paper: 'A0', theme: 'heraldic' }), measure });
-    const escaped = doc.meta.title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const title = Number(new RegExp(`font-size="([\\d.]+)"[^>]*>${escaped}<`).exec(result.svg)?.[1]);
-    // The names' size on the page, in its units (namePt is in points).
-    const nameSize = result.namePt / 0.75;
-    expect(title).toBeGreaterThan(0);
-    expect(title).toBeLessThan(nameSize * 4);
-    expect(result.cardMm.w).toBeGreaterThan(result.cardMm.h);
-    expect(result.cardMm.h).toBeGreaterThan(0);
+  it('leaves the title, the family names and the frame out when switched off', () => {
+    const doc = sampleDocument();
+    const bare = render(doc, { showTitle: false, showLegend: false, showFrame: false });
+    expect(bare.svg).not.toContain('The Ashworth family');
+    expect(bare.legend).toBeUndefined();
+    // More room for the tree: the cards are bigger.
+    expect(bare.cardMm.w).toBeGreaterThan(render(doc).cardMm.w);
   });
 
-  it('prints a smaller part of the tree bigger', () => {
-    const all = renderPoster({ doc, settings: settings(), measure });
-    const close = renderPoster({ doc, settings: settings({ ancestors: 1, descendants: 1, branches: 0 }), measure });
-    expect(close.people).toBeLessThan(all.people);
-    expect(close.namePt).toBeGreaterThan(all.namePt);
+  it('prints part of the tree: generations, side branches and people left out', () => {
+    const doc = sampleDocument();
+    expect(render(doc, { ancestors: 1, descendants: 0, branches: 0 }).people).toBeLessThan(10);
+    const without = render(doc, {}, { omit: new Set(['I29']) });
+    expect(cardsIn(without.svg)).not.toContain('I29');
+    expect(without.people).toBe(28);
   });
-});
 
-describe('PDF', () => {
-  it('writes a valid one-page file around the image', async () => {
-    const jpeg = new Uint8Array([0xff, 0xd8, 0xff, 0xd9]);
-    const blob = pdfFromJpeg(jpeg, 10, 20, 595.3, 841.9, 'Rodokmen Nováků');
-    const text = new TextDecoder('latin1').decode(new Uint8Array(await blob.arrayBuffer()));
-    expect(text.startsWith('%PDF-1.4')).toBe(true);
-    expect(text).toContain('/MediaBox [0 0 595.3 841.9]');
-    expect(text).toContain('/Width 10 /Height 20');
-    const xref = Number(/startxref\n(\d+)/.exec(text)![1]);
-    expect(text.slice(xref, xref + 4)).toBe('xref');
-    expect(text.trimEnd().endsWith('%%EOF')).toBe(true);
+  it('draws the page around whoever is chosen', () => {
+    const doc = sampleDocument();
+    const p = render(doc, { centerId: 'I20', partnerId: undefined });
+    expect(p.centerId).toBe('I20');
+    expect(p.partnerId).toBe('I25');
+    expect(render(doc, { centerId: 'I20', partnerId: null }).partnerId).toBeUndefined();
+  });
+
+  it('sizes the page to the tree when no paper is chosen', () => {
+    const p = render(sampleDocument(), { paper: 'fit' });
+    expect(p.paper).toBeUndefined();
+    expect(p.svg).toMatch(/^<svg xmlns="http:\/\/www.w3.org\/2000\/svg" width="\d+" height="\d+"/);
+  });
+
+  it("puts the families' names in a box placed by hand", () => {
+    const doc = sampleDocument();
+    const box = { x: 0.05, y: 0.8, w: 0.3, h: 0.12 };
+    const p = render(doc, { legendBox: box });
+    expect(p.legend).toMatchObject({ free: true });
+    expect(p.legend!.x).toBeCloseTo(0.05);
+    expect(p.svg).toContain('class="pp-legend"');
+    expect(render(doc).legend).toMatchObject({ free: false });
+  });
+
+  it('makes the title as big as asked', () => {
+    const doc = sampleDocument();
+    expect(render(doc, { titleSize: 3 }).lettering.titleCm).toBeCloseTo(3);
+    expect(render(doc, { legendSize: 1 }).lettering.legendCm).toBeCloseTo(1);
+  });
+
+  it('draws an empty page for an empty tree', () => {
+    const p = render({ ...sampleDocument(), people: [], families: [] });
+    expect(p.people).toBe(0);
+    expect(cardsIn(p.svg)).toEqual([]);
   });
 });

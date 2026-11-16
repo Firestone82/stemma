@@ -1,5 +1,5 @@
 import { signal } from '@angular/core';
-import { LayoutResult } from '../../core/layout/layout-types';
+import { LayoutResult } from '../../core/layout/types';
 import { EMPTY_LAYOUT, anchorShift, easeInOut, lerpLayout } from './tween';
 import { ChartViewport } from './viewport';
 

@@ -1,5 +1,4 @@
-import { BackgroundImage, Extensions, Family, LifeEvent, Person, PrintSettings, Reach, TreeDocument } from '../model/types';
-import { arrangementOf } from '../model/arrangement';
+import { CardSettings, Extensions, Family, LifeEvent, Person, PrintSettings, Reach, TreeDocument } from '../model/types';
 import { CURRENT_FORMAT, GENERATOR, ROOT_ELEMENT, XML_NAMESPACE, formatVersionString } from './format';
 import { Attrs, XmlWriter } from './xml-writer';
 
@@ -37,8 +36,6 @@ export function serializeTree(doc: TreeDocument, options: SerializeOptions = {})
   // Elements added in a minor version go after the existing ones, where an
   // older app that keeps them as unknown content would write them back.
   if (doc.print) writePrint(w, doc.print);
-  if (doc.background) writeBackground(w, doc.background);
-  writeArrangement(w, doc);
 
   extElements(w, doc.ext);
   w.close();
@@ -57,29 +54,30 @@ function writeMeta(w: XmlWriter, doc: TreeDocument): void {
   w.close();
 }
 
+/** What the cards show: the same attributes on <view> and <print>. */
+function cardAttrs(c: CardSettings): Attrs {
+  return [
+    ['showEmblems', c.showEmblems],
+    ['showBirthNames', c.showBirthNames],
+    ['unknownBirthNames', c.unknownBirthNames ? undefined : 'false'],
+    ['dates', c.dates],
+    ['emblemAlign', c.emblemAlign === 'center' ? undefined : c.emblemAlign],
+    ['sexColors', c.sexColors],
+    ['showRibbons', c.showRibbons],
+  ];
+}
+
 function writeView(w: XmlWriter, doc: TreeDocument): void {
   const v = doc.view;
   const attrs: Attrs = [
-    ['style', v.style],
-    ['colorBy', v.colorBy],
-    ['lines', v.lines],
-    ['density', v.density],
-    ['showDates', v.showDates],
-    ['showPlaces', v.showPlaces],
-    ['showPhotos', v.showPhotos],
-    ['showGenerations', v.showGenerations],
-    ['showRelationships', v.showRelationships],
-    ['showUnions', v.showUnions],
+    ...cardAttrs(v),
     ['language', v.language],
-    ['showSex', v.showSex],
-    ['sexColors', v.sexColors],
-    ['showTree', v.showTree],
     ['branches', reach(v.branches)],
     ['inLawFamilies', v.inLawFamilies],
-    ['tallGenerations', v.tallGenerations ? 'true' : undefined],
-    ['childlessOutside', v.childlessOutside ? 'true' : undefined],
-    ['fullDates', v.fullDates ? 'true' : undefined],
     ['siblingsOnly', v.siblingsOnly ? 'true' : undefined],
+    ['uniteSpellings', v.uniteSpellings ? undefined : 'false'],
+    ['uniteForeign', v.uniteForeign ? undefined : 'false'],
+    ['familyBackgrounds', v.familyBackgrounds ? 'true' : undefined],
     ...extAttrs(v.ext),
   ];
   if (v.ext?.elements?.length) {
@@ -159,43 +157,48 @@ function writeFamily(w: XmlWriter, f: Family): void {
 
 function writePrint(w: XmlWriter, p: PrintSettings): void {
   const attrs: Attrs = [
-    ['theme', p.theme],
     ['paper', p.paper],
     ['orientation', p.orientation],
     ['center', p.centerId],
     ['partner', p.partnerId ?? undefined],
     ['withPartner', p.partnerId === null ? false : undefined],
-    ['centered', p.centered],
     ['ancestors', reach(p.ancestors)],
     ['descendants', reach(p.descendants)],
     ['branches', reach(p.branches)],
+    ['inLawFamilies', p.inLawFamilies],
+    ['siblingsOnly', p.siblingsOnly ? 'true' : undefined],
     ['title', p.title],
     ['subtitle', p.subtitle],
-    ['showDates', p.showDates],
-    ['showPlaces', p.showPlaces],
-    ['showPhotos', p.showPhotos],
-    ['showUnions', p.showUnions],
-    ['showRelationships', p.showRelationships],
-    ['showGenerations', p.showGenerations],
-    ['showSex', p.showSex],
-    ['sexColors', p.sexColors],
-    ['showTree', p.showTree],
-    ['inLawFamilies', p.inLawFamilies],
-    ['portrait', p.portrait],
-    ['portraitAlign', p.portraitAlign],
-    ['portraitSize', p.portraitSize !== 1 ? String(Math.round(p.portraitSize * 100) / 100) : undefined],
-    ['compactCouples', p.compactCouples ? 'true' : undefined],
-    ['tallGenerations', p.tallGenerations ? 'true' : undefined],
+    ['showTitle', p.showTitle],
+    ['showLegend', p.showLegend],
+    ['showFrame', p.showFrame],
+    ...cardAttrs(p),
     ['showHidden', p.showHidden ? 'true' : undefined],
-    ['childlessOutside', p.childlessOutside ? 'true' : undefined],
-    ['fullDates', p.fullDates ? 'true' : undefined],
-    ['siblingsOnly', p.siblingsOnly ? 'true' : undefined],
-    ['packFamilies', p.packFamilies ? 'true' : undefined],
-    ['showEmblems', p.showEmblems === false ? 'false' : undefined],
+    ['tight', p.tight ? 'true' : undefined],
+    ['fill', p.fill ? 'true' : undefined],
+    ['stackCouples', p.stackCouples ? 'true' : undefined],
+    ['amidPartners', p.amidPartners ? undefined : 'false'],
+    ['largeText', p.largeText ? 'true' : undefined],
+    ['strongLines', p.strongLines ? 'true' : undefined],
+    ['freeWidths', p.freeWidths ? 'true' : undefined],
+    ['legendAnchor', p.legendAnchor],
+    ['legendAlign', p.legendAlign && p.legendAlign !== 'center' ? p.legendAlign : undefined],
+    ['titleAnchor', p.titleAnchor],
+    ['unionText', p.unionText ? 'true' : undefined],
+    ['titleAt', p.titleAt ? [p.titleAt.x, p.titleAt.y].map((v) => Number(v.toFixed(4))).join(' ') : undefined],
+    [
+      'moves',
+      p.moves && Object.keys(p.moves).length
+        ? Object.entries(p.moves)
+            .map(([id, at]) => `${id}:${Number(at.x.toFixed(1))},${Number(at.y.toFixed(1))}`)
+            .join(' ')
+        : undefined,
+    ],
     ['tiles', p.tiles || undefined],
     ['tilesBorderless', p.tilesBorderless ? 'true' : undefined],
-    ['titleScale', p.titleScale && p.titleScale !== 1 ? String(Math.round(p.titleScale * 100) / 100) : undefined],
-    ['legendScale', p.legendScale && p.legendScale !== 1 ? String(Math.round(p.legendScale * 100) / 100) : undefined],
+    ['titleSize', p.titleSize ? String(Math.round(p.titleSize * 100) / 100) : undefined],
+    ['legendSize', p.legendSize ? String(Math.round(p.legendSize * 100) / 100) : undefined],
+    ['legendGap', p.legendGap !== undefined ? String(Math.round(p.legendGap * 100) / 100) : undefined],
     ['legendBox', p.legendBox ? [p.legendBox.x, p.legendBox.y, p.legendBox.w, p.legendBox.h].map((v) => Number(v.toFixed(4))).join(' ') : undefined],
     ...extAttrs(p.ext),
   ];
@@ -206,25 +209,6 @@ function writePrint(w: XmlWriter, p: PrintSettings): void {
   } else {
     w.element('print', attrs);
   }
-}
-
-function writeBackground(w: XmlWriter, b: BackgroundImage): void {
-  const m = /^data:([^;,]+);base64,(.*)$/s.exec(b.href);
-  const attrs: Attrs = [
-    ...(m
-      ? ([
-          ['mediaType', m[1]],
-          ['encoding', 'base64'],
-        ] as Attrs)
-      : ([['href', b.href]] as Attrs)),
-    ['width', Math.round(b.width * 100) / 100],
-    ['height', Math.round(b.height * 100) / 100],
-    ['fit', b.fit],
-    ['opacity', Math.round(b.opacity * 100) / 100],
-    ['name', b.name],
-    ...extAttrs(b.ext),
-  ];
-  w.element('background', attrs, m ? m[2] : undefined);
 }
 
 function reach(r: Reach): string {
@@ -248,34 +232,6 @@ function writeEvent(w: XmlWriter, name: string, e: LifeEvent, extra: Attrs = [])
   } else {
     w.element(name, attrs);
   }
-}
-
-/** Changes made by hand to the layout, for the people and families in the tree, in their order. */
-function writeArrangement(w: XmlWriter, doc: TreeDocument): void {
-  if (!doc.arrangement) return;
-  const a = arrangementOf(doc);
-  const moves = doc.people.filter((p) => a.moves[p.id] !== undefined);
-  const lines = doc.families.filter((f) => a.lines[f.id] !== undefined);
-  const couples = doc.families.filter((f) => a.left[f.id] !== undefined);
-  if (!moves.length && !lines.length && !couples.length && !a.ext) return;
-  w.open('arrangement', extAttrs(a.ext));
-  for (const p of moves)
-    w.element('move', [
-      ['person', p.id],
-      ['dx', String(a.moves[p.id])],
-    ]);
-  for (const f of lines)
-    w.element('line', [
-      ['family', f.id],
-      ['dy', String(a.lines[f.id])],
-    ]);
-  for (const f of couples)
-    w.element('couple', [
-      ['family', f.id],
-      ['left', a.left[f.id]],
-    ]);
-  extElements(w, a.ext);
-  w.close();
 }
 
 function extAttrs(ext: Extensions | undefined): Attrs {

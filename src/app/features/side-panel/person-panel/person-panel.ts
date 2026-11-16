@@ -11,12 +11,13 @@ import { PersonFamily } from './person-family/person-family';
 import { PersonHeader } from './person-header/person-header';
 import { PersonLifeForm } from './person-life-form/person-life-form';
 import { PersonNameForm } from './person-name-form/person-name-form';
+import { PersonNotices } from './person-notices/person-notices';
 import { PersonSummary } from './person-summary/person-summary';
 
 /** One person: who they are, their details, their family, and what can be done with them. */
 @Component({
   selector: 'stemma-person-panel',
-  imports: [Icon, Switch, PersonHeader, PersonSummary, PersonNameForm, PersonLifeForm, PersonFamily],
+  imports: [Icon, Switch, PersonHeader, PersonNotices, PersonSummary, PersonNameForm, PersonLifeForm, PersonFamily],
   templateUrl: './person-panel.html',
   styleUrl: './person-panel.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,

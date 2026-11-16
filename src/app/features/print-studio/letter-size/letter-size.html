@@ -1,0 +1,27 @@
+@let s = size();
+<label [for]="s.id">
+  {{ t(s.label) }}
+  @if (s.pt !== undefined) {
+    <span class="value">{{ s.value ? '' : t('print.sizeAuto') + ' · ' }}{{ t('print.letterPt', { pt: s.pt }) }}</span>
+  }
+</label>
+<div class="row">
+  <div class="unit">
+    <input
+      class="input"
+      inputmode="decimal"
+      autocomplete="off"
+      [id]="s.id"
+      [class.auto]="!s.value"
+      [value]="s.value || s.auto"
+      [placeholder]="s.auto"
+      (change)="set($event)"
+    />
+    <span class="suffix">cm</span>
+  </div>
+  @if (offer()) {
+    <button type="button" class="btn small suggested" [title]="t('print.sizeUseAuto', { cm: s.auto })" (click)="useSuggested()">
+      {{ t('print.sizeRecommended', { cm: s.auto }) }}
+    </button>
+  }
+</div>

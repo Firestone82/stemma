@@ -1,0 +1,48 @@
+.unit {
+  position: relative;
+  display: grid;
+
+  .input {
+    width: 100%;
+    padding-right: 2.6em;
+  }
+
+  /* A size nobody set: the one the page chose, a little quieter than one typed in. */
+  .input.auto:not(:focus) {
+    color: var(--ink-2);
+  }
+
+  .suffix {
+    position: absolute;
+    right: 0.9em;
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--ink-3);
+    pointer-events: none;
+  }
+}
+
+.value {
+  color: var(--ink-3);
+  font-variant-numeric: tabular-nums;
+}
+
+/* The field, and beside it the size the page would choose, to take with a click. */
+.row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.unit {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.suggested {
+  flex: none;
+  max-width: 55%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

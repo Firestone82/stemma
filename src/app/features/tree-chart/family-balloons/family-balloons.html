@@ -1,22 +1,27 @@
-@for (b of balloons(); track b.balloon.id) {
-  <svg:path class="string" [attr.d]="'M' + b.from.x + ',' + b.from.y + 'L' + b.to.x + ',' + b.to.y" />
+@for (s of slots(); track s.id) {
   <svg:g
-    class="balloon"
+    class="slot"
     role="button"
     tabindex="0"
-    [attr.data-kind]="b.balloon.kind"
-    [attr.aria-label]="labels().get(b.balloon.id)"
-    [attr.transform]="'translate(' + b.x + ',' + b.y + ')'"
-    (click)="onPick(b.balloon.id, $event)"
-    (keydown.enter)="onPick(b.balloon.id, $event)"
-    (keydown.space)="onPick(b.balloon.id, $event)"
+    [attr.data-kind]="s.kind"
+    [attr.aria-label]="labels().get(s.id)"
+    [attr.transform]="'translate(' + s.x + ',' + s.y + ')'"
+    (click)="onPick(s.id, $event)"
+    (keydown.enter)="onPick(s.id, $event)"
+    (keydown.space)="onPick(s.id, $event)"
     (pointerdown)="$event.stopPropagation()"
   >
-    <svg:rect class="body" [attr.width]="b.w" [attr.height]="b.h" [attr.rx]="b.h / 2" />
-    @for (t of b.shields; track $index) {
-      <svg:path class="shield" [attr.data-tincture]="t" [attr.d]="shield" [attr.transform]="'translate(' + (8 + $index * 13) + ',' + (b.h / 2 - 6) + ')'" />
+    <svg:rect class="body" [attr.width]="s.w" [attr.height]="s.h" rx="5" />
+    @for (t of s.shields; track $index) {
+      <svg:path
+        class="shield"
+        [attr.data-tincture]="t"
+        [attr.d]="shield"
+        [attr.transform]="'translate(' + (startOf(s) + $index * pitch) + ',' + (s.h / 2 - 16) + ')'"
+      />
     }
-    <svg:text class="name" [attr.x]="8 + b.shields.length * 13" [attr.y]="b.h / 2" dominant-baseline="central">{{ b.text }}</svg:text>
-    <svg:title>{{ labels().get(b.balloon.id) }}</svg:title>
+    <svg:text class="name" [attr.x]="startOf(s) + s.shields.length * pitch" [attr.y]="s.h / 2 - 10" dominant-baseline="central">{{ s.text }}</svg:text>
+    <svg:text class="more" [attr.x]="s.w / 2" [attr.y]="s.h / 2 + 12" text-anchor="middle" dominant-baseline="central">{{ hint()(s.shields.length) }}</svg:text>
+    <svg:title>{{ labels().get(s.id) }}</svg:title>
   </svg:g>
 }

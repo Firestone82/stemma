@@ -3,7 +3,7 @@
  * the middle, or nudge a card into sight. Pure functions of the layout and the
  * size of the screen.
  */
-import { LayoutBounds, LayoutCard, LayoutResult, Pt } from '../../core/layout/layout-types';
+import { LayoutBounds, LayoutCard, LayoutResult, Pt } from '../../core/layout/types';
 import { TreeIndex } from '../../core/model/tree-index';
 import { currentPartner } from '../../state/chart-model';
 import { MIN_ZOOM, View } from './viewport';
@@ -13,8 +13,8 @@ export interface Screen {
   h: number;
 }
 
-/** The whole tree, as large as fits (but not larger than 110%), leaving `gutter` on the left for row labels. */
-export function fitView(bounds: LayoutBounds, screen: Screen, gutter: number): View {
+/** The whole tree, as large as fits (but not larger than 110%). */
+export function fitView(bounds: LayoutBounds, screen: Screen, gutter = 0): View {
   const { w, h } = screen;
   if (!bounds.w || !bounds.h) return { x: w / 2, y: h / 2, k: 1 };
   const padX = Math.min(64, w * 0.06) + gutter;
@@ -25,12 +25,12 @@ export function fitView(bounds: LayoutBounds, screen: Screen, gutter: number): V
 
 /** The middle of a card, or the marker between the person and their partner when they stand side by side. */
 export function coupleCentre(layout: LayoutResult, index: TreeIndex, personId: string): Pt | null {
-  const c = layout.cards.find((x) => x.personId === personId);
+  const c = layout.cards.find((x) => x.personId === personId && !x.ghost);
   if (!c) return null;
   const partnerId = currentPartner(index, personId);
   const family = partnerId ? index.familyBetween(personId, partnerId) : undefined;
-  const union = family ? layout.unions.find((u) => u.familyId === family.id && (u.mode === 'gap' || u.mode === 'bridge')) : undefined;
-  return union ? { x: union.cx, y: union.cy } : { x: c.x + c.w / 2, y: c.y + c.h / 2 };
+  const union = family ? layout.unions.find((u) => u.familyId === family.id) : undefined;
+  return union ? { x: union.x, y: union.y } : { x: c.x + c.w / 2, y: c.y + c.h / 2 };
 }
 
 /**

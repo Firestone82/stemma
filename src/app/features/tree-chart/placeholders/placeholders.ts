@@ -1,7 +1,7 @@
-import { ChangeDetectionStrategy, Component, inject, input, output } from '@angular/core';
-import { LayoutResult } from '../../../core/layout/layout-types';
+import { ChangeDetectionStrategy, Component, computed, inject, input, output } from '@angular/core';
+import { LayoutResult } from '../../../core/layout/types';
+import { isPortal } from '../../../core/model/family-view';
 import { I18n } from '../../../i18n/i18n';
-import { CARD_METRICS } from '../../../state/card-metrics';
 
 /** Card-sized dashed boxes with a question mark, for parents nobody has entered yet; siblings hang from them. */
 @Component({
@@ -13,9 +13,11 @@ import { CARD_METRICS } from '../../../state/card-metrics';
 })
 export class Placeholders {
   protected readonly t = inject(I18n).t;
-  protected readonly radius = CARD_METRICS.radius;
+  protected readonly radius = 4;
 
   readonly layout = input.required<LayoutResult>();
+  /** Without the places of the families a family view leaves off: those are buttons (family-balloons). */
+  protected readonly holders = computed(() => this.layout().placeholders.filter((p) => !isPortal(p.familyId)));
   /** A placeholder was clicked (its family id). */
   readonly pick = output<string>();
 

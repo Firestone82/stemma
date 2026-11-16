@@ -56,37 +56,27 @@
 .given {
   fill: var(--t-ink);
   font-family: var(--font-serif);
-  font-weight: 500;
+  font-weight: 600;
 }
 
 .surname {
   fill: var(--t-ink);
   font-family: var(--font-sc);
   font-weight: 500;
-  letter-spacing: 0.015em;
+  letter-spacing: 0.03em;
 }
 
 /* The surname at birth, under the surname: "née Barlow". */
 .birth {
   fill: var(--t-muted);
-  font-family: var(--font-sc);
-  font-weight: 500;
-  letter-spacing: 0.015em;
+  font-family: var(--font-serif);
+  font-style: italic;
 }
 
 .dates {
   fill: var(--t-muted);
   font-family: var(--font-sans);
   letter-spacing: 0.01em;
-}
-
-/* How the person is related to whoever the tree is centred on. The card is sized to fit it,
-   so the letter spacing is also in CARD_METRICS.kin.spacing (state/card-metrics.ts). */
-.kin {
-  fill: var(--t-kin);
-  font-family: var(--font-sc);
-  font-weight: 500;
-  letter-spacing: 0.04em;
 }
 
 .sex-mark {
@@ -105,14 +95,26 @@
   stroke: var(--t-female);
 }
 
-.focus-ring {
-  fill: none;
-  stroke: var(--t-kin);
-  stroke-width: 1.3;
+/* The sex as an accent: a band down the left edge (and the card tinted, above). */
+.accent {
+  fill: var(--t-faint);
 }
 
-.focus-dot {
-  fill: var(--t-kin);
+:host([data-sex='male']) .accent {
+  fill: var(--t-male);
+}
+
+:host([data-sex='female']) .accent {
+  fill: var(--t-female);
+}
+
+/* A stand-in for someone who has their own card elsewhere on the chart. */
+:host(.ghost) {
+  opacity: 0.6;
+}
+
+:host(.ghost) .card-shape {
+  stroke-dasharray: 1.5 3;
 }
 
 .shield-field {
@@ -173,7 +175,7 @@ $tinctures: 'azure', 'gules', 'vert', 'purpure', 'or', 'tenne', 'sanguine', 'cel
 }
 
 /* Something still to fill in (a first name, a year of birth); red for dates that cannot be right. */
-.missing-flag {
+.badge {
   circle {
     fill: #d4851b;
     stroke: var(--t-card);

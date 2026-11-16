@@ -1,6 +1,7 @@
 @let p = person();
 <stemma-person-header [person]="p" (closePanel)="people.close()" />
 <div class="panel-body">
+  <stemma-person-notices [person]="p" />
   @if (hidden()) {
     <p class="hidden-note" role="status">
       <stemma-icon name="info" [size]="16" />

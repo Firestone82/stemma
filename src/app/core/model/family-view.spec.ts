@@ -1,4 +1,4 @@
-import { decodeFamilyKeys, encodeFamilyKeys, familyBalloons, familyViewScope } from './family-view';
+import { decodeFamilyKeys, encodeFamilyKeys, familyBalloons, familyViewScope, isPortal, portalId, withPortals } from './family-view';
 import { lineageSurname, surnameKey } from './names';
 import { sampleDocument } from './sample';
 import { TreeIndex } from './tree-index';
@@ -42,6 +42,39 @@ describe('family view', () => {
     // Věra's parents are not in the tree; Šárka's parents are on the chart.
     expect(byId.has('parents:I17')).toBe(false);
     expect(byId.has('parents:I15')).toBe(false);
+  });
+
+  it('gives each family left off a stand-in where its first card would be', () => {
+    const s = view('novak');
+    const balloons = familyBalloons(doc, index, s.people, keyOf);
+    const laid = withPortals(s.doc, index, balloons);
+    // The view itself is untouched.
+    expect(s.doc.people.some((p) => isPortal(p.id))).toBe(false);
+    expect(
+      laid.people
+        .filter((p) => isPortal(p.id))
+        .map((p) => p.id)
+        .sort(),
+    ).toEqual(balloons.map((b) => portalId(b.id)).sort());
+    for (const b of balloons) {
+      const id = portalId(b.id);
+      if (b.kind === 'parents') {
+        // A parent over the person.
+        expect(laid.families.some((f) => f.partners.includes(id) && f.children.some((c) => c.personId === b.personId))).toBe(true);
+      } else if (b.kind === 'children') {
+        // A child of the couple, in their own family.
+        expect(laid.families.find((f) => f.id === b.familyId)!.children.map((c) => c.personId)).toContain(id);
+      } else {
+        // The partner's place in the family they share.
+        const f = laid.families.find((x) => x.id === b.familyId)!;
+        expect(f.partners).toContain(id);
+        expect(f.partners).toContain(b.personId);
+      }
+    }
+    // Tomáš, born Ashworth, waits under Simon and Šárka.
+    expect(balloons.some((b) => b.kind === 'children' && b.familyId === 'F6')).toBe(true);
+    // Nothing to stand in for: the same document.
+    expect(withPortals(s.doc, index, [])).toBe(s.doc);
   });
 
   it('reaches brothers and sisters whose parents nobody knows', () => {

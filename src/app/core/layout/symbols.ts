@@ -29,14 +29,3 @@ export function sexSymbolPath(sex: Sex, s: number): string {
       return '';
   }
 }
-
-/**
- * A band across the top left corner of a card `h` high, as on a portrait of
- * someone who has died: the path of its shape, in the card's own units.
- */
-export function mourningRibbon(h: number): string {
-  const a = Math.max(8, h * 0.17);
-  const b = Math.max(4.5, h * 0.09);
-  const r = (v: number) => Math.round(v * 10) / 10;
-  return `M0,${r(a)}L${r(a)},0H${r(a + b)}L0,${r(a + b)}Z`;
-}

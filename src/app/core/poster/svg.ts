@@ -78,12 +78,3 @@ export function specklePattern(id: string, size: number, color: string, count: n
   }
   return `<pattern id="${id}" width="${n(size)}" height="${n(size)}" patternUnits="userSpaceOnUse"><g fill="${escapeAttr(color)}">${dots}</g></pattern>`;
 }
-
-/** A colour between two #rrggbb colours: t = 0 gives `a`, t = 1 gives `b`. */
-export function mixHex(a: string, b: string, t: number): string {
-  const pa = parseInt(a.slice(1), 16);
-  const pb = parseInt(b.slice(1), 16);
-  const ch = (p: number, shift: number) => (p >> shift) & 255;
-  const mix = (shift: number) => Math.round(ch(pa, shift) + (ch(pb, shift) - ch(pa, shift)) * t);
-  return `#${((1 << 24) | (mix(16) << 16) | (mix(8) << 8) | mix(0)).toString(16).slice(1)}`;
-}

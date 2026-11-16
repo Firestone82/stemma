@@ -1,0 +1,39 @@
+:host {
+  display: grid;
+}
+
+/* A little page to pick a place on, and beside it what else can be done about the place. */
+.place {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.btn.chosen {
+  border-color: var(--ink);
+  background: var(--ink);
+  color: var(--sheet);
+}
+
+.unit {
+  position: relative;
+  display: grid;
+
+  .input {
+    width: 100%;
+    padding-right: 2.6em;
+  }
+
+  .input.auto:not(:focus) {
+    color: var(--ink-2);
+  }
+
+  .suffix {
+    position: absolute;
+    right: 0.9em;
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--ink-3);
+    pointer-events: none;
+  }
+}

@@ -20,6 +20,52 @@ describe('names', () => {
     expect(surnameKey('NOVAK')).toBe(surnameKey('Novák'));
   });
 
+  it('takes the Polish and the Czech way of writing a name for one family, when asked', () => {
+    for (const [polish, czech] of [
+      ['Nowak', 'Novák'],
+      ['Nowakowa', 'Nováková'],
+      ['Szturc', 'Šturc'],
+      ['Heczko', 'Hečko'],
+      ['Walach', 'Valach'],
+      ['Kowalski', 'Kovalská'],
+      ['Mrózek', 'Mrozek'],
+      ['Łukasz', 'Lukaš'],
+      ['Rzepka', 'Řepka'],
+    ]) {
+      expect(surnameKey(polish, true), `${polish} and ${czech}`).toBe(surnameKey(czech, true));
+    }
+    // Written the two ways they are two names unless asked: as before.
+    expect(surnameKey('Nowak')).not.toBe(surnameKey('Novák'));
+    expect(surnameKey('Szturc')).not.toBe(surnameKey('Šturc'));
+    // And still one family with its own women, and apart from other families.
+    expect(surnameKey('Nowak', true)).toBe(surnameKey('Nováková', true));
+    expect(surnameKey('Nowak', true)).not.toBe(surnameKey('Nowicki', true));
+    expect(surnameKey('Walach', true)).not.toBe(surnameKey('Wolny', true));
+  });
+
+  it('takes the German and the Czech way of writing a name for one family, when asked, and letters with and without their marks always', () => {
+    const both = { polish: true, foreign: true };
+    for (const [german, czech] of [
+      ['Schmidt', 'Šmíd'],
+      ['Schwarz', 'Švarc'],
+      ['Müller', 'Mueller'],
+      ['Weiss', 'Vajs'],
+      ['Schneider', 'Šnajder'],
+      ['Wagner', 'Vágner'],
+      ['Fuchs', 'Fuks'],
+    ]) {
+      expect(surnameKey(german, both), `${german} and ${czech}`).toBe(surnameKey(czech, both));
+    }
+    // Not unless asked; marks over letters never matter.
+    expect(surnameKey('Schmidt', true)).not.toBe(surnameKey('Šmíd', true));
+    expect(surnameKey('Novak')).toBe(surnameKey('Novák'));
+    expect(surnameKey('Muller')).toBe(surnameKey('Müller'));
+    // Still apart from other families, and with its own women.
+    expect(surnameKey('Schmidt', both)).not.toBe(surnameKey('Schubert', both));
+    expect(surnameKey('Novák', both)).not.toBe(surnameKey('Nový', both));
+    expect(surnameKey('Švarcová', both)).toBe(surnameKey('Schwarz', both));
+  });
+
   it('keeps different families apart', () => {
     expect(surnameKey('Ashworth')).not.toBe(surnameKey('Moreau'));
     expect(surnameKey('Novák')).not.toBe(surnameKey('Nový'));

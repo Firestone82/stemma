@@ -1,5 +1,6 @@
 import { Injectable, computed, effect, inject, signal, untracked } from '@angular/core';
 import { decodeFamilyKeys, encodeFamilyKeys } from '../core/model/family-view';
+import { unitedKey, unitingOf } from '../core/model/names';
 import { TreeStore } from '../core/store/tree-store';
 import { PRINT_HASH } from '../features/print-studio/print-route';
 import { ChartBusy } from './chart-busy';
@@ -113,7 +114,6 @@ export class FamilyView {
 
   private after(personId: string | undefined): void {
     // Moves made by hand are made on the whole tree.
-    this.ui.arranging.set(false);
     if (personId) {
       this.ui.focus(personId);
       this.ui.highlight(personId);
@@ -123,7 +123,10 @@ export class FamilyView {
   }
 
   private fromAddress(): string[] {
-    return location.hash.startsWith(FAMILY_HASH) ? decodeFamilyKeys(location.hash.slice(FAMILY_HASH.length)) : [];
+    const keys = location.hash.startsWith(FAMILY_HASH) ? decodeFamilyKeys(location.hash.slice(FAMILY_HASH.length)) : [];
+    // An address kept from before the spellings of a name were united (…/nowak) still finds its family.
+    const unite = unitingOf(this.store.doc().view);
+    return unite.polish || unite.foreign ? keys.map((k) => unitedKey(k, unite)).filter((k, i, all) => all.indexOf(k) === i) : keys;
   }
 
   /**

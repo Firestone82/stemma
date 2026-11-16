@@ -78,10 +78,17 @@ export function kinLabel(language: ChartLanguage, kin: Kin | undefined, sex: Sex
 /**
  * The surname for a card, and the line under it when the surname at birth was
  * different: "Ashworth" and "née Barlow" in the given language. `birth` is the
- * surname at birth when it is known from elsewhere (the father's).
+ * surname at birth when it is known from elsewhere (the father's). With `unknown`
+ * (see birthSurnameUnknown) the line says so: "née Unknown", "roz. Neznámá".
  */
-export function surnameLinesIn(language: ChartLanguage, person: Person, birth = person.name.birthSurname?.trim() ?? ''): { surname: string; birth: string } {
+export function surnameLinesIn(
+  language: ChartLanguage,
+  person: Person,
+  birth = person.name.birthSurname?.trim() ?? '',
+  unknown = false,
+): { surname: string; birth: string } {
   const surname = person.name.surname.trim();
+  if (unknown && surname) return { surname, birth: language.bornAs(language.unknown(person.sex), person.sex) };
   if (!birth || birth === surname) return { surname, birth: '' };
   return surname ? { surname, birth: language.bornAs(birth, person.sex) } : { surname: birth, birth: '' };
 }

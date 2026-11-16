@@ -25,5 +25,12 @@
     />
   </div>
 </div>
-<stemma-switch [checked]="model.settings().centered" (checkedChange)="model.set({ centered: $event })">{{ t('print.keepCentred') }}</stemma-switch>
-<span class="hint">{{ t('print.keepCentredHint') }}</span>
+<div class="studio-part" role="group" aria-labelledby="print-g-arrange">
+  <h4 id="print-g-arrange">{{ t('print.arrange') }}</h4>
+  @for (o of arrangement(); track o.key) {
+    <div class="studio-option">
+      <stemma-switch [checked]="o.on" (checkedChange)="arrange(o.key, $event)">{{ t(o.label) }}</stemma-switch>
+      <span class="hint">{{ t(o.hint) }}</span>
+    </div>
+  }
+</div>
