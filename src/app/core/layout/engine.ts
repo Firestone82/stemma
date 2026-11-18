@@ -226,12 +226,20 @@ function widthOf(ctx: Ctx, personId: string): number {
   return ctx.o.widths?.[personId] ?? ctx.o.cardWidth;
 }
 
+/** The people of a unit in a row or a column, turned over where an odd number of them asked for it (LayoutOptions.flipped). */
+function flip(ctx: Ctx, row: Member[]): Member[] {
+  const asked = ctx.o.flipped;
+  if (!asked?.length || row.length < 2) return row;
+  const turned = row.filter((m) => !m.ghost && asked.includes(m.personId)).length % 2 === 1;
+  return turned ? [...row].reverse() : row;
+}
+
 /** A unit's cards and the markers between partners. */
 function unitRow(ctx: Ctx, u: Unit, facing: Facing): UnitRow {
   const { cardWidth: W, cardHeight: H, partnerGap: G, siblingGap } = ctx.o;
   const pad = siblingGap / 2;
   const block = new Block();
-  const row = rowOf(u, facing, ctx.o.amidPartners);
+  const row = flip(ctx, rowOf(u, facing, ctx.o.amidPartners));
   const at = new Map(row.map((m, i) => [m.personId, i]));
   // Each card as wide as it is, the same gap between any two.
   const widths = row.map((m) => widthOf(ctx, m.personId));
@@ -809,12 +817,14 @@ function stackCore(ctx: Ctx, u: Unit): Stack {
   const block = new Block();
   const rev = (m: Member[]) => [...m].reverse();
   // Someone with several partners stands between them, so each couple's cards are next to each other.
-  const order: Member[] =
+  const order: Member[] = flip(
+    ctx,
     u.core.length === 2
       ? [...rev(u.extras[0]), u.core[0], u.core[1], ...u.extras[1]]
       : u.core.length === 1
         ? [...rev(u.extras[0].slice(1)), u.core[0], ...u.extras[0].slice(0, 1)]
-        : [];
+        : [],
+  );
   const at = new Map(order.map((m, i) => [m.personId, i]));
   // The cards of a column are one width: that of the widest among them.
   const W = order.length ? Math.max(...order.map((m) => widthOf(ctx, m.personId))) : ctx.o.cardWidth;

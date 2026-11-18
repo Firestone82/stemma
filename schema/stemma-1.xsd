@@ -310,6 +310,8 @@
     <xs:attribute name="moves" type="xs:string"/>
     <!-- 1.9: people brought onto the print by hand, whatever the reach leaves out: "I12 I13 I40", their ids. -->
     <xs:attribute name="added" type="xs:string"/>
+    <!-- 1.9: people whose partners stand on the other side of them: "I11 I40", their ids. -->
+    <xs:attribute name="flipped" type="xs:string"/>
     <xs:attribute name="ancestors" type="t:Reach" default="all"/>
     <xs:attribute name="descendants" type="t:Reach" default="all"/>
     <xs:attribute name="branches" type="t:Reach" default="all"/>

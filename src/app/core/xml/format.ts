@@ -53,7 +53,8 @@ export interface FormatVersion {
  *      ways of drawing (styles, the drawn tree, generations in rows, stacked couples, sideways branches,
  *      relationship names, portraits), <background> and <arrangement> are no longer read, and are gone
  *      from a file once it is saved. People and families are as they were. Later in 1.9: moves (cards
- *      moved by hand) and added (people brought onto the print by hand) on <print>.
+ *      moved by hand), added (people brought onto the print by hand) and
+ *      flipped (couples with their partners swapped from side to side) on <print>.
  */
 export const CURRENT_FORMAT: FormatVersion = { major: 1, minor: 9 };
 

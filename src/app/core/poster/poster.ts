@@ -80,6 +80,12 @@ export interface PosterResult {
   /** The size of a card in the layout's units (what PrintSettings.moves is measured in). */
   cardUnits: { w: number; h: number };
   /**
+   * The gaps the layout keeps between two cards side by side, in the layout's units: between partners, between
+   * brothers and sisters, between families; and between a couple's cards one over the other. A card dragged
+   * by hand next to another snaps to the one that fits the two.
+   */
+  gaps: { partner: number; sibling: number; family: number; stack: number };
+  /**
    * The line from each child's parents to the child, whole, in the layout's units. On the page a stretch several
    * children share is drawn once; this is for finding everyone who hangs on a stretch that is clicked.
    */
@@ -290,6 +296,7 @@ export function* posterSteps(input: PosterInput): Steps<PosterResult> {
     widths: Object.keys(widths).length ? widths : undefined,
     stackCouples: settings.stackCouples,
     amidPartners: settings.amidPartners,
+    flipped: settings.flipped?.length ? settings.flipped : undefined,
     // The bigger marks between partners need a wider gap: the widest (divorced: two rings struck through) clear of both cards.
     ...(settings.strongLines ? { partnerGap: Math.max((settings.tight ? TIGHT_LAYOUT : LAYOUT).partnerGap ?? LAYOUT.partnerGap, STRONG_PARTNER_GAP) } : {}),
     // Room round the couple in the middle for the frame round them.
@@ -786,6 +793,7 @@ export function* posterSteps(input: PosterInput): Steps<PosterResult> {
     inner: { x: margin / W, y: margin / H, w: 1 - (2 * margin) / W, h: 1 - (2 * margin) / H },
     shown: doc.people.map((p) => p.id),
     cardUnits: { w: design.width, h: design.height },
+    gaps: { partner: options.partnerGap, sibling: options.siblingGap, family: options.familyGap, stack: options.stackGap },
     lines: layout.lines.map((l) => ({ familyId: l.familyId, childId: l.childId, points: l.points.map((p) => ({ x: p.x, y: p.y })) })),
     namesIn: (at, style = {}) =>
       namesMarkup(ctx, { x: at.x * W, y: at.y * H, w: at.w * W, h: at.h * H }, undefined, {

@@ -174,6 +174,7 @@ const KNOWN = {
       'titleAt',
       'moves',
       'added',
+      'flipped',
       'ancestors',
       'descendants',
       'branches',
@@ -428,6 +429,8 @@ class Reader {
     // "I12 I13 I40": people brought onto the print by hand.
     const added = [...new Set((el.getAttribute('added') ?? '').split(/\s+/).filter(Boolean))];
     if (added.length) print.added = added;
+    const flipped = [...new Set((el.getAttribute('flipped') ?? '').split(/\s+/).filter(Boolean))];
+    if (flipped.length) print.flipped = flipped;
     const box = parseLegendBox(el.getAttribute('legendBox'));
     if (box) print.legendBox = box;
     const tiles = el.getAttribute('tiles')?.trim();

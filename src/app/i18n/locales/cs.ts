@@ -591,6 +591,7 @@ export const cs: Catalogue = {
   'print.all': 'Vše',
   'print.none': 'Žádné',
   'print.menu.hide': 'Vynechat z tisku',
+  'print.menu.flip': 'Prohodit strany partnerů',
   'print.menu.add': 'Přidat do tisku',
   'print.menu.addParents': 'Rodiče',
   'print.menu.addSiblings': 'Sourozence i s rodiči',
@@ -598,7 +599,7 @@ export const cs: Catalogue = {
   'print.addedPeople': { one: '{count} osoba přidaná ručně', few: '{count} osoby přidané ručně', other: '{count} osob přidaných ručně' },
   'print.unaddAll': 'Odebrat je',
   'print.clickToHide':
-    'Tažením kartu přesunete: čáry jdou za ní a karta se zarovná s ostatními (s klávesou Alt ji položíte volně). Kliknutím na kartu přidáte rodiče, sourozence nebo celou rodinu, osobu vynecháte nebo kartu vrátíte na místo; kliknutím na čáru odeberete všechny, kdo na ní visí. Ctrl+Z a Ctrl+Y vracejí a opakují.',
+    'Tažením kartu přesunete: čáry i vše, co pod ní visí, jdou za ní a karta se zarovná s ostatními i na obvyklou mezeru vedle nich (s klávesou Alt ji položíte volně). Kliknutím na kartu přidáte rodiče, sourozence nebo celou rodinu, prohodíte strany partnerů, osobu vynecháte nebo kartu vrátíte na místo; kliknutím na čáru odeberete všechny, kdo na ní visí. Ctrl+Z a Ctrl+Y vracejí a opakují.',
   'print.showHidden': 'Tisknout i skryté osoby',
   'print.zoom.label': 'Přiblížení náhledu',
   'print.legendBox.hint': 'Jména rodů: tažením přesunete, za roh změníte velikost',

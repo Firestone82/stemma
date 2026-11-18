@@ -47,12 +47,23 @@ describe('cards moved by hand', () => {
     expect(reaches(union.line[0], card(moved, 'I22')) || reaches(union.line.at(-1)!, card(moved, 'I22'))).toBe(true);
     expect(reaches(union.line[0], card(moved, 'I26')) || reaches(union.line.at(-1)!, card(moved, 'I26'))).toBe(true);
     expect(straight(union.line)).toBe(true);
-    // Leo did not move; his line now starts at the marker's new place.
+    // Mia married in: she goes with him, and the marker between them as far.
+    const shift = { x: union.x - was.x, y: union.y - was.y };
+    expect(shift.x).toBeCloseTo(-40, 5);
+    expect(shift.y).toBeCloseTo(50, 5);
+    expect(card(moved, 'I26').x).toBeCloseTo(card(l, 'I26').x - 40, 5);
+    // Leo hangs under the marker: he went as far as it did, and his line with him, the same shape.
     const down = moved.lines.find((x) => x.childId === 'I29')!;
+    expect(card(moved, 'I29').x).toBeCloseTo(card(l, 'I29').x + shift.x, 5);
+    expect(card(moved, 'I29').y).toBeCloseTo(card(l, 'I29').y + shift.y, 5);
     expect(down.points[0].x).toBeCloseTo(union.x, 5);
     expect(down.points[0].y).toBeCloseTo(union.y, 5);
-    expect(reaches(down.points.at(-1)!, card(l, 'I29'))).toBe(true);
+    expect(reaches(down.points.at(-1)!, card(moved, 'I29'))).toBe(true);
+    expect(down.points).toHaveLength(l.lines.find((x) => x.childId === 'I29')!.points.length);
     expect(straight(down.points)).toBe(true);
+    // Dragged herself, Mia goes alone: Tomáš has parents on the page and stays.
+    const mia = applyMoves(l, new Map([['I26', { x: 60, y: 0 }]]));
+    expect(card(mia, 'I22')).toEqual(card(l, 'I22'));
     // And the line from Tomáš's own parents follows him.
     const up = moved.lines.find((x) => x.childId === 'I22')!;
     expect(reaches(up.points.at(-1)!, card(moved, 'I22'))).toBe(true);
@@ -85,6 +96,45 @@ describe('cards moved by hand', () => {
       expect(down.points[0].y).toBeCloseTo(union.y, 5);
       expect(straight(down.points)).toBe(true);
     }
+  });
+
+  it('takes everything that hangs under a moved card along: children, the partners they married and their children', () => {
+    const l = sample();
+    // Simon and Šárka, the couple in the middle, both moved alike: everyone under them goes as far.
+    const d = { x: 220, y: 90 };
+    const moved = applyMoves(
+      l,
+      new Map([
+        ['I11', d],
+        ['I15', d],
+      ]),
+    );
+    // Ruth, Simon's first wife, married in: she goes with him.
+    expect(card(moved, 'I14').x).toBeCloseTo(card(l, 'I14').x + d.x, 5);
+    // Tomáš (their son), Mia (who married him) and Leo (their child).
+    for (const id of ['I22', 'I26', 'I29']) {
+      expect(card(moved, id).x).toBeCloseTo(card(l, id).x + d.x, 5);
+      expect(card(moved, id).y).toBeCloseTo(card(l, id).y + d.y, 5);
+    }
+    // Their lines go whole.
+    const before = l.lines.find((x) => x.childId === 'I29')!;
+    expect(moved.lines.find((x) => x.childId === 'I29')!.points).toEqual(before.points.map((p) => ({ x: p.x + d.x, y: p.y + d.y })));
+    // Simon's parents above, and his brother beside, stay where they were.
+    for (const id of ['I6', 'I9', 'I12']) expect(card(moved, id)).toEqual(card(l, id));
+  });
+
+  it('adds a move of a card under a moved one to what it went along', () => {
+    const l = sample();
+    // Tomáš moved, Mia with him, Leo under them moved as well.
+    const moved = applyMoves(
+      l,
+      new Map([
+        ['I22', { x: 100, y: 0 }],
+        ['I29', { x: -30, y: 20 }],
+      ]),
+    );
+    expect(card(moved, 'I29').x).toBeCloseTo(card(l, 'I29').x + 70, 5);
+    expect(card(moved, 'I29').y).toBeCloseTo(card(l, 'I29').y + 20, 5);
   });
 
   it('makes the tree as big as it now is, and is the same tree when nobody moved', () => {

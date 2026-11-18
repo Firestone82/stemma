@@ -130,6 +130,12 @@ export class PrintStudio {
     if (m) this.model.add(m.id, what);
   }
 
+  protected flip(): void {
+    const m = this.menu();
+    this.menu.set(null);
+    if (m) this.model.flip(m.id);
+  }
+
   protected unmove(): void {
     const m = this.menu();
     this.menu.set(null);

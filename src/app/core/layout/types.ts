@@ -50,6 +50,12 @@ export interface LayoutOptions {
    * all stand on the far side, the line to each further one led over the cards between.
    */
   amidPartners: boolean;
+  /**
+   * People whose couple stands the other way round, partners swapped from side to side (or, one over the
+   * other, top to bottom): a row with one of them in it is turned over; with two of them (both partners
+   * asked for it) it stays as it was.
+   */
+  flipped?: readonly string[];
 }
 
 export const LAYOUT: LayoutOptions = {

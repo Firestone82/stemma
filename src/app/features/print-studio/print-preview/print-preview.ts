@@ -56,6 +56,11 @@ export class PrintPreview {
   readonly cardMove = output<{ personId: string; dx: number; dy: number }>();
   /** The size of a card in the layout's units, for lining a dragged card up with the others. */
   readonly cardUnits = input<{ w: number; h: number } | null>(null);
+  /**
+   * The gap the layout keeps between two people's cards side by side (partners, brothers and sisters, families),
+   * in the layout's units: a card dragged next to another snaps to it.
+   */
+  readonly gapFor = input<((a: string, b: string) => number) | null>(null);
   /** People left out of this print by clicking, if any, with how to bring them back. */
   readonly omitted = input(0);
   /** The page is being drawn again: a note over the one shown before (see PrintModel.drawing). */
@@ -157,7 +162,8 @@ export class PrintPreview {
     personId: string;
     from: DOMPoint;
     at: { x: number; y: number };
-    others: { x: number; y: number }[];
+    w: number;
+    others: { id: string; x: number; y: number; w: number }[];
     guides: SVGGElement | null;
     dx: number;
     dy: number;
@@ -175,6 +181,7 @@ export class PrintPreview {
         const m = /translate\(([-\d.]+)[ ,]+([-\d.]+)\)/.exec(g.getAttribute('transform') ?? '');
         return { x: Number(m?.[1] ?? 0), y: Number(m?.[2] ?? 0) };
       };
+      const width = (g: Element) => Number(g.querySelector('rect')?.getAttribute('width')) || (this.cardUnits()?.w ?? 188);
       event.preventDefault();
       this.cardDrag = {
         id: event.pointerId,
@@ -182,7 +189,10 @@ export class PrintPreview {
         personId: card.dataset['person'] ?? '',
         from: new DOMPoint(event.clientX, event.clientY).matrixTransform(inverse),
         at: place(card),
-        others: [...parent.querySelectorAll(':scope > g[data-person]')].filter((g) => g !== card).map(place),
+        w: width(card),
+        others: [...parent.querySelectorAll<SVGGElement>(':scope > g[data-person]')]
+          .filter((g) => g !== card)
+          .map((g) => ({ id: g.dataset['person'] ?? '', ...place(g), w: width(g) })),
         guides: null,
         dx: 0,
         dy: 0,
@@ -195,7 +205,11 @@ export class PrintPreview {
     this.drag = { id: event.pointerId, x: event.clientX, y: event.clientY, moved: false };
   }
 
-  /** The card follows the pointer, pulled into line with a card it is nearly level with or nearly under; with Alt held it goes exactly where it is put. */
+  /**
+   * The card follows the pointer, pulled into line with a card it is nearly level with or nearly under, and next
+   * to a card in its row, to the gap the layout keeps between those two (partners, brothers and sisters,
+   * families); with Alt held it goes exactly where it is put.
+   */
   private dragCard(event: PointerEvent): void {
     const c = this.cardDrag;
     const parent = c?.el.parentNode;
@@ -219,11 +233,12 @@ export class PrintPreview {
       const x = c.at.x + dx;
       const y = c.at.y + dy;
       const reach = size.h * 0.14;
-      const nearest = (of: (o: { x: number; y: number }) => number, to: number, far: (o: { x: number; y: number }) => number, here: number) =>
+      type Other = (typeof c.others)[number];
+      const nearest = (of: (o: Other) => number, to: number, far: (o: Other) => number, here: number) =>
         c.others
           .filter((o) => Math.abs(of(o) - to) < reach)
           .sort((a, b) => Math.abs(of(a) - to) - Math.abs(of(b) - to) || Math.abs(far(a) - here) - Math.abs(far(b) - here))[0];
-      const column = nearest(
+      let column: Other | undefined = nearest(
         (o) => o.x,
         x,
         (o) => o.y,
@@ -235,9 +250,31 @@ export class PrintPreview {
         (o) => o.x,
         x,
       );
-      if (column) dx = column.x - c.at.x;
       if (row) dy = row.y - c.at.y;
-      if (column || row) {
+      // Next to a card in its row: the gap the layout keeps between the two, whichever side it is on.
+      const gapFor = this.gapFor();
+      const ny = c.at.y + dy;
+      let gap: { x: number; from: number; to: number } | undefined;
+      if (gapFor) {
+        let best = size.h * 0.3;
+        for (const o of c.others) {
+          if (Math.abs(o.y - ny) > 0.5) continue;
+          const want = gapFor(c.personId, o.id);
+          for (const to of [o.x + o.w + want, o.x - want - c.w]) {
+            const off = Math.abs(to - x);
+            if (off < best) {
+              best = off;
+              gap = { x: to, from: to > o.x ? o.x + o.w : to + c.w, to: to > o.x ? to : o.x };
+            }
+          }
+        }
+      }
+      // The nearer of the two pulls: a card under another, or the gap beside one.
+      if (gap && (!column || Math.abs(gap.x - x) <= Math.abs(column.x - x))) column = undefined;
+      else gap = undefined;
+      if (column) dx = column.x - c.at.x;
+      if (gap) dx = gap.x - c.at.x;
+      if (column || row || gap) {
         const ns = 'http://www.w3.org/2000/svg';
         const g = document.createElementNS(ns, 'g');
         g.setAttribute('class', 'move-guides');
@@ -247,10 +284,16 @@ export class PrintPreview {
           g.appendChild(l);
         };
         const nx = c.at.x + dx;
-        const ny = c.at.y + dy;
         // Down the middle of the two cards in a column, across the middle of the two in a row.
-        if (column) line(nx + size.w / 2, Math.min(ny, column.y) - size.h * 0.3, nx + size.w / 2, Math.max(ny, column.y) + size.h * 1.3);
-        if (row) line(Math.min(nx, row.x) - size.h * 0.3, ny + size.h / 2, Math.max(nx, row.x) + size.w + size.h * 0.3, ny + size.h / 2);
+        if (column) line(nx + c.w / 2, Math.min(ny, column.y) - size.h * 0.3, nx + c.w / 2, Math.max(ny, column.y) + size.h * 1.3);
+        if (row && !gap) line(Math.min(nx, row.x) - size.h * 0.3, ny + size.h / 2, Math.max(nx + c.w, row.x + row.w) + size.h * 0.3, ny + size.h / 2);
+        // The gap, measured: a line across it with a tick at either end.
+        if (gap) {
+          const t = size.h * 0.12;
+          line(gap.from, ny + size.h / 2, gap.to, ny + size.h / 2);
+          line(gap.from, ny + size.h / 2 - t, gap.from, ny + size.h / 2 + t);
+          line(gap.to, ny + size.h / 2 - t, gap.to, ny + size.h / 2 + t);
+        }
         parent.appendChild(g);
         c.guides = g;
       }

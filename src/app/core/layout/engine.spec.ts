@@ -110,6 +110,30 @@ describe('the layout', () => {
     });
   }
 
+  it('swaps partners from side to side for someone who asked for it, and back when both did', () => {
+    const doc = sampleDocument();
+    const index = new TreeIndex(doc);
+    const run = (flipped?: string[]) => new Layouter(index, { ...LAYOUT, flipped }, 'I11', 'I15').run(WIDE);
+    const x = (l: LayoutResult, id: string) => l.cards.find((c) => c.personId === id && !c.ghost)!.x;
+    const plain = run();
+    // Simon stands between Ruth, his first wife, and Šárka.
+    expect(x(plain, 'I14')).toBeLessThan(x(plain, 'I11'));
+    expect(x(plain, 'I11')).toBeLessThan(x(plain, 'I15'));
+    const turned = run(['I11']);
+    expect(x(turned, 'I15')).toBeLessThan(x(turned, 'I11'));
+    expect(x(turned, 'I11')).toBeLessThan(x(turned, 'I14'));
+    // Asked by Šárka too, it is as it was.
+    const twice = run(['I11', 'I15']);
+    expect(x(twice, 'I14')).toBeLessThan(x(twice, 'I11'));
+    expect(x(twice, 'I11')).toBeLessThan(x(twice, 'I15'));
+    // Everyone still has a line from their parents to their card.
+    for (const l of turned.lines) {
+      const child = turned.cards.find((c) => c.personId === l.childId && !c.ghost);
+      const end = l.points.at(-1)!;
+      if (child) expect(end.x > child.x - 1 && end.x < child.x + child.w + 1 && end.y > child.y - 1 && end.y < child.y + child.h + 1).toBe(true);
+    }
+  });
+
   it('runs from top to bottom: parents stand above their children', () => {
     const doc = sampleDocument();
     const index = new TreeIndex(doc);

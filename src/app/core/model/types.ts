@@ -296,6 +296,8 @@ export interface PrintSettings extends CardSettings {
    * family), whatever the reach above leaves out: the parents of a former partner, say.
    */
   added?: readonly string[];
+  /** People whose partners stand on the other side of them, by id (see LayoutOptions.flipped); asked from a card's menu. */
+  flipped?: readonly string[];
   /** How each couple stands, as a word at their marker: "married", "divorced". */
   unionText: boolean;
   /**

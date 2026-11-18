@@ -580,6 +580,7 @@ export const en = {
   'print.all': 'All',
   'print.none': 'None',
   'print.menu.hide': 'Leave out of this print',
+  'print.menu.flip': 'Swap partner sides',
   'print.menu.add': 'Add to this print',
   'print.menu.addParents': 'Parents',
   'print.menu.addSiblings': 'Brothers and sisters, with parents',
@@ -587,7 +588,7 @@ export const en = {
   'print.addedPeople': { one: '{count} person added by hand', other: '{count} people added by hand' },
   'print.unaddAll': 'Remove them',
   'print.clickToHide':
-    'Drag a card to move it: its lines follow and it snaps into line with other cards (hold Alt to place it freely). Click a card to add their parents, brothers and sisters or whole family, leave that person out or put the card back; click a line to take away everyone who hangs on it. Ctrl+Z and Ctrl+Y undo and redo.',
+    'Drag a card to move it: its lines and everyone hanging under it follow, and it snaps into line with other cards and to the usual gap beside them (hold Alt to place it freely). Click a card to add their parents, brothers and sisters or whole family, swap partner sides, leave that person out or put the card back; click a line to take away everyone who hangs on it. Ctrl+Z and Ctrl+Y undo and redo.',
   'print.showHidden': 'Print hidden people too',
   'print.zoom.label': 'Zoom the preview',
   'print.legendBox.hint': 'Family names: drag to move, drag a corner to resize',

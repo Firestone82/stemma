@@ -44,6 +44,7 @@
         [namesIn]="model.poster()?.namesIn ?? null"
         [namesStyle]="namesStyle()"
         [cardUnits]="model.poster()?.cardUnits ?? null"
+        [gapFor]="model.gapFor()"
         [moved]="model.movedCount()"
         (unmove)="model.unmove()"
         [added]="model.addedCount()"
@@ -72,6 +73,9 @@
 @if (menu(); as m) {
   <div class="menu card-menu" role="menu" [attr.aria-label]="m.name" [style.left.px]="m.x" [style.top.px]="m.y">
     <p class="menu-title">{{ m.name }}</p>
+    @if (model.hasPartnerShown(m.id)) {
+      <button type="button" class="menu-item" role="menuitem" (click)="flip()"><stemma-icon name="swap" />{{ t('print.menu.flip') }}</button>
+    }
     @if (menuMoved()) {
       <button type="button" class="menu-item" role="menuitem" (click)="unmove()">{{ t('print.menu.unmove') }}</button>
     }

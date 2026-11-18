@@ -345,6 +345,43 @@ export class PrintModel {
     return (this.settings().added ?? []).filter((id) => !!index.person(id)).length;
   });
 
+  /**
+   * The gap the layout keeps between two people's cards side by side: partners, brothers and sisters (children
+   * of one family), or anyone else (families). For a card dragged next to another (see PrintPreview).
+   */
+  readonly gapFor = computed(() => {
+    const gaps = this.poster()?.gaps;
+    const index = this.store.index();
+    if (!gaps) return null;
+    return (a: string, b: string): number => {
+      if (index.familyBetween(a, b)) return gaps.partner;
+      const parents = new Set(index.parentFamilies(a).map((f) => f.id));
+      if (index.parentFamilies(b).some((f) => parents.has(f.id))) return gaps.sibling;
+      return gaps.family;
+    };
+  });
+
+  /** Whether someone has a partner on the print beside them (or over or under them): their sides can be swapped. */
+  hasPartnerShown(personId: string): boolean {
+    const shown = new Set(this.poster()?.shown ?? []);
+    return this.store
+      .index()
+      .partnerFamilies(personId)
+      .some((f) => f.partners.some((p) => p !== personId && shown.has(p)));
+  }
+
+  /** Whether someone's partners stand on the other side of them than the layout would put them. */
+  isFlipped(personId: string): boolean {
+    return (this.settings().flipped ?? []).includes(personId);
+  }
+
+  /** Swaps the sides someone's partners stand on (or back), as one step; kept with the tree. */
+  flip(personId: string): void {
+    const flipped = this.settings().flipped ?? [];
+    const next = flipped.includes(personId) ? flipped.filter((id) => id !== personId) : [...flipped, personId];
+    this.set({ flipped: next.length ? next : undefined }, `print flip ${++this.stepCount}`);
+  }
+
   /** Nobody brought onto the print by hand any more. */
   clearAdded(): void {
     this.set({ added: undefined }, `print add ${++this.stepCount}`);
