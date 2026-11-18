@@ -94,7 +94,6 @@ const RETIRED_VIEW = [
   'showPlaces',
   'showPhotos',
   'showGenerations',
-  'showRelationships',
   'showUnions',
   'showTree',
   'tallGenerations',
@@ -147,6 +146,7 @@ const KNOWN = {
       'uniteSpellings',
       'uniteForeign',
       'familyBackgrounds',
+      'showRelationships',
       ...RETIRED_VIEW,
       ...RETIRED_CARDS,
     ],
@@ -200,7 +200,7 @@ const KNOWN = {
   people: { attrs: [], elements: ['person'] },
   families: { attrs: [], elements: ['family'] },
   person: { attrs: ['id', 'sex', 'print'], elements: ['name', 'birth', 'death', 'occupation', 'photo', 'notes'] },
-  name: { attrs: ['given', 'givenUnknown', 'surname', 'birthSurname', 'nickname'], elements: [] },
+  name: { attrs: ['given', 'givenUnknown', 'surname', 'surnameFrom', 'birthSurname', 'nickname'], elements: [] },
   event: { attrs: ['date', 'dateQualifier', 'dateText', 'dateUnknown', 'place'], elements: [] },
   end: { attrs: ['date', 'dateQualifier', 'dateText', 'dateUnknown', 'place', 'reason'], elements: [] },
   family: { attrs: ['id', 'type'], elements: ['partner', 'engagement', 'start', 'end', 'child', 'notes'] },
@@ -359,6 +359,7 @@ class Reader {
     view.uniteSpellings = boolAttr(el, 'uniteSpellings', DEFAULT_VIEW.uniteSpellings);
     view.uniteForeign = boolAttr(el, 'uniteForeign', DEFAULT_VIEW.uniteForeign);
     view.familyBackgrounds = boolAttr(el, 'familyBackgrounds', DEFAULT_VIEW.familyBackgrounds);
+    view.showRelationships = boolAttr(el, 'showRelationships', DEFAULT_VIEW.showRelationships);
     const language = el.getAttribute('language')?.trim();
     if (language) {
       if (LANGUAGE_TAG.test(language)) view.language = language;
@@ -464,6 +465,9 @@ class Reader {
       surname: nameEl?.getAttribute('surname')?.trim() ?? '',
     };
     if (nameEl?.getAttribute('givenUnknown')?.trim() === 'true') name.givenUnknown = true;
+    // The marriage a woman's surname is taken from; it is filled in from her husband there (married-surnames.ts).
+    const surnameFrom = nameEl?.getAttribute('surnameFrom')?.trim();
+    if (surnameFrom) name.surnameFrom = surnameFrom;
     const birthSurname = nameEl?.getAttribute('birthSurname')?.trim();
     if (birthSurname) name.birthSurname = birthSurname;
     const nickname = nameEl?.getAttribute('nickname')?.trim();

@@ -50,6 +50,11 @@ export interface PersonName {
    * married-surnames.ts): shown and used like any other, left out of the file.
    */
   derived?: boolean;
+  /**
+   * For a woman married more than once (format 1.9): the marriage, by family id, whose husband's surname she
+   * bears, chosen from a list. Without it, a surname taken from a husband is her current husband's.
+   */
+  surnameFrom?: string;
   /** "Known as". No longer shown or edited; kept from files and saved back. */
   nickname?: string;
   ext?: Extensions;
@@ -193,6 +198,11 @@ export interface ViewSettings extends CardSettings {
    * of one family that stand together read as one patch.
    */
   familyBackgrounds: boolean;
+  /**
+   * On the chart (not in prints): how each person is related to the one the tree is centred on ("Aunt",
+   * "Cousin"), on a line at the top of their card. Centring on someone else changes these and moves nobody.
+   */
+  showRelationships: boolean;
   ext?: Extensions;
 }
 
@@ -372,6 +382,7 @@ export const DEFAULT_VIEW: ViewSettings = {
   uniteSpellings: true,
   uniteForeign: true,
   familyBackgrounds: false,
+  showRelationships: true,
 };
 
 /** View settings for a tree started in this version. */

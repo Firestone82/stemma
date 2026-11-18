@@ -14,7 +14,7 @@ export interface FamilyRow {
   problem?: string;
 }
 
-/** One family in the people list: its name, which opens and closes the list of its members, and a button to show it alone. */
+/** One family in the people list: its name, which opens and closes the list of its members, and a button before the count to show it alone. */
 @Component({
   selector: 'stemma-family-group',
   imports: [Icon, PersonRow],

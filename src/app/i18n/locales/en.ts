@@ -219,6 +219,9 @@ export const en = {
   'overview.tip.save': 'Everything is kept in this browser as you work. Use File, then Save as XML, to keep a copy you can open in any version of Stemma.',
   'legend.familyTitle': 'Family colours',
   'legend.others': 'Others',
+  'display.relationships': 'Relationship names',
+  'display.relationshipsHint':
+    'How everyone is related to the person in the middle (Aunt, Cousin), at the top of their card. Centring on someone else changes these and leaves the chart as it is.',
   'display.familyBackgrounds': 'Family backgrounds',
   'display.familyBackgroundsHint': 'A soft patch in each family’s colour behind its cards, so the families stand out. Only on the chart, never in prints.',
   'legend.spellings': 'One family, other spellings',
@@ -271,6 +274,8 @@ export const en = {
   'name.unknown': 'Name not known',
   'name.surname': 'Surname',
   'name.fromHusband': 'Taken from the husband’s surname; type one to record her own.',
+  'name.fromHusbandNamed': 'Taken from the surname of her husband {name}; type one to record her own, or pick another from the list.',
+  'name.surnameList': 'Surnames from her marriages',
   'name.birthSurname': 'Surname at birth',
   'name.birthSurnamePlaceholder': 'If it changed',
   'name.birthSurnameFromFather': '{name}, from the father',

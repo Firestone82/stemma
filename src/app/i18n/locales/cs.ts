@@ -221,6 +221,9 @@ export const cs: Catalogue = {
     'Vše se průběžně ukládá v tomto prohlížeči. Přes Soubor a Uložit jako XML si uchováte kopii, kterou otevřete v jakékoli verzi aplikace Stemma.',
   'legend.familyTitle': 'Barvy rodů',
   'legend.others': 'Ostatní',
+  'display.relationships': 'Příbuzenské vztahy',
+  'display.relationshipsHint':
+    'Jak je kdo příbuzný s osobou ve středu (teta, sestřenice), nahoře na kartě. Postavit do středu někoho jiného změní jen je, rozložení stromu zůstane.',
   'display.familyBackgrounds': 'Pozadí rodů',
   'display.familyBackgroundsHint': 'Za kartami každého rodu jemná plocha v jeho barvě, aby rody bylo vidět na první pohled. Jen v editoru, nikdy v tisku.',
   'legend.spellings': 'Jeden rod, jiný zápis',
@@ -271,6 +274,8 @@ export const cs: Catalogue = {
   'name.unknown': 'Jméno neznámé',
   'name.surname': 'Příjmení',
   'name.fromHusband': 'Odvozeno z příjmení manžela; vlastní příjmení stačí vepsat.',
+  'name.fromHusbandNamed': 'Odvozeno z příjmení manžela ({name}); vlastní příjmení stačí vepsat, jiné vybrat ze seznamu.',
+  'name.surnameList': 'Příjmení po manželech',
   'name.birthSurname': 'Rodné příjmení',
   'name.birthSurnamePlaceholder': 'Pokud se změnilo',
   'name.birthSurnameFromFather': '{name} (po otci)',

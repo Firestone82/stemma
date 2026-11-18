@@ -4,6 +4,7 @@ import { Kin, kinship } from '../core/kinship/kinship';
 import { ChartLanguage, chartLanguage, kinLabel, surnameLinesIn } from '../core/lang/language';
 import { CardDesign, CardParts, cardDesign } from '../core/card/card-design';
 import { Layouter } from '../core/layout/engine';
+import { chartAnchor } from '../core/layout/structure';
 import { fitLayout } from '../core/layout/fit';
 import { LAYOUT, LayoutOptions, LayoutResult } from '../core/layout/types';
 import { displayName, initials, nameUnknown, surnameKey, unitingOf } from '../core/model/names';
@@ -43,6 +44,8 @@ export interface CardLabel {
   missing: string;
   /** Dates on this person's record that cannot be right (see DataChecks), one a line; empty when none. */
   problem: string;
+  /** How they are related to the person in the middle ("Aunt"), for the line at the top of the card; empty without it. */
+  kin: string;
 }
 
 /** The room the chart is shaped for. It suits a screen and a hand that moves it sideways: wider than a screen is, and low. */
@@ -51,9 +54,9 @@ const SCREEN = { w: 2400, h: 1000, centred: 0 };
 /**
  * Everything the chart draws, derived from the store: the layout, colours,
  * relationship names and card labels. The layout is only recomputed when the
- * shape of the tree changes, not when someone edits a name or a date, or when
- * the tree is centred on someone else (unless a relationship name then needs
- * a wider card).
+ * shape of the tree changes, not when someone edits a name or a date. It is the
+ * same whoever the tree is centred on: centring on someone else changes only
+ * what the cards say about how everyone is related to them.
  */
 @Injectable({ providedIn: 'root' })
 export class ChartModel {
@@ -81,6 +84,7 @@ export class ChartModel {
         birthName: v.showBirthNames && this.birthRow(),
         dates: v.dates !== 'none',
         sexAccent: v.sexColors,
+        kin: v.showRelationships,
       };
     },
     { equal: shallowEqual },
@@ -97,7 +101,10 @@ export class ChartModel {
     { equal: (a, b) => a.cardWidth === b.cardWidth && a.cardHeight === b.cardHeight },
   );
 
-  /** The person the tree is centred on; relationship names are relative to them. */
+  /**
+   * The person the tree is centred on: relationship names are relative to them, and the Relatives setting
+   * reaches out from them. The chart is not drawn around them (see `layout`).
+   */
   readonly focusId = computed<string | undefined>(() => {
     const doc = this.store.doc();
     const index = this.store.index();
@@ -253,20 +260,24 @@ export class ChartModel {
     return this.familyScope() ? withPortals(doc, this.store.index(), this.balloons()) : doc;
   });
 
-  private readonly structure = computed(() => structureOf(this.laidOut(), this.store.loadId(), this.focusId(), this.focusPartnerId()), {
+  private readonly structure = computed(() => structureOf(this.laidOut(), this.store.loadId()), {
     equal: (a, b) => a.key === b.key,
   });
 
   /**
-   * The chart: laid out top to bottom around the person in the middle and their partner, generation by
-   * generation, in the shape that suits a screen (see core/layout). Worked out again only when the shape of
-   * the tree changes.
+   * The chart: laid out top to bottom, generation by generation, in the shape that suits a screen (see
+   * core/layout), around the person the shape of the tree gives (see chartAnchor) and their partner, not
+   * around the one it is centred on: it looks the same whoever that is. Worked out again only when the shape
+   * of the tree changes.
    */
   readonly layout = computed<LayoutResult>(() => {
     const s = this.structure();
     const options = this.options();
+    const index = new TreeIndex(s.doc);
+    const anchor = chartAnchor(index, (id) => !isPortal(id));
+    const partner = currentPartner(index, anchor);
     // Families hang together wherever there is room, and no line crosses another.
-    const layouter = new Layouter(new TreeIndex(s.doc), options, s.focusId, s.partnerId);
+    const layouter = new Layouter(index, options, anchor, partner && !isPortal(partner) ? partner : undefined);
     // Couples stay side by side on screen, where they are worked on.
     const layout = fitLayout(layouter, options, SCREEN, 'quick', { stack: false }).layout;
     // The stand-ins of a family view are not people: they go with the empty places, where the chart draws their buttons.
@@ -338,7 +349,7 @@ export class ChartModel {
     const d = this.design();
     const font = (f: { family: string; size: number; weight: number; style?: string }) =>
       `${f.style === 'italic' ? 'italic ' : ''}${f.weight} ${f.size}px ${f.family}`;
-    const fonts = { given: font(d.given), surname: font(d.surname), birth: font(d.birth), dates: font(d.dates) };
+    const fonts = { given: font(d.given), surname: font(d.surname), birth: font(d.birth), dates: font(d.dates), kin: font(d.kin) };
     const problems = this.checks.byPerson();
     const out = new Map<string, CardLabel>();
     for (const p of doc.people) {
@@ -349,6 +360,9 @@ export class ChartModel {
       const relation = relations.get(p.id) ?? '';
       const unknown = nameUnknown(p);
       const title = [displayName(p, lang.unknown(p.sex)), relation, years].filter(Boolean).join(', ');
+      // The relationship stays clear of the top right corner: its badge and ribbon, and the mark of someone kept off prints.
+      const corner = p.hiddenFromPrint ? 34 + (view.showRibbons && p.death ? d.ribbonBand.to : 0) : 18;
+      const kin = parts.kin && relation ? this.measure.fit(relation, fonts.kin, d.width - corner - d.textX, d.kin.size * (d.kin.letterSpacing ?? 0)) : '';
       out.set(p.id, {
         given: this.measure.fit(unknown ? lang.unknown(p.sex) : p.name.given.trim(), fonts.given, d.textW),
         surname: this.measure.fit(names.surname, fonts.surname, d.textW, d.surname.size * (d.surname.letterSpacing ?? 0)),
@@ -363,6 +377,7 @@ export class ChartModel {
         missing: missingText(this.i18n, p),
         problem: problems.get(p.id) ?? '',
         unknown,
+        kin,
       });
     }
     return out;
@@ -402,15 +417,9 @@ function sameSet<T>(a: ReadonlySet<T>, b: ReadonlySet<T>): boolean {
 
 /**
  * The part of a document the layout depends on. Names, dates and notes do not move anyone, so they are left
- * out and edits to them reuse the layout. Who the chart is drawn around is part of it: their direct line
- * runs down the middle.
+ * out and edits to them reuse the layout; so is who the tree is centred on, which moves nobody either.
  */
-function structureOf(
-  doc: TreeDocument,
-  loadId: number,
-  focusId: string | undefined,
-  partnerId: string | undefined,
-): { key: string; doc: TreeDocument; focusId?: string; partnerId?: string } {
+function structureOf(doc: TreeDocument, loadId: number): { key: string; doc: TreeDocument } {
   const people = doc.people.map((p) => ({ id: p.id, sex: p.sex, name: { given: '', surname: '' } }));
   const families = doc.families.map((f) => {
     const out: TreeDocument['families'][number] = {
@@ -423,7 +432,7 @@ function structureOf(
     if (f.end?.reason) out.end = { reason: f.end.reason };
     return out;
   });
-  const reduced: TreeDocument = { meta: { title: '', homePersonId: focusId }, view: doc.view, people, families };
-  const key = JSON.stringify([loadId, focusId ?? null, partnerId ?? null, people.map((p) => [p.id, p.sex]), families]);
-  return { key, doc: reduced, focusId, partnerId };
+  const reduced: TreeDocument = { meta: { title: '' }, view: doc.view, people, families };
+  const key = JSON.stringify([loadId, people.map((p) => [p.id, p.sex]), families]);
+  return { key, doc: reduced };
 }

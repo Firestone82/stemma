@@ -15,6 +15,9 @@
     </svg:text>
   </svg:g>
 }
+@if (l.kin) {
+  <svg:text class="kin" [attr.font-size]="d.kin.size" [attr.x]="d.textX" [attr.y]="y.kin">{{ l.kin }}</svg:text>
+}
 <svg:text class="given" [attr.font-size]="d.given.size" [attr.x]="d.textX" [attr.y]="y.given">{{ l.given }}</svg:text>
 @if (l.surname) {
   <svg:text class="surname" [attr.font-size]="d.surname.size" [attr.x]="d.textX" [attr.y]="y.surname">{{ l.surname }}</svg:text>

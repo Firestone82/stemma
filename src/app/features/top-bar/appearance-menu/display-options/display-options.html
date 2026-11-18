@@ -1,4 +1,10 @@
 <stemma-card-settings idPrefix="view-cards" [settings]="view()" (settingsChange)="settingsChange.emit($event)" />
+<div class="relationships">
+  <stemma-switch [checked]="view().showRelationships" (checkedChange)="settingsChange.emit({ showRelationships: $event })">{{
+    t('display.relationships')
+  }}</stemma-switch>
+  <p class="hint">{{ t('display.relationshipsHint') }}</p>
+</div>
 <div class="backgrounds">
   <stemma-switch [checked]="view().familyBackgrounds" (checkedChange)="settingsChange.emit({ familyBackgrounds: $event })">{{
     t('display.familyBackgrounds')

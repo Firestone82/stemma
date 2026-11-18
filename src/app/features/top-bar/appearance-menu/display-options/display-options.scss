@@ -5,7 +5,8 @@
   border-top: 1px solid var(--rule);
 }
 
-/* What stands behind the cards: ruled off from what is on them. */
+/* How everyone is related to the person in the middle, and what stands behind the cards: each ruled off. */
+.relationships,
 .backgrounds {
   display: grid;
   margin-top: 12px;

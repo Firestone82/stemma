@@ -1,0 +1,97 @@
+:host {
+  position: relative;
+  display: block;
+  min-width: 0;
+}
+
+.box {
+  position: relative;
+}
+
+.input {
+  padding-right: 30px;
+}
+
+.box:hover .input:not(:focus) {
+  border-color: var(--rule-2);
+}
+
+/* Shows every suggestion; drawn like the arrow of a drop-down list (see .select), inside the field's border. */
+.arrow {
+  position: absolute;
+  top: 1px;
+  right: 1px;
+  bottom: 1px;
+  width: 30px;
+  padding: 0;
+  border: 0;
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  background-color: transparent;
+  background-image: linear-gradient(45deg, transparent 50%, var(--ink-2) 50%), linear-gradient(135deg, var(--ink-2) 50%, transparent 50%);
+  background-position:
+    calc(100% - 15px) 52%,
+    calc(100% - 10px) 52%;
+  background-size: 5px 5px;
+  background-repeat: no-repeat;
+  cursor: pointer;
+}
+
+.list {
+  position: absolute;
+  z-index: 30;
+  top: calc(100% + 4px);
+  left: 0;
+  width: max-content;
+  min-width: 100%;
+  max-width: min(320px, 90vw);
+  max-height: 260px;
+  margin: 0;
+  padding: 6px;
+  overflow: auto;
+  list-style: none;
+  background: var(--sheet);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-2);
+  animation: stemma-menu-in 140ms ease-out;
+}
+
+li {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 34px;
+  padding: 0 8px;
+  border-radius: 4px;
+  cursor: pointer;
+
+  &.active {
+    background: var(--sheet-2);
+  }
+
+  &.chosen {
+    box-shadow: inset 0 0 0 1.5px var(--ink);
+  }
+}
+
+.label {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--text-md);
+}
+
+.detail {
+  flex: none;
+  color: var(--ink-3);
+  font-size: var(--text-xs);
+  white-space: nowrap;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .list {
+    animation: none;
+  }
+}

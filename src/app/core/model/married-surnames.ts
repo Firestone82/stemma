@@ -3,21 +3,60 @@
  * say: Mikula's wife is Mikulová (in Czech) or Mikula (in English), without
  * anyone typing it. Such a surname is filled in here, marked `derived`, kept
  * up to date as the tree changes, and left out of the file when it is saved.
+ * It is her current husband's, unless she was married more than once and the
+ * marriage to take it from was chosen (`surnameFrom`).
  */
 import { isBrokenUp, relationshipStatus } from './relationship';
 import { SurnameForm } from './surnames';
 import { TreeIndex } from './tree-index';
-import { Person, TreeDocument } from './types';
+import { Family, Person, TreeDocument } from './types';
 
-/** The surname a woman takes from her current husband, in her form; empty when she has none, or he has no surname. */
+/** A surname a woman could bear from one of her marriages. */
+export interface MarriedSurname {
+  /** The marriage. */
+  familyId: string;
+  husband: Person;
+  /** His surname in her form: Mikulová for Mikula's wife in Czech. */
+  surname: string;
+}
+
+function marriages(index: TreeIndex, person: Person): Family[] {
+  return index.partnerFamilies(person.id).filter((f) => f.kind === 'marriage' && f.partners.length === 2);
+}
+
+/** What a woman takes from one of her marriages; undefined when her husband there has no surname. */
+function fromMarriage(index: TreeIndex, person: Person, family: Family, form: SurnameForm): MarriedSurname | undefined {
+  const husband = family.partners.map((id) => index.person(id)).find((p) => p && p.id !== person.id && p.sex === 'male');
+  const base = husband?.name.surname.trim() ?? '';
+  return husband && base && !husband.name.derived ? { familyId: family.id, husband, surname: form(base, 'female', [base]) } : undefined;
+}
+
+/**
+ * The surnames a woman could bear from her marriages, whatever became of them (a widow or a divorced woman
+ * may keep her husband's name), first marriage first; the same surname from two marriages is listed once.
+ */
+export function marriedSurnames(index: TreeIndex, person: Person, form: SurnameForm): MarriedSurname[] {
+  if (person.sex !== 'female') return [];
+  const out: MarriedSurname[] = [];
+  for (const f of marriages(index, person)) {
+    const m = fromMarriage(index, person, f, form);
+    if (m && !out.some((o) => o.surname === m.surname)) out.push(m);
+  }
+  return out;
+}
+
+/**
+ * The surname a woman takes from a husband, in her form: from the marriage chosen for it while it is one of
+ * hers, or else from her current husband; empty when she has none, or he has no surname.
+ */
 export function surnameFromHusband(index: TreeIndex, person: Person, form: SurnameForm): string {
   if (person.sex !== 'female') return '';
-  const marriages = index.partnerFamilies(person.id).filter((f) => f.kind === 'marriage' && f.partners.length === 2);
-  const current = [...marriages].reverse().find((f) => !isBrokenUp(relationshipStatus(f)));
-  if (!current) return '';
-  const husband = current.partners.map((id) => index.person(id)).find((p) => p && p.id !== person.id && p.sex === 'male');
-  const base = husband?.name.surname.trim() ?? '';
-  return base && !husband?.name.derived ? form(base, 'female', [base]) : '';
+  const all = marriages(index, person);
+  const chosen = all.find((f) => f.id === person.name.surnameFrom);
+  const fromChosen = chosen && fromMarriage(index, person, chosen, form);
+  if (fromChosen) return fromChosen.surname;
+  const current = [...all].reverse().find((f) => !isBrokenUp(relationshipStatus(f)));
+  return (current && fromMarriage(index, person, current, form)?.surname) ?? '';
 }
 
 /**
@@ -25,13 +64,23 @@ export function surnameFromHusband(index: TreeIndex, person: Person, form: Surna
  * husband's where she has none of her own, and the ones filled in before
  * brought up to date (a husband renamed, a marriage ended). With `adoptEqual`
  * (when a file is opened), a recorded surname that is just what her husband's
- * gives is taken as filled in too, so it need not be kept in the file. The
- * same document comes back when nothing changes.
+ * gives is taken as filled in too, so it need not be kept in the file. A
+ * marriage chosen to take the surname from is forgotten once she is no longer
+ * a partner in it (it was removed, or she was). The same document comes back
+ * when nothing changes.
  */
 export function withMarriedSurnames(doc: TreeDocument, form: SurnameForm, adoptEqual = false): TreeDocument {
   const index = new TreeIndex(doc);
   let changed = false;
-  const people = doc.people.map((p) => {
+  const people = doc.people.map((person) => {
+    let p = person;
+    const from = p.name.surnameFrom;
+    if (from && !index.partnerFamilies(p.id).some((f) => f.id === from)) {
+      changed = true;
+      const name = { ...p.name };
+      delete name.surnameFrom;
+      p = { ...p, name };
+    }
     if (p.sex !== 'female') return p;
     const recorded = p.name.surname.trim();
     const derived = surnameFromHusband(index, p, form);

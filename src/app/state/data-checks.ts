@@ -34,10 +34,16 @@ export class DataChecks {
     });
   });
 
-  /** For each person in a problem, what is wrong, one sentence a line. */
+  /**
+   * For each person whose record looks wrong, what is wrong, one sentence a line. A problem is flagged on the
+   * one it is about (the first of its people) only: a child born before their father is flagged, the father not.
+   */
   readonly byPerson = computed(() => {
     const out = new Map<string, string>();
-    for (const p of this.problems()) for (const id of p.personIds) out.set(id, out.has(id) ? `${out.get(id)}\n${p.text}` : p.text);
+    for (const p of this.problems()) {
+      const id = p.personIds[0];
+      out.set(id, out.has(id) ? `${out.get(id)}\n${p.text}` : p.text);
+    }
     return out;
   });
 }

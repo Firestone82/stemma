@@ -263,7 +263,7 @@ describe('XML format', () => {
 
     it('leaves the settings of the earlier ways of drawing, the background and the arrangement out of what it saves', () => {
       const xml = `<familyTree xmlns="${NS}" formatVersion="1.8"><meta><title>Old</title></meta>
-  <view style="night" colorBy="sex" lines="curved" density="compact" showGenerations="true" showRelationships="true" showTree="true" tallGenerations="true"/>
+  <view style="night" colorBy="sex" lines="curved" density="compact" showGenerations="true" showTree="true" tallGenerations="true"/>
   <people><person id="I1" sex="male"><name given="Ada" surname="Old"/></person></people><families/>
   <print theme="modern" compactCouples="true" tallGenerations="true" packFamilies="true" sidewaysBranches="true" sidewaysOn="I1" portrait="square" showTree="true"/>
   <background mediaType="image/png" encoding="base64" width="10" height="10" fit="cover" opacity="1">AAAA</background>
@@ -276,10 +276,22 @@ describe('XML format', () => {
       expect(doc.ext).toBeUndefined();
       const again = serializeTree(doc);
       expect(again).not.toMatch(
-        /theme=|compactCouples|tallGenerations|packFamilies|sideways|portrait|showTree|showGenerations|showRelationships|colorBy|density|<background|<arrangement/,
+        /theme=|compactCouples|tallGenerations|packFamilies|sideways|portrait|showTree|showGenerations|colorBy|density|<background|<arrangement/,
       );
       // The people are as they were.
       expect(again).toContain('<name given="Ada" surname="Old"/>');
+    });
+
+    it('reads the relationship names on the chart again, as files before 1.9 had them, and writes them when they are off', () => {
+      const read = (attrs: string) =>
+        parseTree(`<familyTree xmlns="${NS}" formatVersion="1.8"><meta><title>T</title></meta><view ${attrs}/><people/><families/></familyTree>`).doc;
+      expect(read('showRelationships="true"').view.showRelationships).toBe(true);
+      expect(read('').view.showRelationships).toBe(true);
+      const off = read('showRelationships="false"');
+      expect(off.view.showRelationships).toBe(false);
+      expect(off.view.ext).toBeUndefined();
+      expect(serializeTree(off)).toMatch(/<view [^>]*showRelationships="false"/);
+      expect(serializeTree(read(''))).not.toMatch(/showRelationships/);
     });
   });
 

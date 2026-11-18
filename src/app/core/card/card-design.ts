@@ -2,7 +2,8 @@
  * The one card everybody is drawn on, for the chart and for prints alike: where each part sits and how big
  * it is. A shield with the person's initials in their family's colour, the given names, the surname and the
  * surname at birth, the dates, the sex as an accent down the card's edge, a ribbon across
- * the corner of someone who has died, and a badge on the corner of a card whose record has a mistake.
+ * the corner of someone who has died, and a badge on the corner of a card whose record has a mistake. On the
+ * chart, a line over the given names can say how the person is related to the one in the middle.
  * The chart draws it with Angular (person-card), prints as SVG text (poster.ts); both take their numbers here.
  */
 import { Sex } from '../model/types';
@@ -23,6 +24,8 @@ export interface CardParts {
   emblemTop?: boolean;
   /** A band down the left edge, blue for men and rose for women, and the card tinted to match. */
   sexAccent: boolean;
+  /** A line over the given names for how the person is related to the one the tree is centred on (the chart only). */
+  kin?: boolean;
 }
 
 export interface CardFont {
@@ -54,6 +57,8 @@ export interface CardDesign {
   surname: CardLine;
   birth: CardLine;
   dates: CardLine;
+  /** How the person is related to the one in the middle, over the given names, on cards that have the line. */
+  kin: CardLine;
   /** How far a card without a surname at birth moves its lines down, to keep the text in the middle. */
   spare: number;
   /** How far the dates move up on a card without a surname at birth. */
@@ -98,9 +103,12 @@ export function cardDesign(parts: CardParts, letters = 1): CardDesign {
   const surname: CardLine = { family: FONT_SMALL_CAPS, size: r2(14 * k), weight: 500, letterSpacing: 0.03, y: 0 };
   const birth: CardLine = { family: FONT_SERIF, size: r2(12 * k), weight: 400, style: 'italic', y: 0 };
   const dates: CardLine = { family: FONT_SANS, size: r2(12 * k), weight: 400, y: 0 };
-  // Baselines from the top: the given names, then each line a step under the one before.
+  const kin: CardLine = { family: FONT_SMALL_CAPS, size: r2(10.5 * k), weight: 500, letterSpacing: 0.04, y: 0 };
+  // Baselines from the top: how the person is related (when the card says it), the given names, then each line
+  // a step under the one before.
   const top = 9;
-  given.y = top + 13 * k;
+  if (parts.kin) kin.y = top + 8.5 * k;
+  given.y = (parts.kin ? kin.y + 4.5 * k : top) + 13 * k;
   surname.y = given.y + 16 * k;
   let last = surname.y;
   const birthStep = r2(13.5 * k);
@@ -116,7 +124,7 @@ export function cardDesign(parts: CardParts, letters = 1): CardDesign {
   const height = parts.emblem ? Math.max(Math.round(last + 9), shieldH + 18) : Math.round(last + 9);
   // The lines as a block in the middle of the card.
   const lift = (height - (last + 9)) / 2;
-  for (const l of [given, surname, birth, dates]) l.y = r2(l.y + lift);
+  for (const l of [kin, given, surname, birth, dates]) l.y = r2(l.y + lift);
   const shieldX = accent + 11;
   const shieldW = 26;
   const textX = parts.emblem ? shieldX + shieldW + 10 : accent + 13;
@@ -144,6 +152,7 @@ export function cardDesign(parts: CardParts, letters = 1): CardDesign {
     surname,
     birth,
     dates,
+    kin,
     spare: parts.birthName ? r2(birthStep / 2) : 0,
     birthStep,
     badge: { x: width - 3, y: 3, r: 7.5, mark: 'M0,-3.9V0.9M0,3.3V3.5' },
@@ -158,10 +167,15 @@ export function ribbonPath(d: Pick<CardDesign, 'ribbonBand'>, w: number): string
 }
 
 /** The lines a card has, with what it says on them, placed: every baseline as it is on this card. */
-export function cardLines(d: CardDesign, parts: CardParts, has: { birth: boolean }): { given: number; surname: number; birth: number; dates: number } {
+export function cardLines(
+  d: CardDesign,
+  parts: CardParts,
+  has: { birth: boolean },
+): { kin: number; given: number; surname: number; birth: number; dates: number } {
   // A card without a surname at birth, among cards that have one, keeps its text in the middle and its dates close under the surname.
   const shift = parts.birthName && !has.birth ? d.spare : 0;
   return {
+    kin: d.kin.y + shift,
     given: d.given.y + shift,
     surname: d.surname.y + shift,
     birth: d.birth.y,

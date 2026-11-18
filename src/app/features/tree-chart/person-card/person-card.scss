@@ -53,6 +53,14 @@
   animation: flash 1.3s ease-out;
 }
 
+/* How the person is related to whoever the tree is centred on. Fitted to the card with this letter spacing (card-design.ts). */
+.kin {
+  fill: var(--t-kin);
+  font-family: var(--font-sc);
+  font-weight: 500;
+  letter-spacing: 0.04em;
+}
+
 .given {
   fill: var(--t-ink);
   font-family: var(--font-serif);

@@ -1,0 +1,53 @@
+<div class="box">
+  <input
+    class="input"
+    type="text"
+    role="combobox"
+    autocomplete="off"
+    aria-autocomplete="list"
+    [id]="inputId()"
+    [value]="value()"
+    [placeholder]="placeholder()"
+    [title]="hint()"
+    [attr.aria-expanded]="open()"
+    [attr.aria-controls]="listId"
+    [attr.aria-activedescendant]="activeId()"
+    (input)="onInput($event)"
+    (change)="onChange($event)"
+    (keydown)="onKey($event)"
+    (blur)="open.set(false)"
+  />
+  <!-- Out of the tab order: from the keyboard the list opens with the down arrow in the field. Pressing it keeps the focus in the field. -->
+  <button
+    type="button"
+    class="arrow"
+    tabindex="-1"
+    [attr.aria-label]="listLabel()"
+    [attr.aria-expanded]="open()"
+    [attr.aria-controls]="listId"
+    (mousedown)="$event.preventDefault()"
+    (click)="toggle()"
+  ></button>
+</div>
+@if (open()) {
+  <!-- Pressing in the list keeps the focus in the field, so the list stays open until a suggestion is clicked. -->
+  <ul class="list" role="listbox" [id]="listId" (mousedown)="$event.preventDefault()">
+    @for (s of shown(); track s.id; let i = $index) {
+      <!-- eslint-disable-next-line @angular-eslint/template/click-events-have-key-events, @angular-eslint/template/interactive-supports-focus -- suggestions are taken from the keyboard in the field (arrow keys and Enter) -->
+      <li
+        role="option"
+        [id]="listId + '-' + i"
+        [attr.aria-selected]="s.id === current()"
+        [class.active]="i === active()"
+        [class.chosen]="s.id === current()"
+        (click)="choose(s.id)"
+        (pointerenter)="active.set(i)"
+      >
+        <span class="label">{{ s.label }}</span>
+        @if (s.detail) {
+          <span class="detail">{{ s.detail }}</span>
+        }
+      </li>
+    }
+  </ul>
+}

@@ -1,8 +1,10 @@
 <div class="row">
   <button type="button" class="head" [attr.aria-expanded]="open()" (click)="toggleOpen.emit()">
-    <stemma-icon name="chevronRight" class="chevron" [size]="14" />
-    <span class="mini-shield" [attr.data-tincture]="tincture()"></span>
-    <span class="label">{{ label() }}</span>
+    <span class="name">
+      <stemma-icon name="chevronRight" class="chevron" [size]="14" />
+      <span class="mini-shield" [attr.data-tincture]="tincture()"></span>
+      <span class="label">{{ label() }}</span>
+    </span>
     <span class="count" [attr.aria-label]="countLabel()">{{ members().length }}</span>
   </button>
   @if (viewLabel()) {

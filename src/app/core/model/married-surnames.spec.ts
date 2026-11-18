@@ -1,9 +1,10 @@
 import { czechSurnameFor } from '../lang/cs-surnames';
 import { DocBuilder } from '../testing/fixtures';
-import { surnameFromHusband, withMarriedSurnames } from './married-surnames';
-import { updatePerson } from './operations';
+import { marriedSurnames, surnameFromHusband, withMarriedSurnames } from './married-surnames';
+import { deleteFamily, removePartner, updatePerson } from './operations';
 import { SAME_SURNAME } from './surnames';
 import { TreeIndex } from './tree-index';
+import { parseTree } from '../xml/parser';
 import { serializeTree } from '../xml/serializer';
 
 describe('surnames taken from husbands', () => {
@@ -85,5 +86,71 @@ describe('surnames taken from husbands', () => {
     expect(doc.people.find((p) => p.id === 'JA')!.name).toEqual({ given: 'Jana', surname: 'Mikulková', derived: true });
     const ended = { ...doc, families: doc.families.map((f) => (f.id === 'F1' ? { ...f, end: { reason: 'divorce' as const } } : f)) };
     expect(withMarriedSurnames(ended, czechSurnameFor).people.find((p) => p.id === 'JA')!.name).toEqual({ given: 'Jana', surname: '' });
+  });
+});
+
+describe('the surname of a woman married more than once', () => {
+  function tree() {
+    const b = new DocBuilder();
+    b.person('W', 'Marie', '', 'female');
+    b.person('H1', 'Karel', 'Novák', 'male');
+    b.person('H2', 'Pavel', 'Mikula', 'male');
+    b.person('H3', 'Jan', 'Novák', 'male'); // another Novák: his surname is listed once
+    b.person('H4', 'Tomáš', 'Horák', 'male');
+    b.family('F1', ['H1', 'W'], [], { start: { date: { value: '1950' } }, end: { reason: 'death' } });
+    b.family('F2', ['W', 'H2'], [], { start: { date: { value: '1960' } }, end: { reason: 'divorce' } });
+    b.family('F3', ['H3', 'W'], [], { start: { date: { value: '1970' } } });
+    b.family('F4', ['H4', 'W'], [], { kind: 'partnership', start: { date: { value: '1980' } } });
+    return b.build();
+  }
+  const name = (doc: ReturnType<typeof tree>) => doc.people.find((p) => p.id === 'W')!.name;
+  const choose = (doc: ReturnType<typeof tree>, familyId: string) =>
+    withMarriedSurnames(updatePerson(doc, 'W', { name: { surname: '', surnameFrom: familyId } }), czechSurnameFor);
+
+  it('lists the surname of each husband in her form, first marriage first, however the marriage ended', () => {
+    const index = new TreeIndex(tree());
+    const list = (id: string, form = czechSurnameFor) =>
+      marriedSurnames(index, index.person(id)!, form).map((m) => `${m.familyId}:${m.husband.id}:${m.surname}`);
+    expect(list('W')).toEqual(['F1:H1:Nováková', 'F2:H2:Mikulová']);
+    expect(list('W', SAME_SURNAME)).toEqual(['F1:H1:Novák', 'F2:H2:Mikula']);
+    expect(list('H2')).toEqual([]);
+  });
+
+  it('takes it from the marriage chosen, follows that husband, and gives way to one written in', () => {
+    let doc = withMarriedSurnames(tree(), czechSurnameFor);
+    // Unless chosen, her current husband's.
+    expect(name(doc)).toEqual({ given: 'Marie', surname: 'Nováková', derived: true });
+    doc = choose(doc, 'F2');
+    expect(name(doc)).toEqual({ given: 'Marie', surname: 'Mikulová', derived: true, surnameFrom: 'F2' });
+    doc = withMarriedSurnames(updatePerson(doc, 'H2', { name: { surname: 'Mikulka' } }), czechSurnameFor);
+    expect(name(doc).surname).toBe('Mikulková');
+    // While he has no surname to give, she has her current husband's, and his again once it is back.
+    doc = withMarriedSurnames(updatePerson(doc, 'H2', { name: { surname: '' } }), czechSurnameFor);
+    expect(name(doc)).toEqual({ given: 'Marie', surname: 'Nováková', derived: true, surnameFrom: 'F2' });
+    doc = withMarriedSurnames(updatePerson(doc, 'H2', { name: { surname: 'Mikula' } }), czechSurnameFor);
+    expect(name(doc).surname).toBe('Mikulová');
+    // Written in by hand: her own, and the choice is gone with it.
+    doc = withMarriedSurnames(updatePerson(doc, 'W', { name: { surname: 'Dvořáková' } }), czechSurnameFor);
+    expect(name(doc)).toEqual({ given: 'Marie', surname: 'Dvořáková' });
+    doc = withMarriedSurnames(updatePerson(doc, 'W', { name: { surname: '' } }), czechSurnameFor);
+    expect(name(doc)).toEqual({ given: 'Marie', surname: 'Nováková', derived: true });
+  });
+
+  it('keeps the marriage chosen in the file instead of the surname, and forgets it once she is not in it', () => {
+    const doc = choose(withMarriedSurnames(tree(), czechSurnameFor), 'F2');
+    const xml = serializeTree(doc);
+    expect(xml).toContain('<name given="Marie" surnameFrom="F2"/>');
+    expect(name(withMarriedSurnames(parseTree(xml).doc, czechSurnameFor, true))).toEqual({
+      given: 'Marie',
+      surname: 'Mikulová',
+      derived: true,
+      surnameFrom: 'F2',
+    });
+    // Not written for a surname of her own.
+    expect(serializeTree(withMarriedSurnames(updatePerson(doc, 'W', { name: { surname: 'Malá' } }), czechSurnameFor))).toContain(
+      '<name given="Marie" surname="Malá"/>',
+    );
+    expect(name(withMarriedSurnames(deleteFamily(doc, 'F2'), czechSurnameFor))).toEqual({ given: 'Marie', surname: 'Nováková', derived: true });
+    expect(name(withMarriedSurnames(removePartner(doc, 'F2', 'W'), czechSurnameFor)).surnameFrom).toBeUndefined();
   });
 });

@@ -4,7 +4,7 @@ import { CardSettingsForm } from '../../../../shared/card-settings/card-settings
 import { I18n } from '../../../../i18n/i18n';
 import { Switch } from '../../../../shared/switch/switch';
 
-/** What the cards on the chart show, and what stands behind them. */
+/** What the cards on the chart show (how everyone is related to the person in the middle too), and what stands behind them. */
 @Component({
   selector: 'stemma-display-options',
   imports: [CardSettingsForm, Switch],
@@ -14,6 +14,6 @@ import { Switch } from '../../../../shared/switch/switch';
 })
 export class DisplayOptions {
   readonly view = input.required<ViewSettings>();
-  readonly settingsChange = output<Partial<CardSettings & Pick<ViewSettings, 'familyBackgrounds'>>>();
+  readonly settingsChange = output<Partial<CardSettings & Pick<ViewSettings, 'familyBackgrounds' | 'showRelationships'>>>();
   protected readonly t = inject(I18n).t;
 }

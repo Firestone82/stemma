@@ -54,7 +54,10 @@ export interface FormatVersion {
  *      relationship names, portraits), <background> and <arrangement> are no longer read, and are gone
  *      from a file once it is saved. People and families are as they were. Later in 1.9: moves (cards
  *      moved by hand), added (people brought onto the print by hand) and
- *      flipped (couples with their partners swapped from side to side) on <print>.
+ *      flipped (couples with their partners swapped from side to side) on <print>; surnameFrom
+ *      on <name>: the marriage whose husband's surname a woman married more than once bears; and
+ *      showRelationships on <view> again: how everyone is related to the person in the middle, on the
+ *      chart's cards (the chart is drawn the same whoever that is).
  */
 export const CURRENT_FORMAT: FormatVersion = { major: 1, minor: 9 };
 

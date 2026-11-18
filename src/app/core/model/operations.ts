@@ -129,8 +129,9 @@ export function updatePerson(doc: TreeDocument, id: string, patch: PersonPatch):
         if (patch[key] === undefined) delete (next as unknown as Record<string, unknown>)[key];
       }
       if (patch.name) {
-        // A surname typed in is the person's own, not one taken from the husband's.
+        // A surname typed in is the person's own, not one taken from the husband's, nor from a chosen marriage.
         if ('surname' in patch.name && !('derived' in patch.name)) delete next.name.derived;
+        if ('surname' in patch.name && !('surnameFrom' in patch.name)) delete next.name.surnameFrom;
         // A given name typed in is no longer unknown.
         if (next.name.given?.trim()) delete next.name.givenUnknown;
         for (const key of Object.keys(patch.name) as (keyof PersonName)[]) {

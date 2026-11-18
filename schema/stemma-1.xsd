@@ -66,6 +66,10 @@
       <xs:selector xpath="t:arrangement/t:couple"/>
       <xs:field xpath="@left"/>
     </xs:keyref>
+    <xs:keyref name="surnameFamilyRef" refer="t:familyId">
+      <xs:selector xpath="t:people/t:person/t:name"/>
+      <xs:field xpath="@surnameFrom"/>
+    </xs:keyref>
   </xs:element>
 
   <!-- Simple types -->
@@ -266,6 +270,8 @@
     <xs:attribute name="uniteForeign" type="xs:boolean" default="true"/>
     <!-- 1.9: on the chart, a soft background in each family's colour behind its cards. -->
     <xs:attribute name="familyBackgrounds" type="xs:boolean" default="false"/>
+    <!-- 1.1, and again in 1.9: on the chart's cards, how everyone is related to the person the tree is centred on. -->
+    <xs:attribute name="showRelationships" type="xs:boolean" default="true"/>
     <xs:anyAttribute namespace="##other" processContents="lax"/>
   </xs:complexType>
 
@@ -386,6 +392,11 @@
     <!-- Nobody knows the given name (1.7). -->
     <xs:attribute name="givenUnknown" type="xs:boolean"/>
     <xs:attribute name="surname" type="xs:string"/>
+    <!--
+      1.9: for a woman married more than once whose surname is not written in, the marriage (the family's id)
+      whose husband's surname she bears; without it, she bears her current husband's.
+    -->
+    <xs:attribute name="surnameFrom" type="t:Id"/>
     <!-- The surname at birth when it differs from the current one ("née"). -->
     <xs:attribute name="birthSurname" type="xs:string"/>
     <xs:attribute name="nickname" type="xs:string"/>

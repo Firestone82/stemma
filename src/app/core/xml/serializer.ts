@@ -78,6 +78,7 @@ function writeView(w: XmlWriter, doc: TreeDocument): void {
     ['uniteSpellings', v.uniteSpellings ? undefined : 'false'],
     ['uniteForeign', v.uniteForeign ? undefined : 'false'],
     ['familyBackgrounds', v.familyBackgrounds ? 'true' : undefined],
+    ['showRelationships', v.showRelationships ? undefined : 'false'],
     ...extAttrs(v.ext),
   ];
   if (v.ext?.elements?.length) {
@@ -95,6 +96,8 @@ function writePerson(w: XmlWriter, p: Person): void {
     ['given', p.name.given],
     ['givenUnknown', p.name.givenUnknown ? 'true' : undefined],
     ['surname', p.name.derived ? undefined : p.name.surname],
+    // A surname taken from a husband is left out; which marriage it comes from is kept, when one was chosen.
+    ['surnameFrom', p.name.derived ? p.name.surnameFrom : undefined],
     ['birthSurname', p.name.birthSurname],
     ['nickname', p.name.nickname],
     ...extAttrs(p.name.ext),

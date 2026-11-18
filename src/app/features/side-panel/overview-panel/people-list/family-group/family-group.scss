@@ -2,16 +2,23 @@
   display: grid;
 }
 
+/*
+ * The button that opens the family spans the whole row and lines its name and count up with the row's columns
+ * (a subgrid); the button that shows the family alone stands in the column between them, just before the count.
+ */
 .row {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
   align-items: center;
-  gap: 2px;
+  column-gap: 4px;
 }
 
 /* Shows the family alone; out of the way until the row is pointed at, always there on touch screens. */
 .view {
   display: grid;
-  flex: none;
+  z-index: 1;
+  grid-row: 1;
+  grid-column: 2;
   place-items: center;
   width: 34px;
   height: 34px;
@@ -23,7 +30,7 @@
 
   &:hover,
   &:focus-visible {
-    background: var(--sheet-2);
+    background: color-mix(in srgb, var(--ink) 9%, transparent);
     color: var(--ink);
   }
 
@@ -38,10 +45,11 @@
 }
 
 .head {
-  display: flex;
+  display: grid;
+  grid-row: 1;
+  grid-column: 1 / -1;
+  grid-template-columns: subgrid;
   align-items: center;
-  gap: 10px;
-  flex: 1 1 auto;
   min-width: 0;
   min-height: 40px;
   padding: 4px 8px 4px 4px;
@@ -52,9 +60,17 @@
   text-align: left;
   cursor: pointer;
 
-  &:hover {
+  .row:hover & {
     background: var(--sheet-2);
   }
+}
+
+.name {
+  display: flex;
+  grid-column: 1;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
 }
 
 .chevron {
@@ -79,7 +95,7 @@
 }
 
 .count {
-  flex: none;
+  grid-column: 3;
   min-width: 22px;
   padding: 0 6px;
   border-radius: 999px;

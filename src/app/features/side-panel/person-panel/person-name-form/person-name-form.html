@@ -21,16 +21,31 @@
 <div class="grid-2">
   <div class="field">
     <label for="person-surname">{{ t('name.surname') }}</label>
-    <input
-      id="person-surname"
-      class="input"
-      autocomplete="off"
-      [value]="p.name.derived ? '' : p.name.surname"
-      [placeholder]="p.name.derived ? p.name.surname : ''"
-      [title]="p.name.derived ? t('name.fromHusband') : ''"
-      (input)="setName('surname', $event)"
-      (change)="trimName('surname', $event)"
-    />
+    @if (surnameSuggestions().length) {
+      <stemma-suggest-field
+        inputId="person-surname"
+        [value]="p.name.derived ? '' : p.name.surname"
+        [placeholder]="p.name.derived ? p.name.surname : ''"
+        [hint]="surnameSource()"
+        [suggestions]="surnameSuggestions()"
+        [current]="surnameCurrent()"
+        [listLabel]="t('name.surnameList')"
+        (textChange)="writeName('surname', $event)"
+        (textCommit)="trimValue('surname', $event)"
+        (pick)="chooseSurname($event)"
+      />
+    } @else {
+      <input
+        id="person-surname"
+        class="input"
+        autocomplete="off"
+        [value]="p.name.derived ? '' : p.name.surname"
+        [placeholder]="p.name.derived ? p.name.surname : ''"
+        [title]="p.name.derived ? t('name.fromHusband') : ''"
+        (input)="setName('surname', $event)"
+        (change)="trimName('surname', $event)"
+      />
+    }
   </div>
   <div class="field">
     <label for="person-birthSurname">{{ t('name.birthSurname') }}</label>

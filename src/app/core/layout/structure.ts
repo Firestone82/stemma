@@ -73,6 +73,26 @@ export function buildStructures(index: TreeIndex, centreId?: string, partnerId?:
   return out;
 }
 
+/**
+ * Who the chart is drawn around when it looks the same whoever the tree is centred on: the person with the
+ * most ancestors, the youngest of the tree's longest lines, so that as much of the tree as can stands in the
+ * direct line down the middle; among equals the one with the most descendants, then the first in the tree.
+ * It follows from the shape of the tree alone. `isPerson` leaves out ids that stand for nobody (the
+ * stand-ins of a family view).
+ */
+export function chartAnchor(index: TreeIndex, isPerson: (id: string) => boolean = () => true): string | undefined {
+  const count = (ids: ReadonlySet<string>) => [...ids].filter(isPerson).length;
+  let best: { id: string; up: number; down: number } | undefined;
+  for (const p of index.doc.people) {
+    if (!isPerson(p.id)) continue;
+    const up = count(index.ancestors(p.id));
+    if (best && up < best.up) continue;
+    const down = count(index.descendants(p.id));
+    if (!best || up > best.up || down > best.down) best = { id: p.id, up, down };
+  }
+  return best?.id;
+}
+
 /** The generation of everyone in the structures, 0 for the oldest. */
 export function ranksOf(structures: readonly Structure[]): Map<string, number> {
   const ranks = new Map<string, number>();

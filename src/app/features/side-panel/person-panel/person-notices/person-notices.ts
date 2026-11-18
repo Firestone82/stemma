@@ -24,12 +24,12 @@ export class PersonNotices {
 
   readonly person = input.required<Person>();
 
-  /** The dates that cannot be right, each as a sentence. */
+  /** The dates that cannot be right, each as a sentence: those about this person, not the ones they only take part in. */
   protected readonly errors = computed(() => {
     const id = this.person().id;
     return this.checks
       .problems()
-      .filter((p) => p.personIds.includes(id))
+      .filter((p) => p.personIds[0] === id)
       .map((p) => ({ key: p.key, text: p.text }));
   });
 
