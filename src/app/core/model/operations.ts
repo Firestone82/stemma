@@ -87,7 +87,7 @@ export interface OpResult {
 }
 
 export type PersonPatch = Partial<Omit<Person, 'id' | 'name'>> & { name?: Partial<PersonName> };
-export type FamilyPatch = Partial<Pick<Family, 'kind' | 'engagement' | 'start' | 'end' | 'notes'>>;
+export type FamilyPatch = Partial<Pick<Family, 'kind' | 'engagement' | 'start' | 'end' | 'notes' | 'checked'>>;
 
 // ---------------------------------------------------------------------------
 // people
@@ -502,6 +502,25 @@ export function unknownDateCount(doc: TreeDocument): number {
  * Unticks every date of birth and of death marked as unknown, so that the checks ask about each of them again.
  * Nothing else changes: someone who died is still someone who died.
  */
+/** Marks a family's data as confirmed in the review (on `day`, YYYY-MM-DD), or takes the mark off. */
+export function setFamilyChecked(doc: TreeDocument, familyId: string, day: string | undefined): TreeDocument {
+  return updateFamily(doc, familyId, { checked: day });
+}
+
+/** Takes the confirmation off every family, to go through them all again. */
+export function clearFamilyChecks(doc: TreeDocument): TreeDocument {
+  if (!doc.families.some((f) => f.checked)) return doc;
+  return {
+    ...doc,
+    families: doc.families.map((f) => {
+      if (!f.checked) return f;
+      const rest = { ...f };
+      delete rest.checked;
+      return rest;
+    }),
+  };
+}
+
 export function clearUnknownDates(doc: TreeDocument): TreeDocument {
   if (!unknownDateCount(doc)) return doc;
   const without = (event: LifeEvent | undefined, keep: boolean): LifeEvent | undefined => {

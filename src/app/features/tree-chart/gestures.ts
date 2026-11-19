@@ -103,9 +103,30 @@ export class ChartGestures {
     const dx = e.deltaX * lineScale;
     const dy = e.deltaY * lineScale;
     const mouseWheel = e.deltaMode !== 0 || (dx === 0 && Math.abs(dy) >= 50 && Number.isInteger(dy));
-    if (e.ctrlKey || e.metaKey) this.viewport.zoomAt(Math.exp(-dy * 0.01), px, py);
-    else if (mouseWheel) this.viewport.zoomAt(Math.exp(-dy * 0.0016), px, py);
-    else this.viewport.panBy(dx, dy);
+    const w = (this.wheeled ??= { zoom: 1, px, py, dx: 0, dy: 0 });
+    if (e.ctrlKey || e.metaKey) w.zoom *= Math.exp(-dy * 0.01);
+    else if (mouseWheel) w.zoom *= Math.exp(-dy * 0.0016);
+    else {
+      w.dx += dx;
+      w.dy += dy;
+    }
+    w.px = px;
+    w.py = py;
+    // A wheel or a touchpad sends many events a frame: they are added up and the chart moved once a frame, so
+    // the page is laid out and drawn once for all of them, not once for each.
+    if (this.wheelFrame === null) this.wheelFrame = requestAnimationFrame(() => this.flushWheel());
+  }
+
+  private wheeled: { zoom: number; px: number; py: number; dx: number; dy: number } | null = null;
+  private wheelFrame: number | null = null;
+
+  private flushWheel(): void {
+    const w = this.wheeled;
+    this.wheeled = null;
+    this.wheelFrame = null;
+    if (!w) return;
+    if (w.dx || w.dy) this.viewport.panBy(w.dx, w.dy);
+    if (w.zoom !== 1) this.viewport.zoomAt(w.zoom, w.px, w.py);
   }
 
   private start(): void {

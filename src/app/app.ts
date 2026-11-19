@@ -4,6 +4,7 @@ import { Dialogs } from './features/dialogs/dialogs';
 import { EmptyState } from './features/empty-state/empty-state';
 import { PrintRoute } from './features/print-studio/print-route';
 import { PrintStudio } from './features/print-studio/print-studio';
+import { ReviewBar } from './features/review-bar/review-bar';
 import { SampleNote } from './features/sample-note/sample-note';
 import { SidePanel } from './features/side-panel/side-panel';
 import { Toasts } from './features/toasts/toasts';
@@ -19,7 +20,7 @@ import { UiState } from './state/ui-state';
 /** The app: a bar on top, the chart with the side panel, and the dialogs over them; or the print studio in their place. */
 @Component({
   selector: 'app-root',
-  imports: [TopBar, TreeChart, EmptyState, SampleNote, SidePanel, Toasts, Dialogs, PrintStudio],
+  imports: [TopBar, TreeChart, EmptyState, SampleNote, SidePanel, Toasts, Dialogs, PrintStudio, ReviewBar],
   templateUrl: './app.html',
   styleUrl: './app.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,

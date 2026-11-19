@@ -25,3 +25,61 @@
     transform: rotate(90deg);
   }
 }
+
+.layouts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 10px;
+  margin-top: 8px;
+
+  .gain {
+    margin-left: 6px;
+    opacity: 0.7;
+  }
+
+  /* The real size of a card in this layout, on a row of its own under the percentage. */
+  .btn {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 2px 0;
+    min-width: 0;
+    padding: 8px 14px;
+  }
+
+  .size {
+    flex-basis: 100%;
+    font-size: 0.85em;
+    opacity: 0.8;
+  }
+}
+
+.btn.chosen {
+  border-color: var(--ink);
+  background: var(--ink);
+  color: var(--sheet);
+}
+
+/* A number with its unit inside the field, at its right. */
+.unit {
+  position: relative;
+  display: grid;
+
+  .input {
+    width: 100%;
+    padding-right: 2.6em;
+  }
+
+  .input.auto:not(:focus) {
+    color: var(--ink-2);
+  }
+
+  .suffix {
+    position: absolute;
+    right: 0.9em;
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--ink-3);
+    pointer-events: none;
+  }
+}

@@ -61,15 +61,16 @@
 
 /* The settings: one card for each group, on a ground a shade darker than the cards. */
 .controls {
+  min-height: 0;
+  border-left: 1px solid var(--rule);
+  background: var(--sheet-2);
+}
+
+.controls-body {
   display: flex;
   flex-direction: column;
   gap: 12px;
-  min-height: 0;
   padding: 14px 16px 24px;
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  border-left: 1px solid var(--rule);
-  background: var(--sheet-2);
 
   > * {
     flex: none;
@@ -132,9 +133,12 @@
   }
 
   .controls {
-    padding: 14px 12px 20px;
     border-top: 1px solid var(--rule);
     border-left: 0;
+  }
+
+  .controls-body {
+    padding: 14px 12px 20px;
   }
 }
 

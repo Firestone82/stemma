@@ -1,0 +1,22 @@
+:host {
+  display: block;
+}
+
+.unit {
+  position: relative;
+  display: grid;
+
+  .input {
+    width: 100%;
+    padding-right: 2.6em;
+  }
+
+  .suffix {
+    position: absolute;
+    right: 0.9em;
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--ink-3);
+    pointer-events: none;
+  }
+}

@@ -1,7 +1,7 @@
 <div class="stage">
   @if (drawing()) {
     <div class="drawing" role="status" aria-live="polite">
-      <span class="note"><span class="spinner" aria-hidden="true"></span>{{ t('print.drawing') }}</span>
+      <span class="note"><span class="spinner" aria-hidden="true"></span>{{ progress() || t('print.drawing') }}</span>
     </div>
   }
   @if (canPopOut() && svg()) {
@@ -41,6 +41,7 @@
             [class.title-box]="b.which === 'title'"
             [class.free]="b.free"
             [class.pending]="b.pending"
+            [class.blocks]="b.blocks"
             [class.moving]="!!boxDrag"
             [style.left.%]="b.x * 100"
             [style.top.%]="b.y * 100"
@@ -58,6 +59,7 @@
             (click)="$event.stopPropagation()"
             (dblclick)="$event.stopPropagation()"
           >
+            <span class="kind">{{ t(b.blocks ? 'print.box.blocks' : 'print.box.free') }}</span>
             @if (b.which === 'legend') {
               @for (corner of corners; track corner) {
                 <span class="corner" [class]="corner" (pointerdown)="onBoxDown($event, b.which, corner)"></span>
@@ -138,6 +140,12 @@
     <span class="omitted">
       {{ t('print.addedPeople', { count }) }}
       <button type="button" class="link" (click)="unadd.emit()">{{ t('print.unaddAll') }}</button>
+    </span>
+  }
+  @if (bent(); as count) {
+    <span class="omitted">
+      {{ t('print.bentLines', { count }) }}
+      <button type="button" class="link" (click)="unbend.emit()">{{ t('print.unbendAll') }}</button>
     </span>
   }
   @if (moved(); as count) {

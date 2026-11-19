@@ -1,6 +1,7 @@
 import { ChangeDetectionStrategy, Component, ElementRef, computed, effect, inject, input, output, signal, untracked, viewChild } from '@angular/core';
 import { LegendBox, PrintSettings } from '../../../core/model/types';
 import { NamesStyle, PosterResult } from '../../../core/poster/poster';
+import { roundedPath } from '../../../core/layout/lines';
 import { I18n } from '../../../i18n/i18n';
 import { Icon } from '../../../shared/icon/icon';
 
@@ -38,6 +39,8 @@ export class PrintPreview {
   readonly popOutFailed = input(false);
   readonly popOut = output<void>();
   /** A card was clicked: the person's id. */
+  /** The menu of the families' names' box was asked for (right click): where. */
+  readonly boxMenu = output<{ x: number; y: number }>();
   /** A card's menu was asked for (right click, or a long press): the person's id, and where. */
   readonly cardMenu = output<{ personId: string; x: number; y: number }>();
   /** How many cards have been moved by hand. */
@@ -52,8 +55,14 @@ export class PrintPreview {
   readonly lines = input<readonly ChildLine[]>([]);
   /** A click on a line: every child who hangs on that stretch of it, with the family the line belongs to. */
   readonly lineCut = output<{ familyId: string; childId: string }[]>();
+  /** How many lines have been led by hand. */
+  readonly bent = input(0);
+  /** All of them led by the layout again. */
+  readonly unbend = output<void>();
+  /** A line led by hand: its key and its points, start to end, in the layout's units. */
+  readonly lineBend = output<{ key: string; points: { x: number; y: number }[] }>();
   /** A card dragged to a new place: how far, in the layout's units. */
-  readonly cardMove = output<{ personId: string; dx: number; dy: number }>();
+  readonly cardMove = output<{ personId: string; dx: number; dy: number; alone: boolean }>();
   /** The size of a card in the layout's units, for lining a dragged card up with the others. */
   readonly cardUnits = input<{ w: number; h: number } | null>(null);
   /**
@@ -65,6 +74,8 @@ export class PrintPreview {
   readonly omitted = input(0);
   /** The page is being drawn again: a note over the one shown before (see PrintModel.drawing). */
   readonly drawing = input(false);
+  /** What the work is busy with just now, in words (PrintModel.note); the usual words when empty. */
+  readonly progress = input('');
   readonly restore = output<void>();
   /** Where the families' names are, as shares of the page (see PosterResult.legend). */
   readonly legend = input<(LegendBox & { free: boolean }) | null>(null);
@@ -83,6 +94,10 @@ export class PrintPreview {
   readonly staged = input<Partial<Record<Which, LegendBox>>>({});
   /** Some changes wait to be applied: a bar offers Apply and Discard. */
   readonly waiting = input(false);
+  /** The gap the title's box and the names' box keep between them, as shares of the page: a box moved near the other snaps to it. */
+  readonly boxGap = input<{ x: number; y: number } | null>(null);
+  /** Which of the boxes keep a place of their own that no card stands on (the title always; the names when asked). */
+  readonly blocking = input<{ legend: boolean; title: boolean }>({ legend: false, title: true });
   readonly apply = output<void>();
   readonly discard = output<void>();
   /** The families' names drawn into a box on this page (see PosterResult.namesIn): for showing them in a box being changed. */
@@ -99,14 +114,15 @@ export class PrintPreview {
   protected readonly boxes = computed(() => {
     const draft = this.boxDraft();
     const staged = this.staged();
-    const out: (LegendBox & { which: Which; free: boolean; pending: boolean })[] = [];
+    const out: (LegendBox & { which: Which; free: boolean; pending: boolean; blocks: boolean })[] = [];
     for (const which of ['legend', 'title'] as const) {
       const at = which === 'legend' ? this.legend() : this.title();
       const moved = staged[which];
       if (!at) continue;
-      if (draft?.which === which) out.push({ ...draft.box, which, free: true, pending: true });
-      else if (moved) out.push({ ...moved, which, free: at.free, pending: this.waiting() });
-      else out.push({ ...at, which, pending: false });
+      const blocks = this.blocking()[which];
+      if (draft?.which === which) out.push({ ...draft.box, which, free: true, pending: true, blocks });
+      else if (moved) out.push({ ...moved, which, free: at.free, pending: this.waiting(), blocks });
+      else out.push({ ...at, which, pending: false, blocks });
     }
     return out;
   });
@@ -132,8 +148,21 @@ export class PrintPreview {
 
   protected onWheel(event: WheelEvent): void {
     event.preventDefault();
-    this.zoomAt(Math.exp(-event.deltaY * 0.0015), event.clientX, event.clientY);
+    // Added up and applied once a frame: a touchpad sends many events a frame, and the page is drawn again for each.
+    const w = (this.wheeled ??= { k: 1, x: event.clientX, y: event.clientY });
+    w.k *= Math.exp(-event.deltaY * 0.0015);
+    w.x = event.clientX;
+    w.y = event.clientY;
+    this.wheelFrame ??= requestAnimationFrame(() => {
+      const done = this.wheeled;
+      this.wheeled = null;
+      this.wheelFrame = null;
+      if (done) this.zoomAt(done.k, done.x, done.y);
+    });
   }
+
+  private wheeled: { k: number; x: number; y: number } | null = null;
+  private wheelFrame: number | null = null;
 
   protected onDoubleClick(event: MouseEvent): void {
     if (this.zoom().k > 1) this.resetZoom();
@@ -170,6 +199,28 @@ export class PrintPreview {
     moved: boolean;
   } | null = null;
 
+  /**
+   * A stretch of a line being dragged across (a level stretch up or down, an upright one sideways): the line's
+   * points with that stretch at `seg`, where the pointer and the stretch started, and what it can line up with.
+   */
+  private lineDrag: {
+    id: number;
+    key: string;
+    family: string;
+    child: string;
+    points: { x: number; y: number }[];
+    seg: number;
+    level: boolean;
+    from: DOMPoint;
+    was: number;
+    inverse: DOMMatrix;
+    unit: number;
+    snaps: number[];
+    overlay: SVGPathElement;
+    guide: SVGLineElement;
+    moved: boolean;
+  } | null = null;
+
   protected onPointerDown(event: PointerEvent): void {
     const card = event.button === 0 ? (event.target as Element | null)?.closest<SVGGElement>('g[data-person]') : null;
     const parent = card?.parentNode;
@@ -200,9 +251,171 @@ export class PrintPreview {
       };
       return;
     }
+    // A line: dragged, the stretch under the pointer goes across; let go where it was, it is a click (onClick).
+    if (event.button === 0 && !(event.target as Element | null)?.closest('.page-box') && this.startLineDrag(event)) return;
     if (this.zoom().k <= 1 || event.button !== 0) return;
     event.preventDefault();
     this.drag = { id: event.pointerId, x: event.clientX, y: event.clientY, moved: false };
+  }
+
+  /** Starts dragging the stretch of a line under the pointer; false when there is none. */
+  private startLineDrag(event: PointerEvent): boolean {
+    const page = this.sheet()?.nativeElement;
+    const path = page?.querySelector<SVGPathElement>('path[data-child]');
+    const ctm = path?.getScreenCTM();
+    const parent = path?.parentNode;
+    if (!page || !path || !ctm || !(parent instanceof SVGGElement)) return false;
+    const inverse = ctm.inverse();
+    const p = new DOMPoint(event.clientX, event.clientY).matrixTransform(inverse);
+    const unit = 1 / Math.hypot(ctm.a, ctm.b);
+    const reach = 7 * unit;
+    let hit: { line: ChildLine; seg: number; d: number } | null = null;
+    for (const line of this.lines()) {
+      for (let i = 1; i < line.points.length; i++) {
+        const d = distanceTo([line.points[i - 1], line.points[i]], p);
+        if (d < reach && (!hit || d < hit.d)) hit = { line, seg: i - 1, d };
+      }
+    }
+    if (!hit) return false;
+    const points = hit.line.points.map((q) => ({ x: q.x, y: q.y }));
+    let seg = hit.seg;
+    const a = points[seg];
+    const b = points[seg + 1];
+    const level = Math.abs(a.y - b.y) < 0.01;
+    // The stretch out of the marker or into the card: a short piece of it stays, so the line still leaves and
+    // enters as it should, and the rest goes across with a step.
+    const stub = (from: { x: number; y: number }, to: { x: number; y: number }) => {
+      const len = Math.hypot(to.x - from.x, to.y - from.y);
+      const t = Math.min(0.5, 12 / Math.max(len, 1));
+      return { x: from.x + (to.x - from.x) * t, y: from.y + (to.y - from.y) * t };
+    };
+    if (seg === 0) {
+      const q = stub(points[0], points[1]);
+      points.splice(1, 0, { ...q }, { ...q });
+      seg = 2;
+    }
+    if (seg + 1 === points.length - 1) {
+      const n = points.length;
+      const q = stub(points[n - 1], points[n - 2]);
+      points.splice(n - 1, 0, { ...q }, { ...q });
+    }
+    // What the stretch can line up with: the same stretches of other lines, the edges and middles of the cards
+    // (kept clear of by the layout's margin), the line's own two ends.
+    const snaps: number[] = [];
+    for (const line of this.lines()) {
+      if (line === hit.line) continue;
+      for (let i = 1; i < line.points.length; i++) {
+        const u = line.points[i - 1];
+        const v = line.points[i];
+        if (level && Math.abs(u.y - v.y) < 0.01) snaps.push(u.y);
+        if (!level && Math.abs(u.x - v.x) < 0.01) snaps.push(u.x);
+      }
+    }
+    const margin = 6;
+    for (const g of parent.querySelectorAll<SVGGElement>(':scope > g[data-person]')) {
+      const m = /translate\(([-\d.]+)[ ,]+([-\d.]+)\)/.exec(g.getAttribute('transform') ?? '');
+      const rect = g.querySelector('rect');
+      if (!m || !rect) continue;
+      const x = Number(m[1]);
+      const y = Number(m[2]);
+      const w = Number(rect.getAttribute('width')) || 0;
+      const h = Number(rect.getAttribute('height')) || 0;
+      if (level) snaps.push(y - margin, y + h + margin, y + h / 2);
+      else snaps.push(x - margin, x + w + margin, x + w / 2);
+    }
+    const ends = [hit.line.points[0], hit.line.points[hit.line.points.length - 1]];
+    for (const e of ends) snaps.push(level ? e.y : e.x);
+    event.preventDefault();
+    const ns = 'http://www.w3.org/2000/svg';
+    const overlay = document.createElementNS(ns, 'path');
+    overlay.setAttribute('fill', 'none');
+    overlay.setAttribute('stroke', '#d2452f');
+    overlay.setAttribute('stroke-width', String(2 * unit));
+    overlay.setAttribute('stroke-linecap', 'round');
+    overlay.setAttribute('pointer-events', 'none');
+    const guide = document.createElementNS(ns, 'line');
+    guide.setAttribute('class', 'line-guide');
+    guide.setAttribute('stroke', '#d2452f');
+    guide.setAttribute('stroke-width', String(1 * unit));
+    guide.setAttribute('stroke-dasharray', `${5 * unit} ${4 * unit}`);
+    guide.setAttribute('pointer-events', 'none');
+    guide.style.display = 'none';
+    (event.currentTarget as Element).setPointerCapture(event.pointerId);
+    this.lineDrag = {
+      id: event.pointerId,
+      key: hit.line.key ?? `${hit.line.familyId}|${hit.line.childId}`,
+      family: hit.line.familyId,
+      child: hit.line.childId,
+      points,
+      seg,
+      level,
+      from: p,
+      was: level ? points[seg].y : points[seg].x,
+      inverse,
+      unit,
+      snaps,
+      overlay,
+      guide,
+      moved: false,
+    };
+    return true;
+  }
+
+  /**
+   * The stretch follows the pointer across: pulled onto a stretch of another line, a card's edge (kept clear
+   * of by the margin) or middle, or the line's own end when it comes near; otherwise in steps of four units.
+   * With Alt held it goes exactly where it is put.
+   */
+  private dragLine(event: PointerEvent): void {
+    const d = this.lineDrag!;
+    const p = new DOMPoint(event.clientX, event.clientY).matrixTransform(d.inverse);
+    const delta = d.level ? p.y - d.from.y : p.x - d.from.x;
+    if (!d.moved && Math.abs(delta) < 3 * d.unit) return;
+    if (!d.moved) {
+      d.moved = true;
+      const page = this.sheet()?.nativeElement;
+      const parent = page?.querySelector('path[data-child]')?.parentNode;
+      parent?.appendChild(d.overlay);
+      parent?.appendChild(d.guide);
+      for (const path of page?.querySelectorAll<SVGPathElement>(`path[data-family="${d.family}"][data-child="${d.child}"]`) ?? []) path.style.opacity = '0.2';
+    }
+    let v = d.was + delta;
+    let snapped: number | undefined;
+    if (!event.altKey) {
+      const near = d.snaps.reduce<number | undefined>(
+        (best, s) => (Math.abs(s - v) < 6 * d.unit && (best === undefined || Math.abs(s - v) < Math.abs(best - v)) ? s : best),
+        undefined,
+      );
+      if (near !== undefined) v = snapped = near;
+      else v = Math.round(v / 4) * 4;
+    }
+    const a = d.points[d.seg];
+    const b = d.points[d.seg + 1];
+    if (d.level) a.y = b.y = v;
+    else a.x = b.x = v;
+    d.overlay.setAttribute('d', roundedPath(d.points, 6));
+    if (snapped === undefined) d.guide.style.display = 'none';
+    else {
+      d.guide.style.display = '';
+      const span = 400;
+      const mid = d.level ? (a.x + b.x) / 2 : (a.y + b.y) / 2;
+      const [x1, y1, x2, y2] = d.level ? [mid - span, v, mid + span, v] : [v, mid - span, v, mid + span];
+      d.guide.setAttribute('x1', String(x1));
+      d.guide.setAttribute('y1', String(y1));
+      d.guide.setAttribute('x2', String(x2));
+      d.guide.setAttribute('y2', String(y2));
+    }
+  }
+
+  /** The line let go of: kept as it was led, or (not moved) left to the click that follows. */
+  private dropLine(): void {
+    const d = this.lineDrag!;
+    this.lineDrag = null;
+    d.overlay.remove();
+    d.guide.remove();
+    if (!d.moved) return;
+    this.draggedAt = performance.now();
+    this.lineBend.emit({ key: d.key, points: d.points });
   }
 
   /**
@@ -339,6 +552,10 @@ export class PrintPreview {
       this.dragCard(event);
       return;
     }
+    if (this.lineDrag?.id === event.pointerId) {
+      this.dragLine(event);
+      return;
+    }
     const d = this.drag;
     if (!d && !event.buttons) this.markLines(event);
     if (!d || d.id !== event.pointerId) return;
@@ -362,7 +579,12 @@ export class PrintPreview {
       this.cardDrag = null;
       c.guides?.remove();
       if (c.moved) this.draggedAt = performance.now();
-      if (c.moved && c.personId) this.cardMove.emit({ personId: c.personId, dx: c.dx, dy: c.dy });
+      // With Ctrl (or Cmd) held, the card goes alone: what hangs under it stays.
+      if (c.moved && c.personId) this.cardMove.emit({ personId: c.personId, dx: c.dx, dy: c.dy, alone: event.ctrlKey || event.metaKey });
+      return;
+    }
+    if (this.lineDrag?.id === event.pointerId) {
+      this.dropLine();
       return;
     }
     if (this.drag?.id !== event.pointerId) return;
@@ -405,6 +627,10 @@ export class PrintPreview {
       const lined = alignBox(box, inner, this.ratio(), !event.altKey);
       box = lined.box;
       this.guides.set(lined.guides);
+      // Near the other box, a gap away from it: snapped there (Alt held: not).
+      const other = this.boxes().find((b) => b.which !== d.which);
+      const gap = this.boxGap();
+      if (other && gap && !event.altKey) box = snapToGap(box, other, gap);
     }
     this.boxDraft.set({ which: d.which, box });
   }
@@ -475,6 +701,41 @@ export class PrintPreview {
     else this.boxesPlace.emit({ titleAt: { x: box.x + box.w / 2, y: box.y } });
   }
 
+  /**
+   * The families' names' box made as small as what is drawn in it (the heading and the names), where it is now: waiting to be applied like any change of the box. False when there is
+   * nothing to measure.
+   */
+  fitNamesBox(): boolean {
+    const page = this.sheet()?.nativeElement;
+    const group = page?.querySelector<SVGGElement>('g.pp-legend');
+    const w = this.width();
+    const h = this.height();
+    if (!group || !w || !h) return false;
+    let b: DOMRect;
+    try {
+      b = group.getBBox();
+    } catch {
+      return false;
+    }
+    if (!b.width || !b.height) return false;
+    // A hair of room round them, never more than the box has now: it only ever gets smaller.
+    const pad = Math.min(w, h) * 0.002;
+    const now = this.boxAt('legend');
+    let x0 = Math.max(0, b.x - pad) / w;
+    let y0 = Math.max(0, b.y - pad) / h;
+    let x1 = Math.min(w, b.x + b.width + pad) / w;
+    let y1 = Math.min(h, b.y + b.height + pad) / h;
+    if (now) {
+      x0 = Math.max(x0, now.x);
+      y0 = Math.max(y0, now.y);
+      x1 = Math.min(x1, now.x + now.w);
+      y1 = Math.min(y1, now.y + now.h);
+    }
+    if (x1 <= x0 || y1 <= y0) return false;
+    this.putBox('legend', { x: x0, y: y0, w: x1 - x0, h: y1 - y0 }, true);
+    return true;
+  }
+
   /** A box put by hand goes back where the page has it by itself (once applied). */
   protected resetBox(which: Which): void {
     this.boxesPlace.emit(which === 'legend' ? { legendBox: null } : { titleAt: null });
@@ -543,6 +804,12 @@ export class PrintPreview {
 
   /** The menu of the card the pointer is on. */
   protected onContextMenu(event: MouseEvent): void {
+    // The families' names' box: its own menu.
+    if ((event.target as Element | null)?.closest('.legend-box:not(.title-box)')) {
+      event.preventDefault();
+      this.boxMenu.emit({ x: event.clientX, y: event.clientY });
+      return;
+    }
     const card = (event.target as Element | null)?.closest<SVGGElement>('[data-person]');
     const id = card?.dataset['person'];
     if (!id) return;
@@ -668,6 +935,8 @@ const MIN_BOX = 0.04;
 
 /** A line from parents to a child, as the layout has it. */
 export interface ChildLine {
+  /** The line's key (`family|child`), for keeping it as it was led by hand. */
+  key?: string;
   familyId: string;
   childId: string;
   points: readonly { x: number; y: number }[];
@@ -698,4 +967,30 @@ export function movedBox(start: LegendBox, what: 'move' | Corner, dx: number, dy
   if (what === 'nw' || what === 'ne') y = clamp(y + dy, 0, bottom - MIN_BOX);
   else bottom = clamp(bottom + dy, y + MIN_BOX, 1);
   return { x, y, w: right - x, h: bottom - y };
+}
+
+/** How near a box has to come to the gap from the other one to snap to it, as a share of the page's width and height. */
+const GAP_SNAP = 0.012;
+
+/**
+ * A box moved above or under another (their sides across each other), or beside it (their tops and feet
+ * across each other), is put exactly the gap away from it when it is within a hair of that.
+ */
+function snapToGap(box: LegendBox, other: LegendBox, gap: { x: number; y: number }): LegendBox {
+  let { x, y } = box;
+  const across = box.x < other.x + other.w && other.x < box.x + box.w;
+  const level = box.y < other.y + other.h && other.y < box.y + box.h;
+  if (across) {
+    const under = other.y + other.h + gap.y;
+    const over = other.y - gap.y - box.h;
+    if (Math.abs(box.y - under) < GAP_SNAP) y = under;
+    else if (Math.abs(box.y - over) < GAP_SNAP) y = over;
+  }
+  if (level) {
+    const right = other.x + other.w + gap.x;
+    const left = other.x - gap.x - box.w;
+    if (Math.abs(box.x - right) < GAP_SNAP) x = right;
+    else if (Math.abs(box.x - left) < GAP_SNAP) x = left;
+  }
+  return { ...box, x, y };
 }

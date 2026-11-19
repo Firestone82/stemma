@@ -31,6 +31,9 @@ import {
   TreeDocument,
   TreeMeta,
   ViewSettings,
+  HEAD_ALIGN_VALUES,
+  CardMove,
+  GAP_PERCENT,
 } from '../model/types';
 import { CURRENT_FORMAT, ROOT_ELEMENT, XML_NAMESPACE, compareFormat, formatVersionString, parseFormatVersion } from './format';
 import { MIGRATIONS, MigrationError, XmlMigration, runMigrations } from './migrations';
@@ -161,8 +164,16 @@ const KNOWN = {
       'partner',
       'withPartner',
       'tight',
+      'cardGap',
+      'lineGap',
       'fill',
       'stackCouples',
+      'legendHeading',
+      'legendHeadAlign',
+      'legendHeadWidth',
+      'legendBlocks',
+      'settingsPage',
+      'layoutChoice',
       'amidPartners',
       'largeText',
       'strongLines',
@@ -173,6 +184,7 @@ const KNOWN = {
       'unionText',
       'titleAt',
       'moves',
+      'lineBends',
       'added',
       'flipped',
       'ancestors',
@@ -203,7 +215,7 @@ const KNOWN = {
   name: { attrs: ['given', 'givenUnknown', 'surname', 'surnameFrom', 'birthSurname', 'nickname'], elements: [] },
   event: { attrs: ['date', 'dateQualifier', 'dateText', 'dateUnknown', 'place'], elements: [] },
   end: { attrs: ['date', 'dateQualifier', 'dateText', 'dateUnknown', 'place', 'reason'], elements: [] },
-  family: { attrs: ['id', 'type'], elements: ['partner', 'engagement', 'start', 'end', 'child', 'notes'] },
+  family: { attrs: ['id', 'type', 'checked'], elements: ['partner', 'engagement', 'start', 'end', 'child', 'notes'] },
   child: { attrs: ['ref', 'relation', 'birthGroup'], elements: [] },
 } satisfies Record<string, { attrs: string[]; elements: string[] }>;
 
@@ -396,6 +408,15 @@ class Reader {
     print.showHidden = boolAttr(el, 'showHidden', DEFAULT_PRINT.showHidden);
     print.fill = boolAttr(el, 'fill', DEFAULT_PRINT.fill);
     print.stackCouples = boolAttr(el, 'stackCouples', DEFAULT_PRINT.stackCouples);
+    print.legendHeading = boolAttr(el, 'legendHeading', DEFAULT_PRINT.legendHeading);
+    const headAlign = this.enumAttr(el, 'legendHeadAlign', HEAD_ALIGN_VALUES, 'center');
+    if (headAlign !== 'center') print.legendHeadAlign = headAlign;
+    const headWidth = Number(el.getAttribute('legendHeadWidth'));
+    if (el.hasAttribute('legendHeadWidth') && Number.isFinite(headWidth) && headWidth > 0) print.legendHeadWidth = Math.min(LEGEND_GAP_MAX * 5, headWidth);
+    print.legendBlocks = boolAttr(el, 'legendBlocks', DEFAULT_PRINT.legendBlocks);
+    print.settingsPage = boolAttr(el, 'settingsPage', DEFAULT_PRINT.settingsPage);
+    const choice = Number(el.getAttribute('layoutChoice'));
+    if (el.hasAttribute('layoutChoice') && Number.isInteger(choice) && choice > 0 && choice < 20) print.layoutChoice = choice;
     print.amidPartners = boolAttr(el, 'amidPartners', DEFAULT_PRINT.amidPartners);
     print.largeText = boolAttr(el, 'largeText', DEFAULT_PRINT.largeText);
     print.strongLines = boolAttr(el, 'strongLines', DEFAULT_PRINT.strongLines);
@@ -413,20 +434,40 @@ class Reader {
     if (legendAnchor) print.legendAnchor = legendAnchor;
     if (legendAlign && legendAlign !== 'center') print.legendAlign = legendAlign;
     print.tight = boolAttr(el, 'tight', DEFAULT_PRINT.tight);
+    for (const key of ['cardGap', 'lineGap'] as const) {
+      const v = Number(el.getAttribute(key));
+      if (el.hasAttribute(key) && Number.isFinite(v)) print[key] = Math.min(GAP_PERCENT.max, Math.max(GAP_PERCENT.min, v));
+    }
     print.unionText = boolAttr(el, 'unionText', DEFAULT_PRINT.unionText);
     const titleAt = (el.getAttribute('titleAt') ?? '').trim().split(/\s+/).map(Number);
     if (titleAt.length === 2 && titleAt.every((v) => Number.isFinite(v) && v >= 0 && v <= 1)) print.titleAt = { x: titleAt[0], y: titleAt[1] };
     // "I12:30,-14.5 I40:0,66": cards moved by hand.
-    const moves: Record<string, { x: number; y: number }> = {};
+    // "I12:30,-14.5,5,0": with a second pair, as far again moved on its own (with nothing under it following).
+    const moves: Record<string, CardMove> = {};
     for (const part of (el.getAttribute('moves') ?? '').split(/\s+/)) {
       const cut = part.lastIndexOf(':');
-      const [x, y] = part
+      const [x, y, sx, sy] = part
         .slice(cut + 1)
         .split(',')
         .map(Number);
-      if (cut > 0 && Number.isFinite(x) && Number.isFinite(y)) moves[part.slice(0, cut)] = { x, y };
+      if (cut > 0 && Number.isFinite(x) && Number.isFinite(y))
+        moves[part.slice(0, cut)] = Number.isFinite(sx) && Number.isFinite(sy) && (sx || sy) ? { x, y, sx, sy } : { x, y };
     }
     if (Object.keys(moves).length) print.moves = moves;
+    // "F2|I3:10,20;10,40;60,40 F3|I9:…": lines led by hand, their points.
+    const bends: Record<string, { x: number; y: number }[]> = {};
+    for (const part of (el.getAttribute('lineBends') ?? '').split(/\s+/)) {
+      const cut = part.lastIndexOf(':');
+      if (cut <= 0) continue;
+      const points = part
+        .slice(cut + 1)
+        .split(';')
+        .map((xy) => xy.split(',').map(Number))
+        .filter((xy) => xy.length === 2 && xy.every(Number.isFinite))
+        .map(([x, y]) => ({ x, y }));
+      if (points.length >= 2) bends[part.slice(0, cut)] = points;
+    }
+    if (Object.keys(bends).length) print.lineBends = bends;
     // "I12 I13 I40": people brought onto the print by hand.
     const added = [...new Set((el.getAttribute('added') ?? '').split(/\s+/).filter(Boolean))];
     if (added.length) print.added = added;
@@ -529,6 +570,8 @@ class Reader {
     }
     const notes = text(first(el, 'notes'));
     if (notes) family.notes = notes;
+    const checked = el.getAttribute('checked')?.trim();
+    if (checked && /^\d{4}-\d{2}-\d{2}$/.test(checked)) family.checked = checked;
     setExt(family, captureExt(el, KNOWN.family));
     return family;
   }

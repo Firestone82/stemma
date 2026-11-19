@@ -168,3 +168,28 @@ body.preview-window {
   margin: auto;
   color: var(--ink-3);
 }
+
+/*
+ * Settings that a switch or a choice above them turns off: disabled where they stand, never taken away, so
+ * nothing around them moves.
+ */
+.studio-set {
+  display: contents;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+
+  &:disabled {
+    .field,
+    .studio-option {
+      opacity: 0.5;
+    }
+  }
+}
+
+/* Something turned off says why when pointed at (its title); the pointer shows that there is something to read. */
+.studio-set:disabled [title],
+.studio-set[title]:disabled * {
+  cursor: help;
+}

@@ -28,10 +28,7 @@
                 "input": "public"
               }
             ],
-            "styles": [
-              "src/styles/fonts.css",
-              "src/styles.scss"
-            ],
+            "styles": ["src/styles/fonts.css", "node_modules/simplebar-core/dist/simplebar.css", "src/styles.scss"],
             "inlineStyleLanguage": "scss"
           },
           "configurations": {
@@ -84,10 +81,7 @@
         "lint": {
           "builder": "@angular-eslint/builder:lint",
           "options": {
-            "lintFilePatterns": [
-              "src/**/*.ts",
-              "src/**/*.html"
-            ]
+            "lintFilePatterns": ["src/**/*.ts", "src/**/*.html"]
           }
         }
       }

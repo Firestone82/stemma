@@ -1,6 +1,7 @@
 import { ChangeDetectionStrategy, Component, ElementRef, computed, effect, inject, signal, untracked, viewChild } from '@angular/core';
 import { I18n } from '../../i18n/i18n';
 import { Icon } from '../../shared/icon/icon';
+import { Scroll } from '../../shared/scroll/scroll';
 import { HistoryButtons } from '../top-bar/history-buttons/history-buttons';
 import { CardOptions } from './card-options/card-options';
 import { CentreOptions } from './centre-options/centre-options';
@@ -35,7 +36,7 @@ const MENU_H = 400;
  */
 @Component({
   selector: 'stemma-print-studio',
-  imports: [Icon, HistoryButtons, PrintPreview, CentreOptions, ReachOptions, CardOptions, PaperOptions, TitleOptions, NamesOptions, OutputActions],
+  imports: [Scroll, Icon, HistoryButtons, PrintPreview, CentreOptions, ReachOptions, CardOptions, PaperOptions, TitleOptions, NamesOptions, OutputActions],
   templateUrl: './print-studio.html',
   styleUrl: './print-studio.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -76,8 +77,34 @@ export class PrintStudio {
   /** Escape leaves the page, unless a dialog is open over it; zoomed into the preview, it first goes back to the whole page. */
   /** The menu of a card in the page (right click): who it is, bringing their family onto the print, and leaving them out. */
   protected readonly menu = signal<{ id: string; name: string; x: number; y: number } | null>(null);
+  /** The menu of the families' names' box in the page (right click): where it stands. */
+  protected readonly boxMenu = signal<{ x: number; y: number } | null>(null);
+
+  protected openBoxMenu(at: { x: number; y: number }): void {
+    this.menu.set(null);
+    this.boxMenu.set({ x: Math.max(8, Math.min(at.x, window.innerWidth - MENU_W - 8)), y: Math.max(8, Math.min(at.y, window.innerHeight - 120)) });
+  }
+
+  /** The names' box as small as what is in it. */
+  protected fitNamesBox(): void {
+    this.boxMenu.set(null);
+    this.previewPane()?.fitNamesBox();
+  }
+
+  /** The names keep a place of their own that no card stands on, or give it up to the cards. */
+  protected toggleNamesBlock(): void {
+    this.boxMenu.set(null);
+    this.model.set({ legendBlocks: !this.model.settings().legendBlocks });
+  }
+
+  /** The names' box back where the page puts it by itself. */
+  protected resetNamesBox(): void {
+    this.boxMenu.set(null);
+    this.model.stage({ legendBox: undefined, legendAnchor: undefined });
+  }
 
   protected openMenu(at: { personId: string; x: number; y: number }): void {
+    this.boxMenu.set(null);
     this.menu.set({
       id: at.personId,
       name: this.model.nameOf(at.personId),
@@ -144,7 +171,10 @@ export class PrintStudio {
 
   /** A press anywhere but in a card's menu closes it. */
   protected onPointerDown(event: PointerEvent): void {
-    if (this.menu() && !(event.target as Element | null)?.closest('.card-menu')) this.menu.set(null);
+    if (!(event.target as Element | null)?.closest('.card-menu')) {
+      if (this.menu()) this.menu.set(null);
+      if (this.boxMenu()) this.boxMenu.set(null);
+    }
   }
 
   protected hide(personId: string): void {
@@ -153,8 +183,9 @@ export class PrintStudio {
   }
 
   protected onEscape(): void {
-    if (this.menu()) {
+    if (this.menu() || this.boxMenu()) {
       this.menu.set(null);
+      this.boxMenu.set(null);
       return;
     }
     if (document.querySelector('dialog[open]')) return;

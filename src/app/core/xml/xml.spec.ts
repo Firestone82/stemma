@@ -19,6 +19,40 @@ describe('XML format', () => {
     expect(back).toEqual(doc);
   });
 
+  it('keeps the day a family was confirmed', () => {
+    const doc = sampleDocument(new Date('2026-01-01T00:00:00Z'));
+    const marked = { ...doc, families: doc.families.map((f, i) => (i === 0 ? { ...f, checked: '2026-11-19' } : f)) };
+    expect(serializeTree(marked)).toContain('checked="2026-11-19"');
+    expect(roundTrip(marked).families[0].checked).toBe('2026-11-19');
+    expect(roundTrip(marked).families[1].checked).toBeUndefined();
+  });
+
+  it("keeps where the heading over the families' names stands", () => {
+    const doc = sampleDocument(new Date('2026-01-01T00:00:00Z'));
+    const right = { ...doc, print: { ...DEFAULT_PRINT, ...doc.print, legendHeadAlign: 'right' as const } };
+    expect(roundTrip(right).print?.legendHeadAlign).toBe('right');
+    expect(serializeTree(doc)).not.toContain('legendHeadAlign');
+  });
+
+  it('keeps the lines led by hand', () => {
+    const doc = sampleDocument(new Date('2026-01-01T00:00:00Z'));
+    const lineBends = {
+      'F2|I3': [
+        { x: 1, y: 2 },
+        { x: 1, y: 40.5 },
+        { x: 90, y: 40.5 },
+      ],
+    };
+    const back = roundTrip({ ...doc, print: { ...DEFAULT_PRINT, ...doc.print, lineBends } });
+    expect(back.print?.lineBends).toEqual(lineBends);
+  });
+
+  it('keeps cards moved alone apart from cards moved with what hangs under them', () => {
+    const doc = sampleDocument(new Date('2026-01-01T00:00:00Z'));
+    const moves = { I3: { x: 10, y: -4.5 }, I9: { x: 0, y: 0, sx: 30, sy: 12 } };
+    expect(roundTrip({ ...doc, print: { ...DEFAULT_PRINT, ...doc.print, moves } }).print?.moves).toEqual(moves);
+  });
+
   it('writes the version, namespace and generator', () => {
     const xml = serializeTree(sampleDocument());
     expect(xml.startsWith('<?xml version="1.0" encoding="UTF-8"?>')).toBe(true);

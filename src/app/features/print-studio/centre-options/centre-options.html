@@ -33,4 +33,44 @@
       <span class="hint">{{ t(o.hint) }}</span>
     </div>
   }
+  <div class="studio-pair">
+    @for (g of gaps(); track g.key) {
+      <div class="field">
+        <label [for]="'print-' + g.key">{{ t(g.label) }}</label>
+        <div class="unit">
+          <input
+            [id]="'print-' + g.key"
+            class="input"
+            inputmode="decimal"
+            autocomplete="off"
+            [class.auto]="g.value === undefined"
+            [value]="g.value ?? ''"
+            [placeholder]="g.auto"
+            [title]="t('print.gapHint', { min: range.min, max: range.max })"
+            (change)="setGap(g.key, $event)"
+          />
+          <span class="suffix">%</span>
+        </div>
+      </div>
+    }
+  </div>
+  <span class="hint">{{ t('print.gapsHint') }}</span>
 </div>
+@if (model.seeking() && !layouts().length) {
+  <p class="hint seeking">{{ t('print.layoutsSeeking') }}</p>
+}
+@if (layouts().length) {
+  <div class="studio-part" role="group" aria-labelledby="print-g-layouts">
+    <h4 id="print-g-layouts">{{ t('print.layouts') }}</h4>
+    <span class="hint">{{ t('print.layoutsHint') }}</span>
+    <div class="layouts">
+      @for (l of layouts(); track l.i) {
+        <button type="button" class="btn small" [class.chosen]="l.on" [attr.aria-pressed]="l.on" (click)="pick(l.i)">
+          {{ t('print.layoutOption', { n: l.i + 1 }) }}
+          <span class="gain">{{ l.i === 0 ? t('print.layoutBest') : t('print.layoutRatio', { percent: l.percent }) }}</span>
+          <span class="size">{{ t('print.layoutCard', { w: l.w, h: l.h }) }}</span>
+        </button>
+      }
+    </div>
+  </div>
+}

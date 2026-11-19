@@ -31,13 +31,19 @@
     }
   </select>
 </div>
-@if (s.tiles) {
-  <div class="studio-option">
-    <stemma-switch [checked]="!!s.tilesBorderless" (checkedChange)="model.set({ tilesBorderless: $event || undefined })">{{
-      t('print.tiles.borderless')
-    }}</stemma-switch>
-    @if (model.tilesNote(); as note) {
-      <span class="hint">{{ note }}</span>
-    }
-  </div>
-}
+<div class="studio-option">
+  <stemma-switch
+    [disabled]="!s.tiles"
+    [attr.title]="s.tiles ? null : t('print.why.noTiles')"
+    [checked]="!!s.tilesBorderless"
+    (checkedChange)="model.set({ tilesBorderless: $event || undefined })"
+    >{{ t('print.tiles.borderless') }}</stemma-switch
+  >
+  @if (s.tiles && model.tilesNote(); as note) {
+    <span class="hint">{{ note }}</span>
+  }
+</div>
+<div class="studio-option">
+  <stemma-switch [checked]="s.settingsPage" (checkedChange)="model.set({ settingsPage: $event })">{{ t('print.settingsPage') }}</stemma-switch>
+  <span class="hint">{{ t('print.settingsPageHint') }}</span>
+</div>

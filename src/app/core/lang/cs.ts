@@ -304,6 +304,7 @@ export const czech: ChartLanguage = {
   drawn: (date) => `Nakresleno ${longDate(date)}`,
   familyTree: 'Rodokmen',
   others: 'Ostatní rodiny',
+  families: 'Rody',
   bornWith: (sex, count) => {
     const word = ['', '', 'dvojče', 'trojče', 'čtyřče', 'paterče', 'šesterče'][count];
     if (!word) return sex === 'male' ? 'bratr' : sex === 'female' ? 'sestra' : 'sourozenec';

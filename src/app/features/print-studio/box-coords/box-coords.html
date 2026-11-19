@@ -1,0 +1,33 @@
+@let a = at();
+<div class="studio-pair">
+  <div class="field">
+    <label [for]="'coord-x-' + of()">{{ t('print.coords.x') }}</label>
+    <div class="unit">
+      <input
+        [id]="'coord-x-' + of()"
+        class="input"
+        inputmode="decimal"
+        autocomplete="off"
+        [disabled]="!a"
+        [value]="a ? fmt(a.x) : ''"
+        (change)="set('x', $event)"
+      />
+      <span class="suffix">cm</span>
+    </div>
+  </div>
+  <div class="field">
+    <label [for]="'coord-y-' + of()">{{ t('print.coords.y') }}</label>
+    <div class="unit">
+      <input
+        [id]="'coord-y-' + of()"
+        class="input"
+        inputmode="decimal"
+        autocomplete="off"
+        [disabled]="!a"
+        [value]="a ? fmt(a.y) : ''"
+        (change)="set('y', $event)"
+      />
+      <span class="suffix">cm</span>
+    </div>
+  </div>
+</div>

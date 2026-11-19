@@ -1,4 +1,6 @@
 import { ChangeDetectionStrategy, Component, computed, inject } from '@angular/core';
+import { GAP_PERCENT } from '../../../core/model/types';
+import { LAYOUT, TIGHT_LAYOUT } from '../../../core/layout/types';
 import { I18n } from '../../../i18n/i18n';
 import { MessageKey } from '../../../i18n/locales';
 import { Icon } from '../../../shared/icon/icon';
@@ -35,7 +37,48 @@ export class CentreOptions {
     { id: '', label: this.t('print.nobody') },
   ]);
 
+  protected readonly range = GAP_PERCENT;
+
+  /**
+   * The gap between cards and the room round lines, in hundredths of a card's width; empty for what the page
+   * takes (shown in the field), which is less with `tight`.
+   */
+  protected readonly gaps = computed(() => {
+    const s = this.model.settings();
+    const base = { ...LAYOUT, ...(s.tight ? TIGHT_LAYOUT : {}) };
+    const auto = (v: number) => String(Math.round((v / LAYOUT.cardWidth) * 1000) / 10);
+    return [
+      { key: 'cardGap' as const, label: 'print.cardGap' as const, value: s.cardGap, auto: auto(base.siblingGap) },
+      { key: 'lineGap' as const, label: 'print.lineGap' as const, value: s.lineGap, auto: auto(base.stem) },
+    ];
+  });
+
+  protected setGap(key: 'cardGap' | 'lineGap', event: Event): void {
+    const raw = (event.target as HTMLInputElement).value.replace(',', '.').trim();
+    const v = Number(raw);
+    this.model.set({ [key]: raw && Number.isFinite(v) ? Math.min(GAP_PERCENT.max, Math.max(GAP_PERCENT.min, v)) : undefined });
+  }
+
   protected readonly arrangement = computed(() => ARRANGEMENT.map((o) => ({ ...o, on: this.model.settings()[o.key] })));
+
+  /** The other arrangements of the tree that come out about as well (when the page has any), to pick between. */
+  protected readonly layouts = computed(() => {
+    const p = this.model.poster();
+    if (!p || p.layouts.length < 2) return [];
+    // Cards come out in proportion to the ratio: what the drawn layout gives, scaled to each of the others.
+    const base = p.layouts[p.layoutChoice].ratio;
+    return p.layouts.map((l, i) => ({
+      i,
+      percent: Math.round(l.ratio * 100),
+      on: i === p.layoutChoice,
+      w: Math.round((p.cardMm.w * l.ratio) / base),
+      h: Math.round((p.cardMm.h * l.ratio) / base),
+    }));
+  });
+
+  protected pick(choice: number): void {
+    this.model.set({ layoutChoice: choice || undefined });
+  }
 
   protected arrange(key: ArrangeKey, on: boolean): void {
     this.model.set({ [key]: on });

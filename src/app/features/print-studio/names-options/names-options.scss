@@ -37,3 +37,10 @@
     pointer-events: none;
   }
 }
+
+/* The picker is a strip shorter than the width's input beside it: centred on it, not level with its top. */
+.pick {
+  display: flex;
+  align-items: center;
+  min-height: 38px;
+}

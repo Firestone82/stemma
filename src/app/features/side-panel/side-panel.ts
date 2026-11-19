@@ -1,6 +1,7 @@
 import { ChangeDetectionStrategy, Component, inject } from '@angular/core';
 import { TreeStore } from '../../core/store/tree-store';
 import { I18n } from '../../i18n/i18n';
+import { Scroll } from '../../shared/scroll/scroll';
 import { SHEET_PEEK, UiState } from '../../state/ui-state';
 import { AddRelativePanel } from './add-relative/add-relative';
 import { FamilyPanel } from './family-panel/family-panel';
@@ -14,7 +15,7 @@ import { PersonPanel } from './person-panel/person-panel';
  */
 @Component({
   selector: 'stemma-side-panel',
-  imports: [PersonPanel, FamilyPanel, AddRelativePanel, OverviewPanel],
+  imports: [Scroll, PersonPanel, FamilyPanel, AddRelativePanel, OverviewPanel],
   templateUrl: './side-panel.html',
   styleUrl: './side-panel.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,

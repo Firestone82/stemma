@@ -28,9 +28,11 @@
         [note]="model.sizeNote()"
         [omitted]="model.omittedCount()"
         [drawing]="model.drawing()"
+        [progress]="model.note()"
         [canPopOut]="preview.available()"
         [popOutFailed]="preview.failed()"
         (popOut)="preview.open()"
+        (boxMenu)="openBoxMenu($event)"
         (cardMenu)="openMenu($event)"
         (restore)="model.restoreOmitted()"
         [legend]="model.poster()?.legend ?? null"
@@ -39,6 +41,8 @@
         [inner]="model.poster()?.inner ?? null"
         [staged]="model.stagedBoxes()"
         [waiting]="model.waiting()"
+        [boxGap]="model.boxGap()"
+        [blocking]="{ legend: model.settings().legendBlocks, title: true }"
         (apply)="model.applyStaged()"
         (discard)="model.discardStaged()"
         [namesIn]="model.poster()?.namesIn ?? null"
@@ -51,21 +55,22 @@
         (unadd)="model.clearAdded()"
         [lines]="model.poster()?.lines ?? []"
         (lineCut)="model.omitBranch($event)"
-        (cardMove)="model.moveCard($event.personId, $event.dx, $event.dy)"
+        [bent]="model.bentCount()"
+        (unbend)="model.unbend()"
+        (lineBend)="model.bendLine($event.key, $event.points)"
+        (cardMove)="model.moveCard($event.personId, $event.dx, $event.dy, $event.alone)"
       />
     }
 
-    <div class="controls">
-      <stemma-centre-options />
-      <stemma-reach-options />
-      <stemma-card-options />
-      <stemma-paper-options />
-      @if (model.settings().showTitle) {
+    <div class="controls scroll-fill" stemmaScroll>
+      <div class="controls-body">
+        <stemma-centre-options />
+        <stemma-reach-options />
+        <stemma-card-options />
+        <stemma-paper-options />
         <stemma-title-options />
-      }
-      @if (model.settings().showLegend) {
         <stemma-names-options />
-      }
+      </div>
     </div>
   </div>
 </section>
@@ -95,5 +100,17 @@
     } @else {
       <p class="menu-note">{{ t('print.menu.centre') }}</p>
     }
+  </div>
+}
+@if (boxMenu(); as b) {
+  <div class="menu card-menu" role="menu" [attr.aria-label]="t('print.namesGroup')" [style.left.px]="b.x" [style.top.px]="b.y">
+    <p class="menu-title">{{ t('print.namesGroup') }}</p>
+    <button type="button" class="menu-item" role="menuitem" (click)="fitNamesBox()">{{ t('print.menu.fitNames') }}</button>
+    <button type="button" class="menu-item" role="menuitem" (click)="toggleNamesBlock()">
+      {{ model.settings().legendBlocks ? t('print.menu.namesFree') : t('print.menu.namesBlock') }}
+    </button>
+    <button type="button" class="menu-item" role="menuitem" [disabled]="!model.view().legendBox && !model.view().legendAnchor" (click)="resetNamesBox()">
+      {{ t('print.legendBox.reset') }}
+    </button>
   </div>
 }

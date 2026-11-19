@@ -53,6 +53,8 @@ export interface ChartLanguage {
   familyTree: string;
   /** Legend entry for names that appear only once. */
   others: string;
+  /** The heading over the families' names. */
+  families: string;
   /** A sibling born together with someone, in lower case: "twin sister", "triplet brother". `count` is how many were born. */
   bornWith(sex: Sex, count: number): string;
 }

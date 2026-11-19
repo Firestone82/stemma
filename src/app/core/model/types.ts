@@ -120,6 +120,11 @@ export interface Family {
   end?: FamilyEnd;
   // The dates and places of these three events are no longer shown or edited; they are kept from files and saved back.
   notes?: string;
+  /**
+   * The day the family's data was confirmed as right in the review (YYYY-MM-DD), when it was. Cleared by
+   * asking for the review again.
+   */
+  checked?: string;
   ext?: Extensions;
 }
 
@@ -217,6 +222,23 @@ export const LEGEND_GAP_CM = 0.5;
 export const LEGEND_GAP_MAX = 20;
 
 /** How the tree is printed and exported. Saved in the file. Settings of earlier versions are not read and not written back. */
+/** The gaps between cards and round lines that can be asked for (PrintSettings.cardGap, lineGap), in hundredths of a card's width. */
+export const GAP_PERCENT = { min: 1, max: 40 } as const;
+
+export const HEAD_ALIGN_VALUES = ['left', 'center', 'right'] as const;
+export type HeadAlign = (typeof HEAD_ALIGN_VALUES)[number];
+
+/**
+ * How far a card was moved by hand, in the layout's units: `x`, `y` with what hangs under it (its partner, their
+ * children), and `sx`, `sy` on its own (dragged with Ctrl), nothing else following.
+ */
+export interface CardMove {
+  x: number;
+  y: number;
+  sx?: number;
+  sy?: number;
+}
+
 export interface PrintSettings extends CardSettings {
   /** 'A4', 'A3', 'A2', 'A1', 'A0', 'letter', 'tabloid', or 'fit' for a page the size of the tree. */
   paper: string;
@@ -227,6 +249,13 @@ export interface PrintSettings extends CardSettings {
   partnerId?: string | null;
   /** Families as close together as they go, with the least room between cards and lines: bigger cards, a busier page. */
   tight: boolean;
+  /**
+   * The gap between cards side by side, in hundredths of a card's width (as `tight` has it when not set). Between
+   * families it is two and a half times that; between partners as much, and never less than their marker needs.
+   */
+  cardGap?: number;
+  /** How far lines keep from the cards they pass and come out of, in hundredths of a card's width (as `tight` has it when not set). */
+  lineGap?: number;
   /**
    * A much longer search for the arrangement of the families that leaves the least of the page empty: families
    * are spread out of their columns into room that would stay white, wherever that makes the cards bigger.
@@ -270,6 +299,22 @@ export interface PrintSettings extends CardSettings {
   showTitle: boolean;
   /** The families' names with their shields. */
   showLegend: boolean;
+  /** A heading with an ornament over the families' names. */
+  legendHeading: boolean;
+  /** Where the heading stands over the names: at their left, in the middle (when not set) or at their right; only as wide as its word. */
+  legendHeadAlign?: HeadAlign;
+  /** How wide the heading and its rule are, in centimetres (as wide as its word needs when not set); never wider than the names. */
+  legendHeadWidth?: number;
+  /**
+   * The families' names (and the title) keep a place of their own that no card may stand on: the tree is fitted
+   * round them. Off, the tree is fitted to the whole page and they go into room left over, over the margin or a
+   * gap, as the cards allow.
+   */
+  legendBlocks: boolean;
+  /** A second page after the print that lists these settings (and where the title and the families' names stand), so the same print can be made again. */
+  settingsPage: boolean;
+  /** Which of the arrangements offered when several fit about as well is taken (0, the biggest cards, when not set). */
+  layoutChoice?: number;
   /** The frame round the page with its corner flourishes. */
   showFrame: boolean;
   /** People hidden from prints are printed all the same. */
@@ -300,7 +345,12 @@ export interface PrintSettings extends CardSettings {
    * Cards moved by hand, by person id: how far from where the layout put them, in the layout's units (a card
    * is 188 wide). The lines to a moved card follow it.
    */
-  moves?: Readonly<Record<string, { x: number; y: number }>>;
+  moves?: Readonly<Record<string, CardMove>>;
+  /**
+   * Lines led by hand, by line (`family|child`): their points in the layout's units, start to end. The two ends
+   * stay with the marker and the card wherever they go; the bends in between stay where they were put.
+   */
+  lineBends?: Readonly<Record<string, readonly { x: number; y: number }[]>>;
   /**
    * People brought onto the print by hand, by id, from a card's menu (its parents, brothers and sisters, whole
    * family), whatever the reach above leaves out: the parents of a former partner, say.
@@ -407,6 +457,9 @@ export const DEFAULT_PRINT: PrintSettings = {
   siblingsOnly: false,
   showTitle: true,
   showLegend: true,
+  legendHeading: true,
+  legendBlocks: false,
+  settingsPage: true,
   showFrame: true,
   showHidden: false,
 };

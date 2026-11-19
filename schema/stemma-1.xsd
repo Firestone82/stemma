@@ -290,10 +290,33 @@
     <xs:attribute name="withPartner" type="xs:boolean" default="true"/>
     <!-- 1.9: families as close together as they go, with the least room between cards and lines. -->
     <xs:attribute name="tight" type="xs:boolean" default="false"/>
+    <!-- 1.9: the gap between cards side by side, and how far lines keep from cards, in hundredths of a card's width. -->
+    <xs:attribute name="cardGap" type="xs:decimal"/>
+    <xs:attribute name="lineGap" type="xs:decimal"/>
     <!-- 1.9: a much longer search for the arrangement of the families that leaves the least of the page empty. -->
     <xs:attribute name="fill" type="xs:boolean" default="false"/>
     <!-- 1.9: in a column of children, a couple with nobody under them stands one over the other; otherwise every couple stands side by side. -->
     <xs:attribute name="stackCouples" type="xs:boolean" default="false"/>
+    <!-- 1.9: a heading with an ornament over the families' names. -->
+    <xs:attribute name="legendHeading" type="xs:boolean" default="true"/>
+    <!-- 1.9: where the heading stands over the families' names. -->
+    <xs:attribute name="legendHeadAlign" default="center">
+      <xs:simpleType>
+        <xs:restriction base="xs:string">
+          <xs:enumeration value="left"/>
+          <xs:enumeration value="center"/>
+          <xs:enumeration value="right"/>
+        </xs:restriction>
+      </xs:simpleType>
+    </xs:attribute>
+    <!-- 1.9: the title and the families' names keep a place of their own that no card stands on; false: the tree is fitted to the whole page. -->
+    <!-- 1.9: how wide the heading over the families' names is, in centimetres. -->
+    <xs:attribute name="legendHeadWidth" type="xs:decimal"/>
+    <xs:attribute name="legendBlocks" type="xs:boolean" default="false"/>
+    <!-- 1.9: a second page after the print that lists its settings. -->
+    <xs:attribute name="settingsPage" type="xs:boolean" default="true"/>
+    <!-- 1.9: which of the arrangements offered (when several fit about as well) is taken; 0 (absent) is the one with the biggest cards. -->
+    <xs:attribute name="layoutChoice" type="xs:positiveInteger"/>
     <!-- 1.9: someone with several partners stands between them; false keeps the partners of a family that hangs at the side of a line all on one side. -->
     <xs:attribute name="amidPartners" type="xs:boolean" default="true"/>
     <!-- 1.9: the words on the cards a size bigger, the cards taller for it. -->
@@ -314,6 +337,8 @@
     <xs:attribute name="titleAt" type="xs:string"/>
     <!-- 1.9: cards moved by hand: "I12:30,-14.5 I40:0,66", each a person and how far right and down from where the layout puts the card, in the layout's units (a card is about 190 wide). -->
     <xs:attribute name="moves" type="xs:string"/>
+    <!-- 1.9: lines led by hand, "family|child:x,y;x,y;…" with a space between lines, in the layout's units. -->
+    <xs:attribute name="lineBends" type="xs:string"/>
     <!-- 1.9: people brought onto the print by hand, whatever the reach leaves out: "I12 I13 I40", their ids. -->
     <xs:attribute name="added" type="xs:string"/>
     <!-- 1.9: people whose partners stand on the other side of them: "I11 I40", their ids. -->
@@ -448,6 +473,8 @@
       <xs:group ref="t:Foreign"/>
     </xs:sequence>
     <xs:attribute name="id" type="t:Id" use="required"/>
+    <!-- 1.9: the day the family's data was confirmed as right in the review (YYYY-MM-DD). -->
+    <xs:attribute name="checked" type="xs:date"/>
     <xs:attribute name="type" type="t:FamilyType" default="marriage"/>
     <xs:anyAttribute namespace="##other" processContents="lax"/>
   </xs:complexType>

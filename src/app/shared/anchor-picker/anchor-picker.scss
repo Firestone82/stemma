@@ -11,11 +11,6 @@
   border: 1px solid var(--rule-2);
   border-radius: var(--radius-sm);
   background: var(--sheet-2);
-
-  /* Only the top of the page: a strip, the rest of the sheet below it left empty. */
-  &.top-only {
-    padding-bottom: 22px;
-  }
 }
 
 .cell {

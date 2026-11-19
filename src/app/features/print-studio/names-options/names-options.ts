@@ -3,7 +3,9 @@ import { Anchor, LEGEND_GAP_CM, LEGEND_GAP_MAX, anchorShares } from '../../../co
 import { FIT_PAPER } from '../../../core/poster/paper';
 import { I18n } from '../../../i18n/i18n';
 import { AnchorPicker } from '../../../shared/anchor-picker/anchor-picker';
+import { BoxCoords } from '../box-coords/box-coords';
 import { LetterSize } from '../letter-size/letter-size';
+import { Switch } from '../../../shared/switch/switch';
 import { PrintModel } from '../print-model';
 
 /**
@@ -12,7 +14,7 @@ import { PrintModel } from '../print-model';
  */
 @Component({
   selector: 'stemma-names-options',
-  imports: [AnchorPicker, LetterSize],
+  imports: [AnchorPicker, BoxCoords, LetterSize, Switch],
   templateUrl: './names-options.html',
   styleUrl: './names-options.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -44,6 +46,26 @@ export class NamesOptions {
   protected readonly gapText = computed(() =>
     new Intl.NumberFormat(this.i18n.locale().intl, { maximumFractionDigits: 2 }).format(this.model.view().legendGap ?? LEGEND_GAP_CM),
   );
+
+  /** The heading's place as the picker shows it: the top row's left, middle or right. */
+  protected readonly headAnchor = computed<Anchor>(() => {
+    const a = this.model.view().legendHeadAlign;
+    return a === 'left' ? 'top-left' : a === 'right' ? 'top-right' : 'top';
+  });
+
+  /** The heading over the names stands at the left, in the middle or at the right of their box. It moves nothing else, so it applies at once. */
+  protected alignHeading(anchor: Anchor): void {
+    const x = anchorShares(anchor).x;
+    this.model.set({ legendHeadAlign: x === 0 ? 'left' : x === 1 ? 'right' : undefined });
+  }
+
+  /** How wide the heading and its rule are; empty for as wide as the word. Applied at once. */
+  protected setHeadWidth(event: Event): void {
+    const raw = (event.target as HTMLInputElement).value.replace(',', '.').trim();
+    const value = Number(raw);
+    const { min, max } = this.model.headRangeCm();
+    this.model.set({ legendHeadWidth: raw && Number.isFinite(value) && value > 0 ? Math.min(max, Math.max(min, value)) : undefined });
+  }
 
   // Every change here waits to be applied, with the others that wait (PrintModel.staged).
 

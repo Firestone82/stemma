@@ -6,6 +6,7 @@ import { I18n } from '../../../../i18n/i18n';
 import { MessageKey } from '../../../../i18n/locales';
 import { Icon } from '../../../../shared/icon/icon';
 import { DataChecks } from '../../../../state/data-checks';
+import { FamilyReview } from '../../../../state/family-review';
 import { PersonActions } from '../../../../state/person-actions';
 
 const GAP_KEYS: Record<GapKind, MessageKey> = { given: 'checks.gap.given', birth: 'checks.gap.birth', death: 'checks.gap.death' };
@@ -27,6 +28,7 @@ const GAP_KEYS: Record<GapKind, MessageKey> = { given: 'checks.gap.given', birth
 export class TreeChecks {
   protected readonly store = inject(TreeStore);
   private readonly people = inject(PersonActions);
+  protected readonly review = inject(FamilyReview);
   private readonly i18n = inject(I18n);
   protected readonly t = this.i18n.t;
 

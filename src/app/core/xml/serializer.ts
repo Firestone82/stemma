@@ -133,7 +133,7 @@ function writePhoto(w: XmlWriter, photo: string): void {
 }
 
 function writeFamily(w: XmlWriter, f: Family): void {
-  w.open('family', [['id', f.id], ['type', f.kind], ...extAttrs(f.ext)]);
+  w.open('family', [['id', f.id], ['type', f.kind], ['checked', f.checked], ...extAttrs(f.ext)]);
   for (const partner of f.partners) w.element('partner', [['ref', partner]]);
   if (f.start) writeEvent(w, 'start', f.start);
   if (f.end) writeEvent(w, 'end', f.end, [['reason', f.end.reason]]);
@@ -178,8 +178,16 @@ function writePrint(w: XmlWriter, p: PrintSettings): void {
     ...cardAttrs(p),
     ['showHidden', p.showHidden ? 'true' : undefined],
     ['tight', p.tight ? 'true' : undefined],
+    ['cardGap', p.cardGap !== undefined ? String(Math.round(p.cardGap * 10) / 10) : undefined],
+    ['lineGap', p.lineGap !== undefined ? String(Math.round(p.lineGap * 10) / 10) : undefined],
     ['fill', p.fill ? 'true' : undefined],
     ['stackCouples', p.stackCouples ? 'true' : undefined],
+    ['legendHeading', p.legendHeading ? undefined : 'false'],
+    ['legendHeadAlign', p.legendHeadAlign && p.legendHeadAlign !== 'center' ? p.legendHeadAlign : undefined],
+    ['legendHeadWidth', p.legendHeadWidth ? String(Math.round(p.legendHeadWidth * 100) / 100) : undefined],
+    ['legendBlocks', p.legendBlocks ? 'true' : undefined],
+    ['settingsPage', p.settingsPage ? undefined : 'false'],
+    ['layoutChoice', p.layoutChoice ? String(p.layoutChoice) : undefined],
     ['amidPartners', p.amidPartners ? undefined : 'false'],
     ['largeText', p.largeText ? 'true' : undefined],
     ['strongLines', p.strongLines ? 'true' : undefined],
@@ -193,7 +201,15 @@ function writePrint(w: XmlWriter, p: PrintSettings): void {
       'moves',
       p.moves && Object.keys(p.moves).length
         ? Object.entries(p.moves)
-            .map(([id, at]) => `${id}:${Number(at.x.toFixed(1))},${Number(at.y.toFixed(1))}`)
+            .map(([id, at]) => `${id}:${[at.x, at.y, ...(at.sx || at.sy ? [at.sx ?? 0, at.sy ?? 0] : [])].map((v) => Number(v.toFixed(1))).join(',')}`)
+            .join(' ')
+        : undefined,
+    ],
+    [
+      'lineBends',
+      p.lineBends && Object.keys(p.lineBends).length
+        ? Object.entries(p.lineBends)
+            .map(([key, points]) => `${key}:${points.map((q) => `${Number(q.x.toFixed(1))},${Number(q.y.toFixed(1))}`).join(';')}`)
             .join(' ')
         : undefined,
     ],

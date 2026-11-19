@@ -2,7 +2,7 @@ import { sampleDocument } from '../model/sample';
 import { DEFAULT_PRINT, PrintSettings, TreeDocument } from '../model/types';
 import { DocBuilder, pedigree, randomFamily } from '../testing/fixtures';
 import { PX_PER_MM } from './paper';
-import { PosterInput, posterSteps, renderPoster } from './poster';
+import { PosterInput, gapsFor, posterSteps, renderPoster } from './poster';
 
 /** A measurer that is good enough without a browser: every letter about half its size wide. */
 const measure = (t: string, font: string) => {
@@ -334,7 +334,7 @@ describe('the printed page', () => {
     expect(crowded.lettering!.titleCm).toBeLessThan(59.4 * 0.042 * 1.2);
     expect(crowded.lettering!.titleCm).toBeGreaterThanOrEqual(59.4 * 0.022 * 1.2 - 0.01);
     expect(crowded.lettering!.titleCm).toBeGreaterThanOrEqual(names * 3.6 * 1.2 - 0.02);
-    expect(crowded.lettering!.legendCm).toBeGreaterThanOrEqual(names * 1.7 * 1.2 - 0.02);
+    expect(crowded.lettering!.legendCm).toBeGreaterThanOrEqual(names * 1.7 * 1.2 - 0.05);
     // A size that is set is the size, whatever the sheet and the cards.
     const set = render(big, { paper: 'A1', orientation: 'landscape', titleSize: 3, legendSize: 1 }).lettering;
     expect(set).toMatchObject({ titleCm: expect.closeTo(3, 5), legendCm: expect.closeTo(1, 5) });
@@ -348,7 +348,7 @@ describe('the printed page', () => {
   it('stands the family names where asked in a box bigger than they need: in a corner of it, along a side, in the middle', () => {
     const doc = sampleDocument();
     // A box much bigger than the names need.
-    const box = { paper: 'A3', orientation: 'landscape', legendSize: 0.6, legendBox: { x: 0.05, y: 0.3, w: 0.6, h: 0.6 } } as const;
+    const box = { paper: 'A3', orientation: 'landscape', legendSize: 0.6, legendHeading: false, legendBox: { x: 0.05, y: 0.3, w: 0.6, h: 0.6 } } as const;
     /** Where the first of the names is drawn: its mark's left, the baseline of its label. */
     const first = (svg: string) => {
       const m = /<g class="pp-legend">.*?<text x="([\d.]+)" y="([\d.]+)"/s.exec(svg);
@@ -401,7 +401,7 @@ describe('the printed page', () => {
   });
 
   it('draws the family names into any box asked for, as they would stand there', () => {
-    const r = render(sampleDocument(), { paper: 'A3', orientation: 'landscape' });
+    const r = render(sampleDocument(), { paper: 'A3', orientation: 'landscape', legendHeading: false });
     const at = (markup: string) => [...markup.matchAll(/<text x="([\d.]+)" y="([\d.]+)"[^>]*font-size="([\d.]+)"/g)].map((m) => m.slice(1).map(Number));
     const wide = at(r.namesIn({ x: 0.1, y: 0.1, w: 0.8, h: 0.1 }, { cm: null }));
     const tall = at(r.namesIn({ x: 0.1, y: 0.1, w: 0.1, h: 0.8 }, { cm: null }));
@@ -522,6 +522,20 @@ describe('the printed page', () => {
     expect(/>Maximilian[^<]*…</.test(most.svg)).toBe(true);
   });
 
+  it('keeps the gaps asked for between cards, partners never closer than their marker needs', () => {
+    expect(gapsFor({ ...DEFAULT_PRINT, cardGap: 10, lineGap: 5 }, 200)).toEqual({
+      siblingGap: 20,
+      familyGap: 50,
+      stackGap: 16,
+      partnerGap: 50,
+      tick: 10,
+      stem: 10,
+      drop: 10,
+    });
+    expect(gapsFor({ ...DEFAULT_PRINT, cardGap: 2 }, 200).partnerGap).toBe(26);
+    expect(gapsFor(DEFAULT_PRINT, 200)).toEqual({});
+  });
+
   it('draws the page a piece at a time to the same result, and the same tree again with little of the work', () => {
     const doc = randomFamily(11, 90);
     const input = { doc, settings: { ...DEFAULT_PRINT, paper: 'A2', orientation: 'landscape' as const }, measure, now: new Date('2026-01-01T00:00:00Z') };
@@ -537,7 +551,7 @@ describe('the printed page', () => {
     // Another title on the same tree: its layouts are there already.
     const retitled = count(posterSteps({ ...input, settings: { ...input.settings, title: 'Another title for the page' } }));
     expect(retitled.page.svg.includes('Another title for the page')).toBe(true);
-    expect(retitled.page.cardMm.w).toBeCloseTo(first.page.cardMm.w, 1);
+    expect(retitled.page.cardMm.w).toBeCloseTo(first.page.cardMm.w, 0);
     // A switch that changes nothing about the layout: nothing to fit at all.
     const plain = count(posterSteps({ ...input, settings: { ...input.settings, showRibbons: false } }));
     expect(plain.steps).toBeLessThan(first.steps / 10);

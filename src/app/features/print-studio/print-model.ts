@@ -3,14 +3,15 @@ import { bloodRelatives } from '../../core/kinship/kinship';
 import { CutLine, cutOff } from '../../core/model/cut-off';
 import { updatePrint } from '../../core/model/operations';
 import { isBrokenUp, relationshipStatus } from '../../core/model/relationship';
-import { Anchor, DEFAULT_PRINT, LEGEND_GAP_CM, LegendBox, anchorShares, effectivePrint, PrintSettings } from '../../core/model/types';
+import { Anchor, DEFAULT_PRINT, Reach, LEGEND_GAP_CM, LegendBox, anchorShares, effectivePrint, PrintSettings } from '../../core/model/types';
 import { CARD_WIDTH } from '../../core/card/card-design';
 import { PAPERS, PX_PER_MM } from '../../core/poster/paper';
 import { escapeText } from '../../core/xml/xml-writer';
 import { pdfFromJpeg, pdfPages, tilePages } from '../../core/poster/pdf';
+import { SETTINGS_PAGE, SettingsSheet, settingsPageSvg, settingsText } from '../../core/poster/settings-page';
 import { TileGrid, tileGrid } from '../../core/poster/tiles';
 import { Steps } from '../../core/layout/steps';
-import { PosterInput, PosterResult, forgetLayouts, posterSteps, scopeOptions } from '../../core/poster/poster';
+import { PosterInput, PosterResult, ProgressStep, forgetLayouts, posterSteps, scopeOptions } from '../../core/poster/poster';
 import { ADDABLE, Addable, RELATIVES, Relatives, relativesSettings, relativesToAdd, scopeDocument } from '../../core/poster/scope';
 import { FONTS, palette } from '../../core/poster/heritage';
 import { FileIo, safeFilename } from '../../core/services/file-io';
@@ -19,8 +20,33 @@ import { TextMeasurer } from '../../core/services/text-measure';
 import { ToastService } from '../../core/services/toast';
 import { TreeStore } from '../../core/store/tree-store';
 import { I18n } from '../../i18n/i18n';
+import { MessageKey } from '../../i18n/locales';
 import { STATUS_LABEL } from '../../i18n/labels';
 import { UiState } from '../../state/ui-state';
+
+/** The print settings that lay the tree out anew: changing one puts back the cards moved and lines led by hand. */
+const RELAYOUT = new Set<keyof PrintSettings>([
+  'paper',
+  'orientation',
+  'centerId',
+  'partnerId',
+  'ancestors',
+  'descendants',
+  'branches',
+  'inLawFamilies',
+  'siblingsOnly',
+  'tight',
+  'fill',
+  'stackCouples',
+  'amidPartners',
+  'freeWidths',
+  'largeText',
+  'strongLines',
+  'cardGap',
+  'lineGap',
+  'layoutChoice',
+  'flipped',
+]);
 
 export type PrintOutput = 'print' | 'pdf' | 'png' | 'svg';
 
@@ -136,6 +162,7 @@ export class PrintModel {
       language: this.i18n.code(),
       measure: (t, f) => this.measure.width(t, f),
       omit: new Set(this.ui.printOmitted()),
+      report: (step, detail) => this.note.set(this.progressText(step, detail)),
     };
   });
 
@@ -148,6 +175,33 @@ export class PrintModel {
    * starts the page that is wanted now.
    */
   readonly drawing = signal(false);
+  /** What the work is busy with just now, in words: shown over the page while it takes long (see PosterInput.report). */
+  readonly note = signal('');
+  /** The page is drawn, and the other arrangements that come out about as well are being looked for behind it. */
+  readonly seeking = signal(false);
+
+  private progressText(step: ProgressStep, detail?: Record<string, string | number>): string {
+    const t = this.i18n.t;
+    const d = detail ?? {};
+    switch (step) {
+      case 'start':
+        return t('print.progress.start', { people: d['people'] ?? 0 });
+      case 'orientation':
+        return t('print.progress.orientation', {
+          paper: d['paper'] ?? '',
+          orientation: t(d['landscape'] ? 'print.orientation.landscape' : 'print.orientation.portrait').toLocaleLowerCase(this.i18n.locale().intl),
+        });
+      case 'names':
+        return t('print.progress.names');
+      case 'lettering':
+        return t('print.progress.lettering', { round: d['round'] ?? 1 });
+      case 'alternatives':
+        return t('print.progress.alternatives');
+      case 'draw':
+        return t('print.progress.draw', { cards: d['cards'] ?? 0 });
+    }
+  }
+
   /** Counts the pages asked for: work on any but the latest stops at its next piece. */
   private drawn = 0;
   private asked: PosterInput | null = null;
@@ -193,7 +247,15 @@ export class PrintModel {
       this.noting = setTimeout(() => {
         if (turn === this.drawn) this.drawing.set(true);
       }, NOTE_AFTER_MS);
-      this.work(turn, posterSteps(request), 0);
+      // The page first, with the best arrangement; then, behind it, the others that come out about as well (to
+      // pick from). A page asked for in one of those others is drawn with them at once.
+      const quick = !request.settings?.layoutChoice && request.effort !== 'quick';
+      this.seeking.set(false);
+      this.work(turn, posterSteps(quick ? { ...request, alternatives: false } : request), 0, () => {
+        if (!quick) return;
+        this.seeking.set(true);
+        this.work(turn, posterSteps({ ...request, report: undefined }), 0, () => this.seeking.set(false), true);
+      });
     };
     // While somebody is typing, a page that takes a while is drawn once they have stopped.
     if (before && this.took > SLOW_MS && onlyTyped(before, request)) this.typing = setTimeout(start, TYPING_PAUSE_MS);
@@ -201,31 +263,42 @@ export class PrintModel {
   }
 
   /** The page's steps, so many milliseconds' worth at a time, until it is drawn or another page is asked for. */
-  private work(turn: number, steps: Steps<PosterResult>, spent: number): void {
-    if (turn !== this.drawn) return;
+  private work(turn: number, steps: Steps<PosterResult>, spent: number, then?: () => void, behind = false): void {
+    if (turn !== this.drawn) {
+      if (behind) this.seeking.set(false);
+      return;
+    }
     const from = performance.now();
     const until = from + SLICE_MS;
     const done = () => {
+      if (behind) return;
       clearTimeout(this.noting);
       this.drawing.set(false);
+      this.note.set('');
       this.took = spent + performance.now() - from;
     };
     try {
       for (;;) {
         const step = steps.next();
         if (step.done) {
-          this.poster.set(step.value);
-          this.held.set({});
+          // Looked for behind the page: the same page, now with the other arrangements to pick from.
+          if (behind) this.poster.update((p) => (p ? { ...p, layouts: step.value.layouts, layoutChoice: step.value.layoutChoice } : step.value));
+          else {
+            this.poster.set(step.value);
+            this.held.set({});
+          }
           done();
+          then?.();
           return;
         }
         if (performance.now() >= until) break;
       }
     } catch (error) {
       done();
+      if (behind) this.seeking.set(false);
       throw error;
     }
-    soon(() => this.work(turn, steps, spent + performance.now() - from));
+    soon(() => this.work(turn, steps, spent + performance.now() - from, then, behind));
   }
 
   /** A change that waits to be applied, with any that wait already. */
@@ -294,6 +367,53 @@ export class PrintModel {
     }
     return out;
   });
+
+  /**
+   * Where the title and the families' names stand, as the top left corner of their boxes in centimetres from
+   * the left and the top of the paper (as they will once what waits is applied); null on a page sized to the tree.
+   */
+  readonly boxCm = computed(() => {
+    const p = this.poster();
+    if (!p?.paper) return null;
+    const cm = 1 / (PX_PER_MM * 10);
+    const boxes = this.stagedBoxes();
+    const at = (b?: { x: number; y: number }) => (b ? { x: b.x * p.width * cm, y: b.y * p.height * cm } : undefined);
+    return { w: p.width * cm, h: p.height * cm, title: at(boxes.title ?? p.title), legend: at(boxes.legend ?? p.legend) };
+  });
+
+  /**
+   * The gap kept between the title's box and the names' box (PrintSettings.legendGap), as shares of the page's
+   * width and height: what a box being moved snaps to when it comes that far from the other.
+   */
+  readonly boxGap = computed(() => {
+    const p = this.poster();
+    if (!p?.paper) return null;
+    const cm = (this.view().legendGap ?? LEGEND_GAP_CM) * 10;
+    return { x: cm / p.paper.widthMm, y: cm / p.paper.heightMm };
+  });
+
+  /** The least and the most the heading over the names can be wide, in centimetres: the width of the names' box. */
+  readonly headRangeCm = computed(() => {
+    const p = this.poster();
+    const box = this.stagedBoxes().legend ?? p?.legend;
+    if (!p?.paper || !box) return { min: 1, max: 20 };
+    const max = Math.max(1, Math.round(((box.w * p.width) / (PX_PER_MM * 10)) * 10) / 10);
+    return { min: Math.min(1, max), max };
+  });
+
+  /** Puts the title or the families' names at a coordinate, in centimetres from the left or the top of the paper (what waits is applied later). */
+  setBoxCm(which: 'title' | 'legend', axis: 'x' | 'y', cm: number): void {
+    const p = this.poster();
+    const page = this.boxCm();
+    if (!p || !page) return;
+    const boxes = this.stagedBoxes();
+    const box = which === 'title' ? (boxes.title ?? p.title) : (boxes.legend ?? p.legend);
+    if (!box) return;
+    const share = Math.min(Math.max(cm / (axis === 'x' ? page.w : page.h), 0), 1 - (axis === 'x' ? box.w : box.h));
+    const next = { x: box.x, y: box.y, w: box.w, h: box.h, [axis]: Math.max(0, share) };
+    if (which === 'title') this.stage({ titleAt: { x: next.x + next.w / 2, y: next.y }, titleAnchor: undefined });
+    else this.stage({ legendBox: { x: next.x, y: next.y, w: next.w, h: next.h }, legendAnchor: undefined });
+  }
 
   /**
    * Leaves a person out of this print (from their card's menu); the person in the middle stays. Someone brought
@@ -397,13 +517,18 @@ export class PrintModel {
   }
 
   /** Moves a card by hand, from where it is now: the lines to it follow. */
-  moveCard(personId: string, dx: number, dy: number): void {
+  moveCard(personId: string, dx: number, dy: number, alone = false): void {
     const moves = { ...(this.settings().moves ?? {}) };
     const at = moves[personId] ?? { x: 0, y: 0 };
-    const x = Math.round((at.x + dx) * 10) / 10;
-    const y = Math.round((at.y + dy) * 10) / 10;
-    if (Math.abs(x) < 0.5 && Math.abs(y) < 0.5) delete moves[personId];
-    else moves[personId] = { x, y };
+    const r = (v: number) => Math.round(v * 10) / 10;
+    // Alone (Ctrl held): only the card goes; its partner and children stay where they are.
+    const x = r(at.x + (alone ? 0 : dx));
+    const y = r(at.y + (alone ? 0 : dy));
+    const sx = r((at.sx ?? 0) + (alone ? dx : 0));
+    const sy = r((at.sy ?? 0) + (alone ? dy : 0));
+    const small = (v: number) => Math.abs(v) < 0.5;
+    if (small(x) && small(y) && small(sx) && small(sy)) delete moves[personId];
+    else moves[personId] = small(sx) && small(sy) ? { x, y } : { x, y, sx, sy };
     // Every move is a step of its own to undo, however quickly one follows another.
     this.set({ moves: Object.keys(moves).length ? moves : undefined }, `print move ${++this.stepCount}`);
   }
@@ -414,6 +539,22 @@ export class PrintModel {
     if (personId) delete moves[personId];
     this.set({ moves: personId && Object.keys(moves).length ? moves : undefined });
   }
+
+  /** Keeps a line as it was led by hand (its points in the layout's units, start to end). */
+  bendLine(key: string, points: readonly { x: number; y: number }[]): void {
+    const r = (v: number) => Math.round(v * 10) / 10;
+    const bends = { ...(this.settings().lineBends ?? {}), [key]: points.map((p) => ({ x: r(p.x), y: r(p.y) })) };
+    this.set({ lineBends: bends }, `print bend ${++this.stepCount}`);
+  }
+
+  /** Lets one line, or all of them, be led by the layout again. */
+  unbend(key?: string): void {
+    const bends = { ...(this.settings().lineBends ?? {}) };
+    if (key) delete bends[key];
+    this.set({ lineBends: key && Object.keys(bends).length ? bends : undefined });
+  }
+
+  readonly bentCount = computed(() => Object.keys(this.settings().lineBends ?? {}).length);
 
   /** Counts what is done by hand on the page (moves, additions), so each is a step of its own to undo. */
   private stepCount = 0;
@@ -552,12 +693,133 @@ export class PrintModel {
     return { warn: false, text: this.i18n.t('print.nameSize', { pt, ...card }) };
   });
 
+  /** What the page of settings after the print says: the settings in words, with where the title and the names stand in centimetres. */
+  readonly settingsSheet = computed<SettingsSheet | null>(() => {
+    const p = this.poster();
+    if (!p) return null;
+    const s = this.settings();
+    const t = this.i18n.t;
+    const on = (v: boolean) => t(v ? 'print.sp.on' : 'print.sp.off');
+    const cm = (v: number) => `${Math.round(v * 100) / 100} cm`;
+    const reach = (r: Reach) => (r === 'all' ? t('print.all') : String(r));
+    const boxes = this.boxCm();
+    const at = (b?: { x: number; y: number }) => (b ? `${cm(b.x)} / ${cm(b.y)}` : t('print.sp.auto'));
+    const size = (v: number | undefined, auto: number) => `${cm(v ?? auto)}${v ? '' : ' (' + t('print.sizeAuto') + ')'}`;
+    const person = (id?: string) => (id ? this.nameOf(id) : t('print.nobody'));
+    const orient = t(p.paper?.landscape ? 'print.orientation.landscape' : 'print.orientation.portrait');
+    const row = (key: string, value: string): [string, string] => [t(key as MessageKey), value];
+    return {
+      title: t('print.sp.title'),
+      subtitle: `${this.settings().title?.trim() || this.store.doc().meta.title} \u00b7 ${t('print.sp.subtitle')}`,
+      sections: [
+        {
+          heading: t('print.sp.page'),
+          rows: [
+            row('print.sp.paper', p.paper ? `${this.paperLabel()}, ${orient}` : t('print.sp.fit')),
+            row(
+              'print.sp.size',
+              p.paper ? `${Math.round(p.paper.widthMm)} \u00d7 ${Math.round(p.paper.heightMm)} mm` : `${Math.round(p.width)} \u00d7 ${Math.round(p.height)} px`,
+            ),
+            row('print.sp.tiles', s.tiles ? `${s.tiles}${s.tilesBorderless ? ' (' + t('print.sp.borderless') + ')' : ''}` : t('print.sp.off')),
+            row('print.sp.card', `${Math.round(p.cardMm.w)} \u00d7 ${Math.round(p.cardMm.h)} mm, ${Math.round(p.namePt * 10) / 10} pt`),
+          ],
+        },
+        {
+          heading: t('print.sp.middle'),
+          rows: [row('print.sp.person', person(p.centerId)), row('print.sp.partner', person(p.partnerId)), row('print.sp.people', `${p.people} / ${p.total}`)],
+        },
+        {
+          heading: t('print.sp.reach'),
+          rows: [
+            row('print.sp.up', reach(s.ancestors)),
+            row('print.sp.down', reach(s.descendants)),
+            row('print.sp.branches', reach(s.branches)),
+            row('print.sp.inLaws', on(s.inLawFamilies)),
+            row('print.sp.siblingsOnly', on(s.siblingsOnly)),
+            row('print.sp.hidden', on(s.showHidden)),
+          ],
+        },
+        {
+          heading: t('print.sp.arrange'),
+          rows: [
+            row('print.sp.tight', on(s.tight)),
+            row('print.cardGap', s.cardGap !== undefined ? `${s.cardGap} %` : t('print.sizeAuto')),
+            row('print.lineGap', s.lineGap !== undefined ? `${s.lineGap} %` : t('print.sizeAuto')),
+            row('print.sp.fill', on(s.fill)),
+            row('print.sp.stack', on(s.stackCouples)),
+            row('print.sp.amid', on(s.amidPartners)),
+            row('print.sp.layout', String((s.layoutChoice ?? 0) + 1)),
+          ],
+        },
+        {
+          heading: t('print.sp.cards'),
+          rows: [
+            row('print.sp.largeText', on(s.largeText)),
+            row('print.sp.strong', on(s.strongLines)),
+            row('print.sp.freeWidths', on(s.freeWidths)),
+            row('print.sp.unionText', on(s.unionText)),
+            row('print.sp.dates', t(`print.sp.dates.${s.dates}` as MessageKey)),
+            row('print.sp.emblems', on(s.showEmblems)),
+            row('print.sp.birthNames', on(s.showBirthNames)),
+            row('print.sp.ribbons', on(s.showRibbons)),
+            row('print.sp.sexColors', on(s.sexColors)),
+            row('print.sp.frame', on(s.showFrame)),
+          ],
+        },
+        {
+          heading: t('print.sp.titleSec'),
+          rows: [
+            row('print.sp.shown', on(s.showTitle)),
+            row('print.sp.text', s.title?.trim() || this.store.doc().meta.title),
+            row('print.sp.size.title', size(s.titleSize, p.lettering.autoTitleCm)),
+            row('print.sp.position', at(boxes?.title)),
+          ],
+        },
+        {
+          heading: t('print.sp.namesSec'),
+          rows: [
+            row('print.sp.shown', on(s.showLegend)),
+            row('print.sp.heading', on(s.legendHeading)),
+            ...(s.legendHeading ? [row('print.sp.headAlign', t(`print.headAlign.${s.legendHeadAlign ?? 'center'}` as MessageKey))] : []),
+            ...(s.legendHeading ? [row('print.sp.headWidth', s.legendHeadWidth ? `${s.legendHeadWidth} cm` : t('print.sizeAuto'))] : []),
+            row('print.sp.blocks', on(s.legendBlocks)),
+            row('print.sp.size.names', size(s.legendSize, p.lettering.autoLegendCm)),
+            row('print.sp.position', at(boxes?.legend)),
+          ],
+        },
+        {
+          heading: t('print.sp.hand'),
+          rows: [
+            row('print.sp.bent', String(Object.keys(s.lineBends ?? {}).length)),
+            row('print.sp.moved', String(Object.keys(s.moves ?? {}).length)),
+            row('print.sp.added', String(s.added?.length ?? 0)),
+            row('print.sp.flipped', String(s.flipped?.length ?? 0)),
+            row('print.sp.omitted', String(this.ui.printOmitted().length)),
+          ],
+        },
+      ],
+      footer: t('print.sp.footer', { date: new Date().toLocaleDateString(this.i18n.locale().intl) }),
+    };
+  });
+
+  /** The page of settings drawn, with its fonts inside it; undefined when it is switched off. */
+  private async settingsSvg(): Promise<string | undefined> {
+    const sheet = this.settingsSheet();
+    if (!sheet || !this.settings().settingsPage) return undefined;
+    return this.exporter.withEmbeddedFonts(settingsPageSvg(sheet), settingsText(sheet));
+  }
+
   paperLabel(): string {
     const id = this.settings().paper;
     return PAPERS.find((p) => p.id.toLowerCase() === id.toLowerCase())?.label ?? 'A3';
   }
 
   set(patch: Partial<PrintSettings>, step = 'print'): void {
+    // A setting that lays the tree out anew: cards moved and lines led by hand were for the old layout, and go
+    // (in the same step, so undoing the change brings them back).
+    const s = this.settings();
+    const relayout = (Object.keys(patch) as (keyof PrintSettings)[]).some((k) => RELAYOUT.has(k) && JSON.stringify(patch[k]) !== JSON.stringify(s[k]));
+    if (relayout && (s.moves || s.lineBends)) patch = { ...patch, moves: undefined, lineBends: undefined };
     this.store.update((doc) => updatePrint(doc, patch), step);
     this.ui.printEdited();
   }
@@ -590,6 +852,7 @@ export class PrintModel {
       this.busy.set(kind);
       try {
         const svg = await this.exporter.withEmbeddedFonts(p.svg, p.text);
+        const extra = await this.settingsSvg();
         const words: PrintPageWords = {
           title: this.i18n.t('print.page.title', { title: base }),
           summary: this.summary(),
@@ -598,8 +861,8 @@ export class PrintModel {
           close: this.i18n.t('common.close'),
           lang: this.i18n.code(),
         };
-        if (win) openPrintPage(win, { ...p, svg }, words);
-        else printInPlace({ ...p, svg });
+        if (win) openPrintPage(win, { ...p, svg }, words, extra);
+        else printInPlace({ ...p, svg }, extra);
       } catch {
         win?.close();
         this.toast.error(this.i18n.t('print.failed'));
@@ -623,10 +886,24 @@ export class PrintModel {
         const jpeg = new Uint8Array(await (await this.exporter.toBlob(canvas, 'image/jpeg', 0.92)).arrayBuffer());
         const pt = 72 / 96;
         const grid = this.tiles();
+        // The page of settings after the print: its own A4 page in the PDF, as a picture of its own.
+        const extraSvg = await this.settingsSvg();
+        const extras: { jpeg: Uint8Array; w: number; h: number }[] = [];
+        const sheetPage = { w: SETTINGS_PAGE.w * pt, h: SETTINGS_PAGE.h * pt, content: '' };
+        if (extraSvg) {
+          const small = this.exporter.rasterSize(SETTINGS_PAGE.w, SETTINGS_PAGE.h, PRINT_DPI);
+          const settingsCanvas = await this.exporter.rasterize(extraSvg, small.w, small.h, palette.paper);
+          extras.push({ jpeg: new Uint8Array(await (await this.exporter.toBlob(settingsCanvas, 'image/jpeg', 0.92)).arrayBuffer()), w: small.w, h: small.h });
+          sheetPage.content = `q ${sheetPage.w.toFixed(2)} 0 0 ${sheetPage.h.toFixed(2)} 0 0 cm /Im1 Do Q`;
+        }
         if (grid) {
           const mm = this.posterMm(p);
           const name = `${base} ${grid.tiles.length}x ${grid.sheet.label}`;
-          await this.save(safeFilename(name, 'pdf'), pdfPages(jpeg, size.w, size.h, tilePages(grid, mm.w, mm.h), base), 'application/pdf');
+          const pages = [...tilePages(grid, mm.w, mm.h), ...(extraSvg ? [sheetPage] : [])];
+          await this.save(safeFilename(name, 'pdf'), pdfPages(jpeg, size.w, size.h, pages, base, extras), 'application/pdf');
+        } else if (extraSvg) {
+          const first = { w: p.width * pt, h: p.height * pt, content: `q ${(p.width * pt).toFixed(2)} 0 0 ${(p.height * pt).toFixed(2)} 0 0 cm /Im0 Do Q` };
+          await this.save(safeFilename(base, 'pdf'), pdfPages(jpeg, size.w, size.h, [first, sheetPage], base, extras), 'application/pdf');
         } else {
           await this.save(safeFilename(base, 'pdf'), pdfFromJpeg(jpeg, size.w, size.h, p.width * pt, p.height * pt, base), 'application/pdf');
         }
@@ -662,7 +939,7 @@ interface PrintPageWords {
  * paper size set, so the browser's print dialog gets the page as it is. The
  * dialog opens by itself once the fonts are in.
  */
-function openPrintPage(win: Window, p: Pick<PosterResult, 'svg' | 'width' | 'height' | 'paper'>, words: PrintPageWords): void {
+function openPrintPage(win: Window, p: Pick<PosterResult, 'svg' | 'width' | 'height' | 'paper'>, words: PrintPageWords, extra?: string): void {
   const w = p.paper ? p.paper.widthMm : p.width / PX_PER_MM;
   const h = p.paper ? p.paper.heightMm : p.height / PX_PER_MM;
   const ratio = p.width / p.height;
@@ -679,15 +956,19 @@ function openPrintPage(win: Window, p: Pick<PosterResult, 'svg' | 'width' | 'hei
     `.stage { padding: 74px 24px 24px; display: flex; justify-content: center; align-items: flex-start; }` +
     `.sheet { width: min(100vw - 48px, calc((100vh - 98px) * ${ratio.toFixed(4)})); background: ${palette.paper}; box-shadow: 0 10px 40px rgba(0,0,0,.5); }` +
     `.sheet svg { display: block; width: 100%; height: auto; }` +
+    `.stage { flex-direction: column; align-items: center; gap: 24px; }` +
+    `.sheet.settings { width: min(100vw - 48px, calc((100vh - 98px) * 0.7071)); }` +
+    `@page settings { size: 210mm 297mm; margin: 0; }` +
     `@media print { html, body { background: none; min-height: 0; } .bar { display: none; } .stage { padding: 0; display: block; }` +
-    ` .sheet { width: ${w.toFixed(1)}mm; height: ${h.toFixed(1)}mm; box-shadow: none; } .sheet svg { width: ${w.toFixed(1)}mm; height: ${h.toFixed(1)}mm; } }`;
+    ` .sheet { width: ${w.toFixed(1)}mm; height: ${h.toFixed(1)}mm; box-shadow: none; } .sheet svg { width: ${w.toFixed(1)}mm; height: ${h.toFixed(1)}mm; }` +
+    ` .sheet.settings { page: settings; break-before: page; width: 210mm; height: 297mm; } .sheet.settings svg { width: 210mm; height: 297mm; } }`;
   const doc = win.document;
   doc.open();
   doc.write(
     `<!doctype html><html lang="${escapeText(words.lang)}"><head><meta charset="utf-8"><title>${escapeText(words.title)}</title><style>${css}</style></head><body>` +
       `<div class="bar"><strong>${escapeText(words.title)}</strong><span class="sum">${escapeText(words.summary)}</span><span class="hint">${escapeText(words.hint)}</span>` +
       `<button type="button" class="primary" id="print">${escapeText(words.print)}</button><button type="button" id="close">${escapeText(words.close)}</button></div>` +
-      `<div class="stage"><div class="sheet">${p.svg}</div></div></body></html>`,
+      `<div class="stage"><div class="sheet">${p.svg}</div>${extra ? `<div class="sheet settings">${extra}</div>` : ''}</div></body></html>`,
   );
   doc.close();
   doc.getElementById('print')?.addEventListener('click', () => win.print());
@@ -699,7 +980,7 @@ function openPrintPage(win: Window, p: Pick<PosterResult, 'svg' | 'width' | 'hei
 }
 
 /** Prints from the app's own window when the browser would not open another: only the page is printed, at its paper size. */
-function printInPlace(p: Pick<PosterResult, 'svg' | 'width' | 'height' | 'paper'>): void {
+function printInPlace(p: Pick<PosterResult, 'svg' | 'width' | 'height' | 'paper'>, extra?: string): void {
   const w = p.paper ? p.paper.widthMm : p.width / PX_PER_MM;
   const h = p.paper ? p.paper.heightMm : p.height / PX_PER_MM;
   const style = document.createElement('style');
@@ -708,10 +989,12 @@ function printInPlace(p: Pick<PosterResult, 'svg' | 'width' | 'height' | 'paper'
     `.stemma-print { display: none; }` +
     `@media print { html, body { height: auto !important; overflow: visible !important; background: none !important; }` +
     ` body > *:not(.stemma-print) { display: none !important; }` +
-    ` .stemma-print { display: block !important; } .stemma-print svg { display: block; width: ${w.toFixed(1)}mm; height: ${h.toFixed(1)}mm; } }`;
+    ` .stemma-print { display: block !important; } .stemma-print svg { display: block; width: ${w.toFixed(1)}mm; height: ${h.toFixed(1)}mm; }` +
+    ` .stemma-print .settings { page: settings; break-before: page; } .stemma-print .settings svg { width: 210mm; height: 297mm; } }` +
+    `@page settings { size: 210mm 297mm; margin: 0; }`;
   const holder = document.createElement('div');
   holder.className = 'stemma-print';
-  holder.innerHTML = p.svg;
+  holder.innerHTML = p.svg + (extra ? `<div class="settings">${extra}</div>` : '');
   document.head.append(style);
   document.body.append(holder);
   let cleaned = false;

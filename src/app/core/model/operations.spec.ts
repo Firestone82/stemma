@@ -1,6 +1,8 @@
 import {
   addChild,
+  clearFamilyChecks,
   clearUnknownDates,
+  setFamilyChecked,
   unknownDateCount,
   addParent,
   addPartner,
@@ -224,5 +226,17 @@ describe('tree operations', () => {
     expect(person(c.personId).death).toEqual({});
     // Nothing ticked, nothing changed.
     expect(clearUnknownDates(cleared)).toBe(cleared);
+  });
+
+  it('marks a family as confirmed and takes every mark off again', () => {
+    const { me, doc: first } = start();
+    const withParent = addParent(first, me, { draft: { given: 'Dad', sex: 'male' } });
+    const id = withParent.doc.families[0].id;
+    const marked = setFamilyChecked(withParent.doc, id, '2026-11-19');
+    expect(marked.families[0].checked).toBe('2026-11-19');
+    const cleared = clearFamilyChecks(marked);
+    expect(cleared.families[0].checked).toBeUndefined();
+    expect('checked' in cleared.families[0]).toBe(false);
+    expect(clearFamilyChecks(cleared)).toBe(cleared);
   });
 });

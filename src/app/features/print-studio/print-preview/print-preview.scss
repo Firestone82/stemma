@@ -136,6 +136,41 @@
     background: color-mix(in srgb, var(--focus) 14%, transparent);
   }
 
+  /* A box that keeps its place: solid, hatched, no card stands on it. One that does not: dashed and clear, cards may stand on it. */
+  &.blocks {
+    border-style: solid;
+
+    .sheet:hover &,
+    &.moving,
+    &.pending {
+      background: repeating-linear-gradient(135deg, color-mix(in srgb, var(--focus) 16%, transparent) 0 5px, transparent 5px 10px);
+    }
+  }
+
+  .kind {
+    position: absolute;
+    left: 2px;
+    top: 2px;
+    padding: 0 5px;
+    border-radius: 3px;
+    background: var(--focus);
+    color: var(--sheet);
+    font-size: 10px;
+    line-height: 15px;
+    white-space: nowrap;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 120ms;
+  }
+
+  .sheet:hover &,
+  &.moving,
+  &.pending {
+    .kind {
+      opacity: 0.9;
+    }
+  }
+
   /* Moved, and not applied yet: where it will go, shown whether the pointer is over the page or not. */
   &.pending {
     border-style: solid;

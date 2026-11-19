@@ -15,11 +15,10 @@
 .scroll {
   flex: 1 1 auto;
   min-height: 0;
-  overflow-y: auto;
-  overscroll-behavior: contain;
 
-  &.locked {
-    overflow: hidden;
+  /* Lowered on a phone: the sheet is not scrolled until it is raised. */
+  &.locked ::ng-deep .simplebar-content-wrapper {
+    overflow: hidden !important;
   }
 }
 

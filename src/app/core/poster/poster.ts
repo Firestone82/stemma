@@ -10,7 +10,7 @@ import { Layouter } from '../layout/engine';
 import { Fitted, Room, fitLayoutSteps, fitShapesSteps, place } from '../layout/fit';
 import { Steps, finish } from '../layout/steps';
 import { RELATION_DASH, roundedPath, sharedPaths } from '../layout/lines';
-import { applyMoves } from '../layout/moves';
+import { applyBends, applyMoves } from '../layout/moves';
 import { LAYOUT, LayoutCard, LayoutOptions, LayoutResult, TIGHT_LAYOUT } from '../layout/types';
 import { unionMark } from '../layout/union-marks';
 import { diedAtBirth } from '../model/completeness';
@@ -40,7 +40,17 @@ export interface PosterInput {
   omit?: ReadonlySet<string>;
   /** How hard to look for the best arrangement: 'quick' for a preview while settings change. */
   effort?: 'full' | 'quick';
+  /**
+   * Whether to look for the other arrangements that come out about as well (PosterResult.layouts); true when not
+   * set. Off, the page is drawn sooner, with only the best arrangement listed.
+   */
+  alternatives?: boolean;
+  /** Tells what the work is doing now (a step and its details), for the note shown while a page takes long. */
+  report?: (step: ProgressStep, detail?: Record<string, string | number>) => void;
 }
+
+/** What drawing a page is busy with, in the order it comes to it. */
+export type ProgressStep = 'start' | 'orientation' | 'names' | 'lettering' | 'alternatives' | 'draw';
 
 export interface PosterResult {
   svg: string;
@@ -60,6 +70,13 @@ export interface PosterResult {
   lettering: { titleCm: number; legendCm: number; autoTitleCm: number; autoLegendCm: number };
   /** How much of the room for the tree the cards cover, 0 to 1. */
   coverage: number;
+  /**
+   * The arrangements of the tree that come out about as well as the one drawn (PrintSettings.layoutChoice picks
+   * one): how big their cards are, as a share of the biggest, the biggest first. One entry when there is no other.
+   */
+  layouts: { ratio: number }[];
+  /** Which of `layouts` is drawn. */
+  layoutChoice: number;
   /** People on the page, and in the whole tree. */
   people: number;
   total: number;
@@ -89,7 +106,7 @@ export interface PosterResult {
    * The line from each child's parents to the child, whole, in the layout's units. On the page a stretch several
    * children share is drawn once; this is for finding everyone who hangs on a stretch that is clicked.
    */
-  lines: { familyId: string; childId: string; points: { x: number; y: number }[] }[];
+  lines: { key: string; familyId: string; childId: string; points: { x: number; y: number }[] }[];
   /** All text on the page, for embedding font subsets. */
   text: string;
   /**
@@ -118,6 +135,36 @@ const STRONG_LINES = 1.7;
 const STRONG_MARKS = 1.3;
 /** The gap between partners with the bigger marks: the widest mark, 33 units, and room either side of it. */
 const STRONG_PARTNER_GAP = 44;
+/** The least gap between partners for their marker to stand clear of both cards. */
+const MARKER_GAP = 26;
+
+/**
+ * The gaps asked for in the print settings (PrintSettings.cardGap, lineGap: hundredths of a card's width), as
+ * the layout's options. Families keep two and a half times the gap between cards; partners as much, but never
+ * less than their marker needs.
+ */
+export function gapsFor(settings: PrintSettings, cardWidth: number): Partial<LayoutOptions> {
+  const out: Partial<LayoutOptions> = {};
+  if (settings.cardGap !== undefined) {
+    const g = (settings.cardGap / 100) * cardWidth;
+    out.siblingGap = g;
+    out.familyGap = g * 2.5;
+    out.stackGap = Math.max(4, g * 0.8);
+    out.partnerGap = Math.max(g * 2.5, settings.strongLines ? STRONG_PARTNER_GAP : MARKER_GAP);
+  }
+  if (settings.lineGap !== undefined) {
+    const l = (settings.lineGap / 100) * cardWidth;
+    out.tick = l;
+    out.stem = l;
+    out.drop = l;
+  }
+  return out;
+}
+
+/** How far a line led again after cards were moved keeps from the cards it passes: as far as the layout keeps its lines. */
+function lineClearance(options: LayoutOptions): number {
+  return Math.max(6, options.stem * 0.75);
+}
 
 /** A tree is not blown up beyond this on big paper; it would look like a children's book. */
 const MAX_SCALE = 2.1;
@@ -152,6 +199,8 @@ interface Placed {
   footer: PageBlock;
   /** Where the page put the families' names when they were not placed by hand: in rows across the foot, or as a block in a corner. */
   names?: NamesPlace;
+  /** What the tree was fitted into: for looking for other arrangements of it. */
+  room?: Room;
 }
 
 /**
@@ -167,6 +216,12 @@ const NAMES_BLOCK = { w: 0.5, h: 0.45 };
 const NAMES_GAIN = 1.015;
 /** How many corners are fitted in full (the most promising at a quick look), and how many trees each place is looked at with before that. */
 const NAMES_TRIED = 1;
+/** Other arrangements of the tree are offered when their cards come out at least this share of the biggest, up to so many (the best included), after looking at so many. */
+const LAYOUT_SPREAD = 0.88;
+const LAYOUTS_OFFERED = 4;
+const LAYOUTS_LOOKED = 10;
+/** The families' names are this much smaller than the page would size them: 0.05 cm of line height, about a point. */
+const LEGEND_TRIM = (0.05 * 10 * PX_PER_MM) / LINE_HEIGHT;
 const NAMES_TREES = 14;
 /** A card whose names do not fit is made at most this many times the usual width (PrintSettings.freeWidths), in steps of so many units. */
 const WIDEST_CARD = 1.5;
@@ -222,6 +277,8 @@ export function scopeOptions(settings: PrintSettings, centerId: string, partnerI
  */
 export function* posterSteps(input: PosterInput): Steps<PosterResult> {
   const settings: PrintSettings = { ...DEFAULT_PRINT, ...(input.settings ?? effectivePrint(input.doc)) };
+  const say = (step: ProgressStep, detail?: Record<string, string | number>) => input.report?.(step, detail);
+  say('start', { people: input.doc.people.length });
   const language = chartLanguage(input.language ?? input.doc.view.language);
   const now = input.now ?? new Date();
   const fullIndex = new TreeIndex(input.doc);
@@ -299,6 +356,7 @@ export function* posterSteps(input: PosterInput): Steps<PosterResult> {
     flipped: settings.flipped?.length ? settings.flipped : undefined,
     // The bigger marks between partners need a wider gap: the widest (divorced: two rings struck through) clear of both cards.
     ...(settings.strongLines ? { partnerGap: Math.max((settings.tight ? TIGHT_LAYOUT : LAYOUT).partnerGap ?? LAYOUT.partnerGap, STRONG_PARTNER_GAP) } : {}),
+    ...gapsFor(settings, design.width),
     // Room round the couple in the middle for the frame round them.
     halo: { ids: [centerId, partnerId].filter((id): id is string => !!id), pad: COUPLE_PAD + 2 },
   };
@@ -339,7 +397,7 @@ export function* posterSteps(input: PosterInput): Steps<PosterResult> {
   const autoLetters = (short: number, names?: number) => {
     const auto = (of: { names: number; min: number; max: number }) =>
       names === undefined ? short * of.max : clamp(names * of.names, short * of.min, short * of.max);
-    return { title: auto(AUTO_LETTERS.title), legend: auto(AUTO_LETTERS.legend) };
+    return { title: auto(AUTO_LETTERS.title), legend: Math.max(auto(AUTO_LETTERS.legend) - LEGEND_TRIM, 1) };
   };
   /** The same on paper, sized to the sheet and to the names on the cards; before the cards' size is known, as big as the sheet allows. */
   const paperUnits = (short: number, names?: number) => {
@@ -406,6 +464,7 @@ export function* posterSteps(input: PosterInput): Steps<PosterResult> {
   ): Steps<Placed> {
     const margin = MARGIN * Math.min(w, h);
     ctx.page = { w, h, ...paperUnits(Math.min(w, h), nameSize), margin };
+    say('orientation', { paper: settings.paper.toUpperCase(), landscape: landscape ? 1 : 0 });
     const header = settings.showTitle ? heritage.header(ctx) : NO_BLOCK;
     let footer = heritage.footer(ctx);
     // The tree has the whole page inside the margin, but for the boxes of the title and of the families' names:
@@ -421,12 +480,14 @@ export function* posterSteps(input: PosterInput): Steps<PosterResult> {
     const pad = ctx.page.u * 1.2;
     const blockOf = (b: Rect) => ({ x: b.x - chart.x - pad, y: b.y - chart.y - pad, w: b.w + pad * 2, h: b.h + pad * 2 });
     const titleBlocks = boxes.map(blockOf);
-    const roomWith = (legend?: Rect): Room => ({
+    // The families' names keep a place of their own only where asked (PrintSettings.legendBlocks); otherwise the
+    // tree is fitted to the whole page and the names go where no card is (or, where there is no such place, as ever).
+    const roomWith = (legend?: Rect, reserve = settings.legendBlocks): Room => ({
       w: chart.w,
       h: chart.h,
       centred: 0,
       maxScale: MAX_SCALE,
-      blocks: legend ? [...titleBlocks, blockOf(legend)] : titleBlocks,
+      blocks: legend && reserve ? [...titleBlocks, blockOf(legend)] : titleBlocks,
     });
     const effort = input.effort ?? 'full';
     let legend: Rect | undefined;
@@ -440,6 +501,7 @@ export function* posterSteps(input: PosterInput): Steps<PosterResult> {
       }
       return (rect: Rect) => Math.max(0, ...trees.map((tree) => place(tree, roomWith(rect)).scale));
     };
+    if (settings.showLegend && !settings.legendBox && (settings.legendAnchor || settings.legendBlocks)) say('names');
     if (settings.showLegend && settings.legendBox) {
       legend = handBox(settings.legendBox, w, h, chart, titleBox);
     } else if (settings.showLegend && settings.legendAnchor) {
@@ -473,7 +535,7 @@ export function* posterSteps(input: PosterInput): Steps<PosterResult> {
       const foot = footer.legend?.({ x: margin, y: h - margin - footer.height, w: chart.w, h: footer.height });
       const cornered = (at: Anchor, columns: number) => blockAt(chart, at, columns, titleBox);
       names = chosen ?? (foot ? { at: 'foot' } : undefined);
-      if (!chosen && foot && effort === 'full') {
+      if (!chosen && foot && effort === 'full' && settings.legendBlocks) {
         // How big the tree stays around each place, at a quick look: the best few trees found for the page
         // without the names, each set down around the box as it is (the tree is not the same tree around every
         // place). The corners that look better than the foot are then fitted in full, and so is the foot.
@@ -511,8 +573,40 @@ export function* posterSteps(input: PosterInput): Steps<PosterResult> {
       }
     }
     const room = roomWith(legend);
-    const fitted = shape ? { ...place(layouter.run(shape), room), shape } : yield* fitLayoutSteps(layouter, options, room, effort, fitting);
-    return { fitted, landscape, page: { ...ctx.page }, chart, header, footer, names };
+    let fitted = shape ? { ...place(layouter.run(shape), room), shape } : yield* fitLayoutSteps(layouter, options, room, effort, fitting);
+    if (!settings.legendBlocks && settings.showLegend && !settings.legendBox && !settings.legendAnchor && legend) {
+      // Names that stand on no card stay; otherwise the first place in a corner (or at the foot) that is free,
+      // and where there is none the room is kept for them, as it is where they are asked to block.
+      const air = ctx.page.u * 0.6;
+      const cards = fitted.layout.cards.map((c) => ({
+        x: chart.x + fitted.x + c.x * fitted.scale,
+        y: chart.y + fitted.y + c.y * fitted.scale,
+        w: c.w * fitted.scale,
+        h: c.h * fitted.scale,
+      }));
+      const hit = (r: Rect) => cards.some((c) => c.x < r.x + r.w + air && r.x < c.x + c.w + air && c.y < r.y + r.h + air && r.y < c.y + c.h + air);
+      if (hit(legend)) {
+        let free: { names: NamesPlace; rect: Rect } | undefined;
+        search: for (const at of CORNERS)
+          for (const columns of namesColumns(ctx, chart)) {
+            const rect = blockAt(chart, at, columns, titleBox);
+            if (!hit(rect)) {
+              free = { names: { at, columns }, rect };
+              break search;
+            }
+          }
+        if (free) {
+          names = free.names;
+          ctx.legendAt = 'free';
+          footer = heritage.footer(ctx);
+        } else {
+          fitted = shape
+            ? { ...place(layouter.run(shape), roomWith(legend, true)), shape }
+            : yield* fitLayoutSteps(layouter, options, roomWith(legend, true), effort, fitting);
+        }
+      }
+    }
+    return { fitted, landscape, page: { ...ctx.page }, chart, header, footer, names, room };
   }
   /**
    * The title, the families' names and the rest of the page's lettering in proportion to the names on the cards,
@@ -525,6 +619,7 @@ export function* posterSteps(input: PosterInput): Steps<PosterResult> {
     let placed = yield* lay(w, h, landscape);
     for (let round = 0; round < 2; round++) {
       const names = design.given.size * placed.fitted.scale;
+      say('lettering', { round: round + 1 });
       const next = paperUnits(Math.min(w, h), names);
       if (Math.abs(next.u - placed.page.u) < placed.page.u * 0.02 && Math.abs(next.lu - (placed.page.lu ?? next.lu)) < next.lu * 0.02) break;
       const kept: Placed = yield* lay(w, h, landscape, names, placed.fitted.shape, placed.names);
@@ -535,12 +630,33 @@ export function* posterSteps(input: PosterInput): Steps<PosterResult> {
   }
 
   let placed: Placed;
+  let layoutRatios = [1];
+  let layoutChoice = 0;
   if (paper) {
     const portrait = { w: paper.widthMm * PX_PER_MM, h: paper.heightMm * PX_PER_MM };
     const tries = settings.orientation === 'portrait' ? [false] : settings.orientation === 'landscape' ? [true] : [true, false];
     const all: Placed[] = [];
     for (const land of tries) all.push(yield* layFor(land ? portrait.h : portrait.w, land ? portrait.w : portrait.h, land));
     placed = all.reduce((best, p) => (p.fitted.scale > best.fitted.scale * 1.02 ? p : best));
+    // Other arrangements of the tree that come out about as well: one of them may suit better (PrintSettings.layoutChoice).
+    if (placed.room && (input.effort ?? 'full') === 'full' && input.alternatives !== false) {
+      say('alternatives');
+      const best = placed.fitted;
+      const alts: Fitted[] = [best];
+      for (const shape of yield* fitShapesSteps(layouter, options, placed.room, given, LAYOUTS_LOOKED)) {
+        const f: Fitted = { ...place(layouter.run(shape), placed.room), shape };
+        if (f.scale >= best.scale * LAYOUT_SPREAD && !alts.some((a) => Math.abs(a.scale - f.scale) < best.scale * 0.004)) alts.push(f);
+        yield;
+      }
+      const rest = alts
+        .slice(1)
+        .sort((a, b) => b.scale - a.scale)
+        .slice(0, LAYOUTS_OFFERED - 1);
+      const list = [best, ...rest];
+      layoutRatios = list.map((a) => a.scale / best.scale);
+      layoutChoice = Math.min(settings.layoutChoice ?? 0, list.length - 1);
+      placed = { ...placed, fitted: list[layoutChoice] };
+    }
   } else {
     // A page the size of the tree: the tree as it suits a screen, then the page around it.
     const fitted = yield* fitLayoutSteps(layouter, options, { ...FIT_ROOM, centred: 0 }, input.effort ?? 'full', given);
@@ -562,7 +678,10 @@ export function* posterSteps(input: PosterInput): Steps<PosterResult> {
   if (settings.showLegend && !settings.legendBox) ctx.legendAt = cornerNames ? 'free' : 'below';
   const { fitted, chart, header, footer } = placed;
   // Cards moved by hand go where they were put, their lines after them.
-  const layout = settings.moves ? applyMoves(fitted.layout, new Map(Object.entries(settings.moves))) : fitted.layout;
+  say('draw', { cards: fitted.layout.cards.length });
+  const moved = settings.moves ? applyMoves(fitted.layout, new Map(Object.entries(settings.moves)), lineClearance(options)) : fitted.layout;
+  // Lines led by hand keep their bends; their ends stay with the marker and the card.
+  const layout = settings.lineBends ? applyBends(moved, new Map(Object.entries(settings.lineBends))) : moved;
   const s = fitted.scale;
   const W = ctx.page.w;
   const H = ctx.page.h;
@@ -775,6 +894,8 @@ export function* posterSteps(input: PosterInput): Steps<PosterResult> {
       autoTitleCm: lineCm(suggested?.title ?? ctx.page.u * LETTERING.title),
       autoLegendCm: lineCm(suggested?.legend ?? (ctx.page.lu ?? ctx.page.u) * LETTERING.legend),
     },
+    layouts: layoutRatios.map((ratio) => ({ ratio })),
+    layoutChoice,
     coverage: (layout.cards.length * design.width * design.height * s * s) / Math.max(1, chart.w * chart.h),
     people: doc.people.length,
     total: input.doc.people.length,
@@ -794,7 +915,7 @@ export function* posterSteps(input: PosterInput): Steps<PosterResult> {
     shown: doc.people.map((p) => p.id),
     cardUnits: { w: design.width, h: design.height },
     gaps: { partner: options.partnerGap, sibling: options.siblingGap, family: options.familyGap, stack: options.stackGap },
-    lines: layout.lines.map((l) => ({ familyId: l.familyId, childId: l.childId, points: l.points.map((p) => ({ x: p.x, y: p.y })) })),
+    lines: layout.lines.map((l) => ({ key: l.key, familyId: l.familyId, childId: l.childId, points: l.points.map((p) => ({ x: p.x, y: p.y })) })),
     namesIn: (at, style = {}) =>
       namesMarkup(ctx, { x: at.x * W, y: at.y * H, w: at.w * W, h: at.h * H }, undefined, {
         align: style.align,
@@ -969,6 +1090,9 @@ function ribbon(d: CardDesign, w: number, atBirth: boolean): string {
 /** The families' names as a block: rows so many times their letters apart, columns so many letters apart. */
 const NAMES_ROW = 1.9;
 const NAMES_COLUMN_GAP = 1.6;
+/** The heading over the names (PrintSettings.legendHeading), in the names' letters: the word and the rule under it. */
+const NAMES_HEAD = 2.8;
+const namesHead = (ctx: PosterContext) => (ctx.settings.legendHeading ? NAMES_HEAD : 0);
 
 /** The size of the letters of the families' names where the page sizes them. */
 function namesSize(ctx: PosterContext): number {
@@ -1000,7 +1124,7 @@ function namesColumns(ctx: PosterContext, chart: Rect): number[] {
     const block = namesColumnsOf(widths, columns);
     if (block.rows === rows) continue;
     rows = block.rows;
-    if (block.w * size <= chart.w * NAMES_BLOCK.w && block.h * size <= chart.h * NAMES_BLOCK.h) out.push(columns);
+    if (block.w * size <= chart.w * NAMES_BLOCK.w && (block.h + namesHead(ctx)) * size <= chart.h * NAMES_BLOCK.h) out.push(columns);
   }
   return out;
 }
@@ -1020,7 +1144,7 @@ function namesBlock(ctx: PosterContext, chart: Rect, at: Anchor, columns: number
   const { widths } = namesEntries(ctx);
   const size = namesSize(ctx);
   const block = namesColumnsOf(widths, Math.max(1, Math.min(columns, widths.length || 1)));
-  return placeAt(ctx, chart, at, block.w * size, block.h * size);
+  return placeAt(ctx, chart, at, block.w * size, (block.h + namesHead(ctx)) * size);
 }
 
 /** How the families' names stand in a box: how big their letters are, in how many columns, and the room they take. */
@@ -1031,6 +1155,8 @@ interface NamesFit {
   /** The width of each column, with letters 1 unit big. */
   colW: number[];
   rows: number;
+  /** The height of the heading over the names, in their letters (0 without one). */
+  head: number;
   w: number;
   h: number;
 }
@@ -1064,13 +1190,14 @@ function namesIn(ctx: PosterContext, box: { w: number; h: number }, block?: { le
     for (let columns = 1; columns <= entries.length; columns++) {
       const rows = Math.ceil(entries.length / columns);
       const colW = columnsOf(columns);
-      const size = Math.min(box.h / (rows * ROW), box.w / span(colW));
+      const size = Math.min(box.h / (rows * ROW + namesHead(ctx)), box.w / span(colW));
       if (size > best.size) best = { size, columns, colW };
     }
   }
   const size = fixed ?? Math.min(best.size, ctx.page.u * 8);
   const rows = Math.ceil(entries.length / best.columns);
-  return { entries, size, columns: best.columns, colW: best.colW, rows, w: span(best.colW) * size, h: rows * ROW * size };
+  const head = namesHead(ctx);
+  return { entries, size, columns: best.columns, colW: best.colW, rows, head, w: span(best.colW) * size, h: (rows * ROW + head) * size };
 }
 
 /**
@@ -1101,8 +1228,16 @@ function namesMarkup(
   const float = anchorShares(block ? 'center' : (as.align ?? ctx.settings.legendAlign ?? 'center'));
   const from = (start: number, room: number, share: number) => start + (share === 1 ? room : Math.max(0, share * room));
   let out = '';
-  let x = from(box.x, box.w - fit.w, float.x);
-  const top = from(box.y, box.h - fit.h, float.y);
+  const left = from(box.x, box.w - fit.w, float.x);
+  let x = left;
+  const top0 = from(box.y, box.h - fit.h, float.y);
+  const top = top0 + fit.head * size;
+  // The heading over the names: its rule in their middle, its word where it is aligned along the rule.
+  if (fit.head) {
+    // Over the names, and as wide as asked within their box (never past its sides).
+    const from = Math.min(box.x, left);
+    out += namesHeading(ctx, { x: left, w: fit.w }, { x: from, w: Math.max(box.x + box.w, left + fit.w) - from }, top0, size);
+  }
   fit.colW.forEach((w, c) => {
     entries.slice(c * rows, (c + 1) * rows).forEach((l, r) => {
       const y = top + (r + 0.5) * NAMES_ROW * size;
@@ -1112,6 +1247,41 @@ function namesMarkup(
     x += (w + NAMES_COLUMN_GAP) * size;
   });
   return out;
+}
+
+/**
+ * "Families" over the names, in small capitals, over a rule with a lozenge under the word and a dot at each end,
+ * like the rules beside the page's title. The rule is as wide as asked (PrintSettings.legendHeadWidth; as the
+ * word needs when not set, never wider than their box). Rule, word and lozenge are aligned alike
+ * (PrintSettings.legendHeadAlign): at the box's left, over the middle of the names, or at the box's right.
+ */
+function namesHeading(ctx: PosterContext, names: { x: number; w: number }, box: { x: number; w: number }, y: number, size: number): string {
+  const font: FontSpec = { ...heritage.legendStyle.font, size: size * 1.2, weight: 600, letterSpacing: 0.14 };
+  const gap = size * 0.9;
+  const dot = size * 0.16;
+  const word = ctx.measure(ctx.language.families, font);
+  const set = ctx.settings.legendHeadWidth ? ctx.settings.legendHeadWidth * 10 * PX_PER_MM : 0;
+  const hw = Math.min(box.w, Math.max(set || Math.max(word, gap * 4) + size * 1.2, word + size * 0.6));
+  const align = ctx.settings.legendHeadAlign;
+  // The rule at the left, in the middle or at the right of the box, as the word is aligned on it.
+  const left = align === 'left' ? box.x : align === 'right' ? box.x + box.w - hw : Math.min(Math.max(names.x + (names.w - hw) / 2, box.x), box.x + box.w - hw);
+  const right = left + hw;
+  // The word's middle: at the rule's left or right it keeps clear of the dot at that end.
+  const inset = word / 2 + dot * 3;
+  const cx = align === 'left' ? Math.min(left + inset, left + hw / 2) : align === 'right' ? Math.max(right - inset, left + hw / 2) : left + hw / 2;
+  const rule = y + size * 2.15;
+  const stroke = { fill: 'none', stroke: palette.accent, 'stroke-width': Math.max(0.5, size * 0.07), 'stroke-linecap': 'round' };
+  const run = (from: number, to: number) => (to - from > size * 0.1 ? `M${n(from)},${n(rule)}L${n(to)},${n(rule)}` : '');
+  return (
+    el('text', { x: cx, y: y + size * 1.2, 'text-anchor': 'middle', ...fontAttrs(font), fill: palette.accent }, text(ctx.language.families)) +
+    el('path', { d: run(left + dot * 2, cx - gap) + run(cx + gap, right - dot * 2), ...stroke }) +
+    el('circle', { cx: n(left + dot), cy: n(rule), r: n(dot), fill: palette.accent }) +
+    el('circle', { cx: n(right - dot), cy: n(rule), r: n(dot), fill: palette.accent }) +
+    el('path', {
+      d: `M${n(cx)},${n(rule - gap * 0.45)}L${n(cx + gap * 0.45)},${n(rule)}L${n(cx)},${n(rule + gap * 0.45)}L${n(cx - gap * 0.45)},${n(rule)}Z`,
+      fill: palette.accent,
+    })
+  );
 }
 
 function fitText(t: string, f: FontSpec, max: number, measure: (t: string, f: FontSpec) => number): string {

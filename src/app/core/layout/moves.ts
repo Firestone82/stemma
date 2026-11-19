@@ -9,6 +9,7 @@
  * the children; a line whose two ends moved alike moves whole. Nothing above or beside it moves, and nothing
  * is checked: a card can be put on top of another, or a line led across one.
  */
+import { crossing, reroute as routeLines } from './route';
 import { LayoutCard, LayoutLine, LayoutResult, LayoutUnion, Pt } from './types';
 
 const near = (a: number, b: number) => Math.abs(a - b) < 0.6;
@@ -48,6 +49,9 @@ function leadFrom(points: readonly Pt[], start: Pt): Pt[] {
 }
 
 const ZERO: Pt = { x: 0, y: 0 };
+
+/** A card moved by hand: `x`, `y` with what hangs under it, and `sx`, `sy` on its own (nothing following). */
+export type Move = Pt & { sx?: number; sy?: number };
 const same = (a: Pt, b: Pt) => Math.abs(a.x - b.x) < 0.01 && Math.abs(a.y - b.y) < 0.01;
 const add = (a: Pt, b: Pt): Pt => ({ x: a.x + b.x, y: a.y + b.y });
 
@@ -123,14 +127,39 @@ function reroute(u: LayoutUnion, ca: LayoutCard | undefined, cb: LayoutCard | un
  * couple at the top) each go only as far as they were moved themselves. Worked out from the top down, until
  * nothing changes.
  */
-function offsets(layout: LayoutResult, moves: ReadonlyMap<string, Pt>): Map<LayoutCard, Pt> {
-  const own = (c: LayoutCard) => (c.ghost ? undefined : moves.get(c.personId));
+function offsets(layout: LayoutResult, moves: ReadonlyMap<string, Move>): Map<LayoutCard, Pt> {
+  const raw = (c: LayoutCard): Pt | undefined => {
+    const m = c.ghost ? undefined : moves.get(c.personId);
+    return m ? { x: m.x, y: m.y } : undefined;
+  };
+  /** Moved on its own: nothing under it follows (see Move). */
+  const solo = (c: LayoutCard): Pt => {
+    const m = c.ghost ? undefined : moves.get(c.personId);
+    return { x: m?.sx ?? 0, y: m?.sy ?? 0 };
+  };
   const unions = new Map(layout.unions.map((u) => [u.familyId, u]));
   const ends = new Map(layout.unions.map((u) => [u.familyId, [cardAt(layout.cards, u.line[0]), cardAt(layout.cards, u.line[u.line.length - 1])] as const]));
   const lines = layout.lines
     .map((l) => ({ l, child: cardAt(layout.cards, l.points[l.points.length - 1]), parent: cardAt(layout.cards, l.points[0]) }))
     .filter((x): x is typeof x & { child: LayoutCard } => !!x.child && !x.child.ghost);
   const hangs = new Set(lines.map((x) => x.child));
+  // Partners: a couple moves as one. Moving the partner who married in moves the one they stand beside (and so
+  // what hangs under them), and a couple at the top, with nobody above either, goes as far as either was moved.
+  const mates = new Map<LayoutCard, LayoutCard[]>();
+  for (const [ca, cb] of ends.values()) {
+    if (!ca || !cb || ca === cb || ca.ghost || cb.ghost) continue;
+    mates.set(ca, [...(mates.get(ca) ?? []), cb]);
+    mates.set(cb, [...(mates.get(cb) ?? []), ca]);
+  }
+  const own = (c: LayoutCard): Pt | undefined => {
+    if (c.ghost) return undefined;
+    const partners = mates.get(c) ?? [];
+    // Married in beside someone who hangs from their parents: goes as that one goes (see `joined` below).
+    if (!hangs.has(c) && partners.some((m) => hangs.has(m))) return undefined;
+    let sum = raw(c) ?? ZERO;
+    for (const m of partners) if (!hangs.has(m)) sum = add(sum, raw(m) ?? ZERO);
+    return same(sum, ZERO) ? undefined : sum;
+  };
   const inherited = new Map<LayoutCard, Pt>();
   const total = (c?: LayoutCard): Pt => (c ? add(own(c) ?? ZERO, inherited.get(c) ?? ZERO) : ZERO);
   const markerShift = (familyId: string, parent?: LayoutCard): Pt => {
@@ -177,14 +206,14 @@ function offsets(layout: LayoutResult, moves: ReadonlyMap<string, Pt>): Map<Layo
   }
   const out = new Map<LayoutCard, Pt>();
   for (const c of layout.cards) {
-    const d = total(c);
+    const d = add(total(c), solo(c));
     if (!same(d, ZERO)) out.set(c, d);
   }
   return out;
 }
 
 /** The layout with the cards in `moves` (by person, how far from where they were put) moved, what hangs under them with them, and their lines led after them. */
-export function applyMoves(layout: LayoutResult, moves: ReadonlyMap<string, Pt>): LayoutResult {
+export function applyMoves(layout: LayoutResult, moves: ReadonlyMap<string, Move>, clearance?: number): LayoutResult {
   if (!layout.cards.some((c) => !c.ghost && moves.has(c.personId))) return layout;
   const shift = offsets(layout, moves);
   const by = (c?: LayoutCard): Pt | undefined => (c ? shift.get(c) : undefined);
@@ -225,6 +254,15 @@ export function applyMoves(layout: LayoutResult, moves: ReadonlyMap<string, Pt>)
     if (!same(to, ZERO)) points = leadTo(points, add(end, to));
     return { ...l, points };
   });
+  // Every line to or from a card that moved is led again by the shortest way clear of the other cards, as is any
+  // line that now runs through a card (one the layout itself led over cards stays as it was).
+  const was = crossing(layout.lines, layout.cards, layout.placeholders);
+  const again = new Set<string>();
+  layout.lines.forEach((l, i) => {
+    if (lines[i] !== l) again.add(l.key);
+  });
+  for (const key of crossing(lines, cards, layout.placeholders)) if (!was.has(key)) again.add(key);
+  const routed = again.size ? routeLines(lines, again, cards, layout.placeholders, clearance) : lines;
   let x0 = layout.bounds.x;
   let y0 = layout.bounds.y;
   let x1 = layout.bounds.x + layout.bounds.w;
@@ -235,5 +273,54 @@ export function applyMoves(layout: LayoutResult, moves: ReadonlyMap<string, Pt>)
     x1 = Math.max(x1, c.x + c.w);
     y1 = Math.max(y1, c.y + c.h);
   }
-  return { ...layout, cards, unions, lines, bounds: { x: x0, y: y0, w: x1 - x0, h: y1 - y0 } };
+  return { ...layout, cards, unions, lines: routed, bounds: { x: x0, y: y0, w: x1 - x0, h: y1 - y0 } };
+}
+
+/**
+ * The lines led by hand (PrintSettings.lineBends, by line key) drawn as they were led: the bends in between
+ * where they were put, the two ends where the marker and the card now are, the first and last stretches kept
+ * straight (drawn out or in to meet the ends).
+ */
+export function applyBends(layout: LayoutResult, bends: ReadonlyMap<string, readonly Pt[]>): LayoutResult {
+  if (!bends.size) return layout;
+  let changed = false;
+  const lines = layout.lines.map((l) => {
+    const kept = bends.get(l.key);
+    if (!kept || kept.length < 2) return l;
+    changed = true;
+    return { ...l, points: bent(kept, l.points[0], l.points[l.points.length - 1]) };
+  });
+  return changed ? { ...layout, lines } : layout;
+}
+
+/** A line led by hand, its ends put where `start` and `end` now are. */
+export function bent(kept: readonly Pt[], start: Pt, end: Pt): Pt[] {
+  const points = kept.map((p) => ({ ...p }));
+  const n = points.length;
+  if (n === 2) return simplifyLine([start, { x: start.x, y: (start.y + end.y) / 2 }, { x: end.x, y: (start.y + end.y) / 2 }, end]);
+  // The stretch out of each end stays upright or level, as it was led.
+  const fit = (end: Pt, next: Pt, was: Pt) => {
+    if (Math.abs(was.x - next.x) < 0.01) next.x = end.x;
+    else next.y = end.y;
+  };
+  fit(start, points[1], kept[0]);
+  fit(end, points[n - 2], kept[n - 1]);
+  points[0] = { ...start };
+  points[n - 1] = { ...end };
+  return simplifyLine(points);
+}
+
+/** The points without doubles and without those in the middle of a straight run. */
+function simplifyLine(points: readonly Pt[]): Pt[] {
+  const out: Pt[] = [];
+  for (const p of points) {
+    const last = out[out.length - 1];
+    if (!last || Math.abs(last.x - p.x) > 0.01 || Math.abs(last.y - p.y) > 0.01) out.push(p);
+  }
+  return out.filter((p, i) => {
+    if (i === 0 || i === out.length - 1) return true;
+    const a = out[i - 1];
+    const b = out[i + 1];
+    return !(Math.abs(a.x - p.x) < 0.01 && Math.abs(p.x - b.x) < 0.01) && !(Math.abs(a.y - p.y) < 0.01 && Math.abs(p.y - b.y) < 0.01);
+  });
 }

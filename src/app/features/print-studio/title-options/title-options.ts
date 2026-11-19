@@ -4,13 +4,14 @@ import { FIT_PAPER } from '../../../core/poster/paper';
 import { TreeStore } from '../../../core/store/tree-store';
 import { I18n } from '../../../i18n/i18n';
 import { AnchorPicker } from '../../../shared/anchor-picker/anchor-picker';
+import { BoxCoords } from '../box-coords/box-coords';
 import { LetterSize } from '../letter-size/letter-size';
 import { PrintModel } from '../print-model';
 
 /** The title of the page: its words, the line under it, how big it is and where on the page it is held. */
 @Component({
   selector: 'stemma-title-options',
-  imports: [AnchorPicker, LetterSize],
+  imports: [AnchorPicker, BoxCoords, LetterSize],
   templateUrl: './title-options.html',
   styleUrl: './title-options.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,

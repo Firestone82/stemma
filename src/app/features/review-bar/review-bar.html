@@ -1,0 +1,52 @@
+@if (review.active() && review.current(); as c) {
+  <aside class="bar" role="region" [attr.aria-label]="t('review.title')">
+    <header>
+      <strong>{{ t('review.title') }}</strong>
+      <span class="count">{{ t('review.progress', { n: review.position() + 1, of: review.count() }) }}</span>
+      <progress
+        class="meter"
+        [max]="review.total()"
+        [value]="review.confirmed()"
+        [attr.aria-label]="t('review.confirmedCount', { n: review.confirmed(), of: review.total() })"
+      ></progress>
+      <button type="button" class="btn ghost icon" (click)="review.finish()" [attr.aria-label]="t('review.stop')" [title]="t('review.stop')">
+        <stemma-icon name="close" />
+      </button>
+    </header>
+    <h3>{{ c.title }}</h3>
+    <p class="ask">{{ c.flagged ? t('review.flagged', { count: c.flagged }) : t('review.ask') }}</p>
+    <div class="people" stemmaScroll>
+      <div class="people-body">
+        <ul>
+          @for (p of c.partners; track p.id) {
+            <li>
+              <button type="button" class="link" (click)="review.open(p.id)">{{ p.name }}</button>
+              <span class="life">{{ p.life }}</span>
+              @for (n of p.notes; track n) {
+                <span class="note">{{ n }}</span>
+              }
+            </li>
+          }
+        </ul>
+        @if (c.children.length) {
+          <ul class="kids" [attr.aria-label]="t('review.children')">
+            @for (p of c.children; track p.id) {
+              <li>
+                <button type="button" class="link" (click)="review.open(p.id)">{{ p.name }}</button>
+                <span class="life">{{ p.life }}</span>
+                @for (n of p.notes; track n) {
+                  <span class="note">{{ n }}</span>
+                }
+              </li>
+            }
+          </ul>
+        }
+      </div>
+    </div>
+    <footer>
+      <button type="button" class="btn" (click)="review.back()" [disabled]="review.position() === 0">{{ t('review.back') }}</button>
+      <button type="button" class="btn" (click)="review.skip()">{{ t('review.skip') }}</button>
+      <button type="button" class="btn primary" (click)="review.confirm()"><stemma-icon name="check" [size]="16" />{{ t('review.confirm') }}</button>
+    </footer>
+  </aside>
+}

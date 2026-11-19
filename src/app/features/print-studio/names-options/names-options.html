@@ -1,44 +1,99 @@
 @let s = model.view();
 <h3 id="print-g-names">{{ t('print.namesGroup') }}</h3>
-<div class="studio-pair">
-  <stemma-letter-size key="legendSize" />
-  @if (onPaper() && underTitle()) {
-    <div class="field">
-      <label for="print-names-gap">{{ t('print.namesGap') }}</label>
-      <div class="unit">
-        <input
-          id="print-names-gap"
-          class="input"
-          inputmode="decimal"
-          autocomplete="off"
-          [class.auto]="s.legendGap === undefined"
-          [value]="gapText()"
-          (change)="setGap($event)"
-        />
-        <span class="suffix">cm</span>
-      </div>
-    </div>
-  }
-</div>
-@if (onPaper()) {
+<fieldset class="studio-set" [disabled]="!model.settings().showLegend" [attr.title]="model.settings().showLegend ? null : t('print.why.noLegend')">
   <div class="studio-pair">
-    <div class="field">
-      <span class="field-label" id="print-names-place">{{ t('print.place') }}</span>
-      <div class="place">
-        <stemma-anchor-picker labelledBy="print-names-place" [value]="s.legendAnchor ?? null" (valueChange)="hold($event)" />
-        <button type="button" class="btn small" [class.chosen]="placed() === 'page'" [attr.aria-pressed]="placed() === 'page'" (click)="leaveToPage()">
-          {{ t('print.placeAuto') }}
-        </button>
+    <stemma-letter-size key="legendSize" />
+    <fieldset
+      class="studio-set"
+      [disabled]="!onPaper() || !model.settings().showTitle"
+      [attr.title]="!onPaper() ? t('print.why.fitPaper') : !model.settings().showTitle ? t('print.why.noTitle') : null"
+    >
+      <div class="field">
+        <label for="print-names-gap">{{ t('print.namesGap') }}</label>
+        <div class="unit">
+          <input
+            id="print-names-gap"
+            class="input"
+            inputmode="decimal"
+            autocomplete="off"
+            [class.auto]="s.legendGap === undefined"
+            [value]="gapText()"
+            (change)="setGap($event)"
+          />
+          <span class="suffix">cm</span>
+        </div>
       </div>
-    </div>
-    <div class="field">
-      <span class="field-label" id="print-names-float">{{ t('print.namesFloat') }}</span>
-      <div class="place">
-        <stemma-anchor-picker labelledBy="print-names-float" [disabled]="!sized()" [value]="s.legendAlign ?? 'center'" (valueChange)="float($event)" />
-        @if (sized() && placed() === 'held') {
-          <button type="button" class="btn small" (click)="fitBox()">{{ t('print.namesFitBox') }}</button>
-        }
-      </div>
-    </div>
+    </fieldset>
   </div>
-}
+  <fieldset class="studio-set" [disabled]="!onPaper()" [attr.title]="onPaper() ? null : t('print.why.fitPaper')">
+    <div class="studio-pair">
+      <div class="field">
+        <span class="field-label" id="print-names-place">{{ t('print.place') }}</span>
+        <div class="place">
+          <stemma-anchor-picker labelledBy="print-names-place" [value]="s.legendAnchor ?? null" (valueChange)="hold($event)" />
+          <button type="button" class="btn small" [class.chosen]="placed() === 'page'" [attr.aria-pressed]="placed() === 'page'" (click)="leaveToPage()">
+            {{ t('print.placeAuto') }}
+          </button>
+        </div>
+      </div>
+      <div class="field">
+        <span class="field-label" id="print-names-float">{{ t('print.namesFloat') }}</span>
+        <div class="place">
+          <stemma-anchor-picker labelledBy="print-names-float" [disabled]="!sized()" [value]="s.legendAlign ?? 'center'" (valueChange)="float($event)" />
+          <button
+            type="button"
+            class="btn small"
+            [disabled]="!sized() || placed() !== 'held'"
+            [attr.title]="sized() && placed() === 'held' ? null : t('print.why.fitBox')"
+            (click)="fitBox()"
+          >
+            {{ t('print.namesFitBox') }}
+          </button>
+        </div>
+      </div>
+    </div>
+    <stemma-box-coords of="legend" />
+  </fieldset>
+  <div class="studio-option">
+    <stemma-switch [checked]="s.legendHeading" (checkedChange)="model.set({ legendHeading: $event })">{{ t('print.legendHeading') }}</stemma-switch>
+    <fieldset class="studio-set" [disabled]="!s.legendHeading" [attr.title]="s.legendHeading ? null : t('print.why.noHeading')">
+      <div class="studio-pair">
+        <div class="field">
+          <span class="field-label" id="print-head-align">{{ t('print.headAlign') }}</span>
+          <div class="pick">
+            <stemma-anchor-picker labelledBy="print-head-align" [topOnly]="true" [value]="headAnchor()" (valueChange)="alignHeading($event)" />
+          </div>
+        </div>
+        <div class="field">
+          <label for="print-head-width">{{ t('print.headWidth') }}</label>
+          <div class="unit">
+            <input
+              id="print-head-width"
+              class="input"
+              inputmode="decimal"
+              autocomplete="off"
+              [attr.min]="model.headRangeCm().min"
+              [attr.max]="model.headRangeCm().max"
+              [title]="t('print.headWidthRange', { min: model.headRangeCm().min, max: model.headRangeCm().max })"
+              [class.auto]="!s.legendHeadWidth"
+              [value]="s.legendHeadWidth ?? ''"
+              [placeholder]="t('print.sizeAuto')"
+              (change)="setHeadWidth($event)"
+            />
+            <span class="suffix">cm</span>
+          </div>
+        </div>
+      </div>
+    </fieldset>
+  </div>
+  <div class="studio-option">
+    <stemma-switch
+      [disabled]="!onPaper()"
+      [attr.title]="onPaper() ? null : t('print.why.fitPaper')"
+      [checked]="s.legendBlocks"
+      (checkedChange)="model.set({ legendBlocks: $event })"
+      >{{ t('print.legendBlocks') }}</stemma-switch
+    >
+    <span class="hint">{{ t('print.legendBlocksHint') }}</span>
+  </div>
+</fieldset>

@@ -1,3 +1,17 @@
+@if (review.total() > 0) {
+  <section class="panel-section review">
+    <h3>{{ t('review.title') }}</h3>
+    <p class="all-good">{{ t('review.confirmedCount', { n: review.confirmed(), of: review.total() }) }}</p>
+    <p class="unknown-dates">
+      @if (review.remaining() > 0) {
+        <button type="button" class="btn small primary" (click)="review.start()">{{ review.confirmed() ? t('review.continue') : t('review.start') }}</button>
+      }
+      @if (review.confirmed() > 0) {
+        <button type="button" class="link" (click)="review.start(true)">{{ t('review.again') }}</button>
+      }
+    </p>
+  </section>
+}
 @if (allGood()) {
   <!-- Nothing to fix: one quiet line, without a heading of its own. -->
   <section class="panel-section clear" [attr.aria-label]="t('checks.title')">

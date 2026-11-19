@@ -189,6 +189,7 @@ export const english: ChartLanguage = {
   drawn: (date) => `Drawn ${longDate(date)}`,
   familyTree: 'Family tree',
   others: 'Other families',
+  families: 'Families',
   bornWith: (sex, count) => {
     const word = ['', '', 'twin', 'triplet', 'quadruplet', 'quintuplet', 'sextuplet'][count];
     if (!word) return bySex(sex, 'brother', 'sister', 'sibling');

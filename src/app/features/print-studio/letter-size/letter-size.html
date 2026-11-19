@@ -19,9 +19,13 @@
     />
     <span class="suffix">cm</span>
   </div>
-  @if (offer()) {
-    <button type="button" class="btn small suggested" [title]="t('print.sizeUseAuto', { cm: s.auto })" (click)="useSuggested()">
-      {{ t('print.sizeRecommended', { cm: s.auto }) }}
-    </button>
-  }
+  <button
+    type="button"
+    class="btn small suggested"
+    [disabled]="!offer()"
+    [title]="offer() ? t('print.sizeUseAuto', { cm: s.auto }) : t('print.why.noSize')"
+    (click)="useSuggested()"
+  >
+    {{ t('print.sizeRecommended', { cm: s.auto || '–' }) }}
+  </button>
 </div>

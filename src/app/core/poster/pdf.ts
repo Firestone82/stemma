@@ -22,7 +22,15 @@ export interface PdfPage {
  * A PDF of several pages sharing one JPEG image (/Im0), which each page draws
  * as much of as it wants; text in Helvetica (/F1), in plain ASCII.
  */
-export function pdfPages(jpeg: Uint8Array, pixelWidth: number, pixelHeight: number, pages: readonly PdfPage[], title = ''): Blob {
+export function pdfPages(
+  jpeg: Uint8Array,
+  pixelWidth: number,
+  pixelHeight: number,
+  pages: readonly PdfPage[],
+  title = '',
+  /** More images (/Im1, /Im2…) for pages of their own, such as the page of settings after a poster. */
+  extras: readonly { jpeg: Uint8Array; w: number; h: number }[] = [],
+): Blob {
   const enc = new TextEncoder();
   const chunks: Uint8Array[] = [];
   const offsets: number[] = [];
@@ -39,8 +47,9 @@ export function pdfPages(jpeg: Uint8Array, pixelWidth: number, pixelHeight: numb
     push('\nendobj\n');
   };
 
-  // 1 catalog, 2 pages, 3 image, 4 font, 5 info, then a page and its contents for each page.
-  const pageId = (i: number) => 6 + i * 2;
+  // 1 catalog, 2 pages, 3 image, 4 font, 5 info, then the extra images, then a page and its contents for each page.
+  const first = 6 + extras.length;
+  const pageId = (i: number) => first + i * 2;
   push('%PDF-1.4\n%âãÏÓ\n');
   object(1, '<< /Type /Catalog /Pages 2 0 R >>');
   object(2, `<< /Type /Pages /Kids [${pages.map((_, i) => `${pageId(i)} 0 R`).join(' ')}] /Count ${pages.length} >>`);
@@ -50,16 +59,23 @@ export function pdfPages(jpeg: Uint8Array, pixelWidth: number, pixelHeight: numb
     '\nendstream',
   ]);
   object(4, '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>');
+  extras.forEach((x, i) =>
+    object(6 + i, [
+      `<< /Type /XObject /Subtype /Image /Width ${x.w} /Height ${x.h} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${x.jpeg.length} >>\nstream\n`,
+      x.jpeg,
+      '\nendstream',
+    ]),
+  );
   object(5, `<< /Title ${pdfText(title)} /Producer (Stemma) /Creator (Stemma) >>`);
   pages.forEach((page, i) => {
     object(
       pageId(i),
-      `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${num(page.w)} ${num(page.h)}] /Resources << /XObject << /Im0 3 0 R >> /Font << /F1 4 0 R >> /ProcSet [/PDF /Text /ImageC] >> /Contents ${pageId(i) + 1} 0 R >>`,
+      `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${num(page.w)} ${num(page.h)}] /Resources << /XObject << /Im0 3 0 R ${extras.map((_, k) => `/Im${k + 1} ${6 + k} 0 R`).join(' ')} >> /Font << /F1 4 0 R >> /ProcSet [/PDF /Text /ImageC] >> /Contents ${pageId(i) + 1} 0 R >>`,
     );
     object(pageId(i) + 1, `<< /Length ${enc.encode(page.content).length} >>\nstream\n${page.content}\nendstream`);
   });
 
-  const count = 6 + pages.length * 2;
+  const count = first + pages.length * 2;
   const xref = length;
   push(`xref\n0 ${count}\n0000000000 65535 f \n`);
   for (let i = 1; i < count; i++) push(`${String(offsets[i]).padStart(10, '0')} 00000 n \n`);

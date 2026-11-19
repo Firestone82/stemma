@@ -1,0 +1,47 @@
+/*
+ * Scrollbars. Areas with the Scroll directive (shared/scroll) have SimpleBar's slim bar over their content;
+ * every other scrolling box keeps the browser's own, in our colour.
+ */
+:root {
+  scrollbar-color: var(--ink-3) transparent;
+}
+
+/*
+ * An area that takes the size its place gives it (a flex or grid cell), not one its content gives it: the
+ * bar's box fills it, so the content scrolls inside instead of stretching the area.
+ */
+/*
+ * Never `overflow: hidden` on the element itself: SimpleBar takes its overflow for the content's, and the area
+ * would not scroll. Its own wrapper keeps the content in.
+ */
+[data-simplebar].scroll-fill {
+  position: relative;
+
+  > .simplebar-wrapper {
+    position: absolute;
+    inset: 0;
+    width: auto;
+    height: auto;
+  }
+}
+
+[data-simplebar] {
+  max-height: inherit;
+
+  .simplebar-scrollbar::before {
+    background: var(--ink-3);
+    border-radius: 4px;
+  }
+
+  .simplebar-scrollbar.simplebar-visible::before {
+    opacity: 0.55;
+  }
+
+  .simplebar-track.simplebar-vertical {
+    width: 10px;
+  }
+
+  .simplebar-content-wrapper {
+    overscroll-behavior: contain;
+  }
+}
