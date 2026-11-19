@@ -9,7 +9,8 @@
  * the children; a line whose two ends moved alike moves whole. Nothing above or beside it moves, and nothing
  * is checked: a card can be put on top of another, or a line led across one.
  */
-import { crossing, reroute as routeLines } from './route';
+import { separate } from './lanes';
+import { CLEARANCE, crossing, reroute as routeLines } from './route';
 import { LayoutCard, LayoutLine, LayoutResult, LayoutUnion, Pt } from './types';
 
 const near = (a: number, b: number) => Math.abs(a - b) < 0.6;
@@ -262,7 +263,9 @@ export function applyMoves(layout: LayoutResult, moves: ReadonlyMap<string, Move
     if (lines[i] !== l) again.add(l.key);
   });
   for (const key of crossing(lines, cards, layout.placeholders)) if (!was.has(key)) again.add(key);
-  const routed = again.size ? routeLines(lines, again, cards, layout.placeholders, clearance) : lines;
+  const led = again.size ? routeLines(lines, again, cards, layout.placeholders, clearance, unions) : lines;
+  // Where a line led again still runs along a line of another family, one of them moves into a lane beside it.
+  const routed = again.size ? separate(led, unions, [...cards, ...layout.placeholders], Math.max(5, Math.min(8, ((clearance ?? CLEARANCE) * 2) / 3))) : led;
   let x0 = layout.bounds.x;
   let y0 = layout.bounds.y;
   let x1 = layout.bounds.x + layout.bounds.w;

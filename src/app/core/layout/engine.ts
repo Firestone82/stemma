@@ -19,6 +19,7 @@ import { isBrokenUp, relationshipStatus } from '../model/relationship';
 import { TreeIndex } from '../model/tree-index';
 import { ChildRelation } from '../model/types';
 import { Box, Contour } from './contour';
+import { separate } from './lanes';
 import { Group, Kid, Member, Structure, Unit, Up, buildStructures, ranksOf } from './structure';
 import { LayoutCard, LayoutLine, LayoutOptions, LayoutPlaceholder, LayoutResult, LayoutUnion, Pt, Shape } from './types';
 
@@ -26,6 +27,8 @@ import { LayoutCard, LayoutLine, LayoutOptions, LayoutPlaceholder, LayoutResult,
 const LINE_PAD = 4;
 /** How far the line between partners who do not stand next to each other rises over the cards between them. */
 const BRIDGE = 14;
+/** How much higher a bridge over another goes, and how far outside the other its feet stand. */
+const TIER = BRIDGE - LINE_PAD;
 /** The most lists side by side one family's children are folded into. */
 const MAX_COLUMNS = 8;
 
@@ -174,6 +177,8 @@ interface UnitRow extends UnitCore {
   blood: number;
   /** A line between partners passes over the cards between them. */
   bridged: boolean;
+  /** How much higher than one bridge the highest goes, where bridges stand over each other. */
+  lift: number;
   /** Or under them. */
   under: boolean;
 }
@@ -314,6 +319,11 @@ function unitRow(ctx: Ctx, u: Unit, facing: Facing): UnitRow {
   // Then those with someone between them: the line goes round the cards between, over them, or under them
   // when someone it would pass over has parents above (and nobody it would pass under has children below).
   const hasUps = new Set(u.ups.map((up) => up.personId));
+  // A bridge that spans another, or starts from the same card, goes over it a tier higher, its feet outside the
+  // other's: two bridges never run along each other. The shorter first, nearest the cards.
+  pairs.sort((p, q) => p.b - p.a - (q.b - q.a) || p.a - q.a);
+  const overs: { a: number; b: number; tier: number }[] = [];
+  let tiers = 0;
   for (const { f, a, b } of pairs) {
     const between = row.slice(a + 1, b);
     const under =
@@ -325,10 +335,15 @@ function unitRow(ctx: Ctx, u: Unit, facing: Facing): UnitRow {
     const gap = gapTaken.has(b - 1) ? a : b - 1;
     gapTaken.add(gap);
     const x = xOf(gap) + wOf(gap) + G / 2;
-    const from = xOf(a) + wOf(a) * 0.75;
-    const to = xOf(b) + wOf(b) * 0.25;
+    const tier = under ? 0 : overs.filter((o) => o.a <= b && o.b >= a).reduce((t, o) => Math.max(t, o.tier + 1), 0);
+    if (!under) {
+      overs.push({ a, b, tier });
+      tiers = Math.max(tiers, tier + 1);
+    }
+    const from = xOf(a) + wOf(a) * 0.75 - tier * TIER;
+    const to = xOf(b) + wOf(b) * 0.25 + tier * TIER;
     const edge = under ? H : 0;
-    const y = under ? H + BRIDGE : -BRIDGE;
+    const y = under ? H + BRIDGE : -BRIDGE - tier * TIER;
     if (under) passedUnder = true;
     else bridged = true;
     const line = [
@@ -358,16 +373,16 @@ function unitRow(ctx: Ctx, u: Unit, facing: Facing): UnitRow {
   if (u.core.length === 1 && (facing === 'west' ? blood > 0 : facing === 'east' && blood < row.length - 1)) {
     // A partner stands between the line and the person: the line comes across over that partner (and over any
     // line between partners that passes there) and drops onto the middle of the person's card.
-    via = -BRIDGE - (bridged ? BRIDGE - LINE_PAD : 0);
+    via = -BRIDGE - (bridged ? tiers * TIER : 0);
     access = { x: xOf(blood) + wOf(blood) / 2, y: 0 };
     block.path([{ x: facing === 'west' ? 0 : xOf(row.length - 1) + wOf(row.length - 1), y: via }, { x: access.x, y: via }, access]);
   }
-  return { block, stems, access, via, at, xOf, wOf, blood, bridged, under: passedUnder };
+  return { block, stems, access, via, at, xOf, wOf, blood, bridged, lift: Math.max(0, tiers - 1) * TIER, under: passedUnder };
 }
 
 /** A unit's cards and markers, with everyone's parents above; the children are hung by the caller. */
 function unitCore(ctx: Ctx, u: Unit, facing: Facing, hung: boolean, open: Open = CLOSED, level = 0): UnitCore {
-  const { block, stems, access, via, at, xOf, wOf, blood, bridged } = unitRow(ctx, u, facing);
+  const { block, stems, access, via, at, xOf, wOf, blood, bridged, lift } = unitRow(ctx, u, facing);
 
   // Parents above: each on the line down to their child, slid apart where they would run into each other.
   const all = u.ups
@@ -376,7 +391,7 @@ function unitCore(ctx: Ctx, u: Unit, facing: Facing, hung: boolean, open: Open =
     .sort((a, b) => a.i - b.i);
   const ups = all;
   if (ups.length) {
-    const baseY = -ctx.o.drop - (bridged ? BRIDGE + LINE_PAD : 0);
+    const baseY = -ctx.o.drop - (bridged ? BRIDGE + LINE_PAD + lift : 0);
     const perMember = new Map<number, number>();
     for (const e of ups) perMember.set(e.i, (perMember.get(e.i) ?? 0) + 1);
     const seen = new Map<number, number>();
@@ -1150,7 +1165,8 @@ export class Layouter {
       cards: all.cards,
       placeholders: all.holders,
       unions: all.unions,
-      lines: all.lines,
+      // Where lines of two families came to lie on top of each other, one of them is moved into a lane of its own.
+      lines: separate(all.lines, all.unions, [...all.cards, ...all.holders], laneStep(o)),
       bounds: empty ? { x: 0, y: 0, w: 0, h: 0 } : { x: all.x0, y: all.y0, w: all.x1 - all.x0, h: all.y1 - all.y0 },
       ranks: this.ranks,
       generations: new Set(this.ranks.values()).size,
@@ -1159,6 +1175,11 @@ export class Layouter {
     if (missed.plan) this.short.add(result);
     return result;
   }
+}
+
+/** How far apart two lines of different families running side by side are: a quarter of the gap between rows, within reason. */
+function laneStep(o: LayoutOptions): number {
+  return Math.max(5, Math.min(8, (o.stem + o.drop) / 4));
 }
 
 /** Everyone side by side: the tree as wide as it comes. */

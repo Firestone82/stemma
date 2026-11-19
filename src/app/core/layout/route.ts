@@ -9,7 +9,7 @@
  * stretch that the line of a brother or sister drawn before already runs along costs little, so they keep sharing
  * the way down and the bar, as the layout draws them.
  */
-import { LayoutCard, LayoutLine, LayoutPlaceholder, Pt } from './types';
+import { LayoutCard, LayoutLine, LayoutPlaceholder, LayoutUnion, Pt } from './types';
 
 /** How far a line keeps from a card it passes, unless asked otherwise (see reroute). */
 export const CLEARANCE = 12;
@@ -17,6 +17,10 @@ export const CLEARANCE = 12;
 const BEND = 22;
 /** A stretch already drawn by a line of the same family costs this share of its length. */
 const SHARED = 0.3;
+/** A stretch run along a line of another family costs this many times its length: it would read as one line. */
+const OTHERS = 8;
+/** How far beside another family's line a line may run instead. */
+const BESIDE = 8;
 /** How far round a line the search looks first; the whole chart when that finds nothing. */
 const WINDOW = 160;
 
@@ -106,6 +110,20 @@ function along(drawn: readonly [Pt, Pt][], a: Pt, b: Pt): boolean {
   });
 }
 
+/** How long the straight stretch between two points runs along (on top of) stretches of other families. */
+function onOthers(others: readonly [Pt, Pt][], a: Pt, b: Pt): number {
+  const level = Math.abs(a.y - b.y) < 0.01;
+  let sum = 0;
+  for (const [p, q] of others) {
+    if (level ? Math.abs(p.y - q.y) > 0.01 || Math.abs(p.y - a.y) > 0.5 : Math.abs(p.x - q.x) > 0.01 || Math.abs(p.x - a.x) > 0.5) continue;
+    const o = level
+      ? Math.min(Math.max(p.x, q.x), Math.max(a.x, b.x)) - Math.max(Math.min(p.x, q.x), Math.min(a.x, b.x))
+      : Math.min(Math.max(p.y, q.y), Math.max(a.y, b.y)) - Math.max(Math.min(p.y, q.y), Math.min(a.y, b.y));
+    if (o > 0) sum += o;
+  }
+  return sum;
+}
+
 /** The values with those between them that leave room for a lane (a gap wider than two clearances is also used down its middle). */
 function withLanes(values: number[], clearance = CLEARANCE): number[] {
   const sorted = [...new Set(values.map((v) => Math.round(v * 100) / 100))].sort((a, b) => a - b);
@@ -119,6 +137,7 @@ function withLanes(values: number[], clearance = CLEARANCE): number[] {
  * `blocks`, or undefined where there is none. `drawn` are stretches that cost little. `branches` are the lines
  * of brothers and sisters from the same start: the route may branch off any of them (but the stretch into their
  * card), and then runs along it from the start to where it branches off, so the two are drawn as one line.
+ * `others` are stretches of other families' lines: running along one costs much, and lanes beside them are tried.
  */
 export function route(
   from: Pt,
@@ -127,6 +146,7 @@ export function route(
   drawn: readonly [Pt, Pt][] = [],
   stub = CLEARANCE + 3,
   branches: readonly (readonly Pt[])[] = [],
+  others: readonly [Pt, Pt][] = [],
 ): Pt[] | undefined {
   const a: Pt = { x: from.x, y: from.y + stub };
   const z: Pt = { x: to.x, y: to.y - stub };
@@ -134,10 +154,23 @@ export function route(
   const fromStart = !blocks.some((b) => inside(b, a.x, a.y));
   const trunks = branches.filter((b) => b.length > 2 && Math.abs(b[0].x - from.x) < 0.01 && Math.abs(b[0].y - from.y) < 0.01);
   const level = (p: Pt, q: Pt) => Math.abs(p.y - q.y) < 0.01;
+  // Lanes beside the stretches of other families that lie between the two ends.
+  const x0 = Math.min(a.x, z.x) - WINDOW;
+  const x1 = Math.max(a.x, z.x) + WINDOW;
+  const y0 = Math.min(a.y, z.y) - WINDOW;
+  const y1 = Math.max(a.y, z.y) + WINDOW;
+  const besideX: number[] = [];
+  const besideY: number[] = [];
+  for (const [p, q] of others) {
+    if (Math.max(p.x, q.x) < x0 || Math.min(p.x, q.x) > x1 || Math.max(p.y, q.y) < y0 || Math.min(p.y, q.y) > y1) continue;
+    if (level(p, q)) besideY.push(p.y - BESIDE, p.y + BESIDE);
+    else if (Math.abs(p.x - q.x) < 0.01) besideX.push(p.x - BESIDE, p.x + BESIDE);
+  }
   const xs = withLanes(
     [
       a.x,
       z.x,
+      ...besideX,
       ...blocks.flatMap((b) => [b.x0, b.x1]),
       ...trunks.flatMap((t) =>
         t
@@ -152,6 +185,7 @@ export function route(
     [
       a.y,
       z.y,
+      ...besideY,
       ...blocks.flatMap((b) => [b.y0, b.y1]),
       ...trunks.flatMap((t) =>
         t
@@ -234,7 +268,7 @@ export function route(
       const q: Pt = { x: xs[ni], y: ys[nj] };
       if (!clear((p.x + q.x) / 2, (p.y + q.y) / 2)) continue;
       const length = Math.abs(q.x - p.x) + Math.abs(q.y - p.y);
-      const step = length * (along(drawn, p, q) ? SHARED : 1) + (nd === d ? 0 : BEND);
+      const step = length * (along(drawn, p, q) ? SHARED : 1) + (others.length ? onOthers(others, p, q) * OTHERS : 0) + (nd === d ? 0 : BEND);
       const t = state(ni, nj, nd);
       if (cost + step < best[t]) {
         best[t] = cost + step;
@@ -301,16 +335,23 @@ export function reroute(
   cards: readonly LayoutCard[],
   placeholders: readonly LayoutPlaceholder[] = [],
   clearance = CLEARANCE,
+  unions: readonly LayoutUnion[] = [],
 ): LayoutLine[] {
   const stub = clearance + 3;
   const things = [...cards, ...placeholders];
   // Stretches drawn so far, by family: what the lines kept as they are run along, and then what is led again.
   const drawn = new Map<string, [Pt, Pt][]>();
+  /** The stretches of every line (and line between partners) drawn so far, with whose family they are. */
+  const all: { family: string; run: [Pt, Pt] }[] = [];
+  for (const u of unions) for (let i = 1; i < u.line.length; i++) all.push({ family: u.familyId, run: [u.line[i - 1], u.line[i]] });
   /** The lines of each family drawn so far, whole: to branch off. */
   const whole = new Map<string, Pt[][]>();
   const note = (l: LayoutLine) => {
     const list = drawn.get(l.familyId) ?? [];
-    for (let i = 1; i < l.points.length; i++) list.push([l.points[i - 1], l.points[i]]);
+    for (let i = 1; i < l.points.length; i++) {
+      list.push([l.points[i - 1], l.points[i]]);
+      all.push({ family: l.familyId, run: [l.points[i - 1], l.points[i]] });
+    }
     drawn.set(l.familyId, list);
     whole.set(l.familyId, [...(whole.get(l.familyId) ?? []), l.points]);
   };
@@ -344,9 +385,11 @@ export function reroute(
     };
     const family = drawn.get(l.familyId) ?? [];
     const trunks = whole.get(l.familyId) ?? [];
+    const others = all.filter((r) => r.family !== l.familyId).map((r) => r.run);
     // The cards at the two ends stand in the way sideways too: a line leaves one from its foot and enters the other from above.
     // Where no way round is found, plainly down, across and down again: never the old route stretched to the new place.
-    const points = route(start, end, near(WINDOW), family, stub, trunks) ?? route(start, end, near(1e5), family, stub, trunks) ?? plain(start, end, stub);
+    const points =
+      route(start, end, near(WINDOW), family, stub, trunks, others) ?? route(start, end, near(1e5), family, stub, trunks, others) ?? plain(start, end, stub);
     const redoneLine = { ...l, points };
     redone.set(l.key, redoneLine);
     note(redoneLine);

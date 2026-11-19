@@ -66,6 +66,20 @@ function faults(l: LayoutResult): string[] {
         out.push(`${v.key} crosses ${h.key}`);
     }
   }
+  // Nor run along each other: two level runs on one level, or two upright ones on one line, sharing a stretch.
+  for (let i = 0; i < runs.length; i++) {
+    for (let j = i + 1; j < runs.length; j++) {
+      const p = runs[i];
+      const q = runs[j];
+      if (p.family === q.family) continue;
+      const level = (r: (typeof runs)[number]) => Math.abs(r.a.y - r.b.y) < 0.01;
+      if (level(p) !== level(q)) continue;
+      const at = (r: (typeof runs)[number]) => (level(r) ? r.a.y : r.a.x);
+      const lo = (r: (typeof runs)[number]) => (level(r) ? Math.min(r.a.x, r.b.x) : Math.min(r.a.y, r.b.y));
+      const hi = (r: (typeof runs)[number]) => (level(r) ? Math.max(r.a.x, r.b.x) : Math.max(r.a.y, r.b.y));
+      if (Math.abs(at(p) - at(q)) < 0.5 && Math.min(hi(p), hi(q)) - Math.max(lo(p), lo(q)) > 1) out.push(`${p.key} runs along ${q.key}`);
+    }
+  }
   return [...new Set(out)];
 }
 
@@ -242,6 +256,16 @@ describe('the layout', () => {
     const l = layouter(doc).run(WIDE);
     expect(l.cards.filter((c) => !c.ghost)).toHaveLength(doc.people.length);
     expect(faults(l)).toEqual([]);
+  });
+
+  it('never lays lines of two families along each other, as the editor fits the tree to a screen', () => {
+    // These trees each had lines of two families on one level (two marriages of one person; a child far from
+    // its parents, its line led across another family's), or two lines between partners over the same cards.
+    for (const seed of [1, 13, 15, 18, 19, 23, 24, 26, 28, 29, 30]) {
+      const doc = randomFamily(seed, 40 + seed * 3);
+      const l = fitLayout(layouter(doc), LAYOUT, { w: 2400, h: 1000, centred: 0 }, 'quick', { stack: false }).layout;
+      expect(faults(l)).toEqual([]);
+    }
   });
 
   it('counts the generations', () => {
