@@ -38,7 +38,7 @@ import { Placeholders } from './placeholders/placeholders';
 import { QuickAdd } from './quick-add/quick-add';
 import { RelativesFilter } from './relatives-filter/relatives-filter';
 import { Unions } from './unions/unions';
-import { ChartViewport, clampZoom } from './viewport';
+import { ChartViewport, View, clampZoom } from './viewport';
 import { ZoomControls } from './zoom-controls/zoom-controls';
 
 /**
@@ -82,7 +82,14 @@ export class TreeChart {
     this.viewport,
     () => this.svgRef().nativeElement,
     () => (this.motion.userMoved = true),
+    () => this.host.nativeElement,
   );
+  /**
+   * The view the chart is drawn at. While the chart is dragged or scrolled it stays put and the drawing is only
+   * slid along (`slide`), which the browser does without drawing the chart again: the chart is drawn anew only
+   * when the slide nears the edge of the drawing, when the zoom changes, and when the move ends.
+   */
+  private readonly drawn = signal<View>(this.viewport.view());
   protected readonly size = signal<Screen>({ w: 0, h: 0 });
   /** The layout on screen; between two layouts it is an in-between frame. */
   protected readonly displayed = this.motion.displayed;
@@ -92,12 +99,18 @@ export class TreeChart {
   protected readonly shown = this.displayed;
 
   protected readonly worldTransform = computed(() => {
-    const { x, y, k } = this.viewport.view();
-    return `translate(${x.toFixed(2)},${y.toFixed(2)}) scale(${k.toFixed(4)})`;
+    const { x, y, k } = this.drawn();
+    return `translate(${(x + BLEED).toFixed(2)},${(y + BLEED).toFixed(2)}) scale(${k.toFixed(4)})`;
   });
   protected readonly dotTransform = computed(() => {
-    const { x, y } = this.viewport.view();
-    return `translate(${x.toFixed(1)},${y.toFixed(1)})`;
+    const { x, y } = this.drawn();
+    return `translate(${(x + BLEED).toFixed(1)},${(y + BLEED).toFixed(1)})`;
+  });
+  /** How far the drawing is slid from where it was drawn (see `drawn`). */
+  protected readonly slide = computed(() => {
+    const v = this.viewport.view();
+    const d = this.drawn();
+    return v.x === d.x && v.y === d.y ? null : `translate3d(${(v.x - d.x).toFixed(1)}px,${(v.y - d.y).toFixed(1)}px,0)`;
   });
   protected readonly zoomPercent = computed(() => Math.round(this.viewport.view().k * 100));
   protected readonly isEmpty = computed(() => this.store.doc().people.length === 0);
@@ -261,6 +274,14 @@ export class TreeChart {
           if (this.flashId() === f.personId) this.flashId.set(null);
         }, 1400);
       });
+    });
+    // The chart is drawn again when the view moves other than by a drag or a scroll, or the slide nears the
+    // edge of what is drawn round the screen (BLEED).
+    effect(() => {
+      const v = this.viewport.view();
+      const moving = this.gestures.moving();
+      const d = untracked(this.drawn);
+      if (!moving || v.k !== d.k || Math.abs(v.x - d.x) > BLEED * 0.6 || Math.abs(v.y - d.y) > BLEED * 0.6) this.drawn.set(v);
     });
     // Keep the selected person in view when the selection changes.
     effect(() => {
@@ -617,6 +638,9 @@ export class TreeChart {
 }
 
 const BALLOON_FONT = `500 14px ${FONT_SANS}`;
+/** How far the chart is drawn beyond each edge of the screen, so a drag or scroll can slide it that far without drawing it again. */
+const BLEED = 480;
+
 /** The box a straight stretch of a line takes, a hair thick. */
 function lineBox(a: { x: number; y: number }, b: { x: number; y: number }) {
   const x = Math.min(a.x, b.x) - 1;

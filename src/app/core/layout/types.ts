@@ -56,6 +56,11 @@ export interface LayoutOptions {
    * asked for it) it stays as it was.
    */
   flipped?: readonly string[];
+  /**
+   * Each couple keeps the box round them and their own children clear of other families, not only their cards:
+   * where the chart fills that box with the family's background, other families stand outside it.
+   */
+  familyRoom?: boolean;
 }
 
 export const LAYOUT: LayoutOptions = {
@@ -79,7 +84,8 @@ export const LAYOUT: LayoutOptions = {
  * gap keep well apart.
  */
 export const EDITOR_LAYOUT: Partial<LayoutOptions> = {
-  familyGap: 64,
+  familyGap: 84,
+  familyRoom: true,
   stem: 22,
   drop: 22,
 };

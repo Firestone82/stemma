@@ -3,6 +3,7 @@
 <svg
   #svg
   class="canvas"
+  [style.transform]="slide()"
   role="group"
   [attr.aria-label]="t('chart.label')"
   (pointerdown)="onPointerDown($event)"

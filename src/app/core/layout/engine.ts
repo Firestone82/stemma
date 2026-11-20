@@ -425,11 +425,26 @@ function unitCore(ctx: Ctx, u: Unit, facing: Facing, hung: boolean, open: Open =
       const need = Contour.of(above[j - 1].block.boxes).pushRight(Contour.of(above[j].block.boxes));
       seps.push(Number.isFinite(need) ? need + gap : -Infinity);
     }
-    for (let j = 1; j < above.length; j++) above[j].x = Math.max(above[j].target, above[j - 1].x + seps[j - 1]);
-    // Pushed apart evenly, not all to the right; but the way down to a card hung from above stays where it is.
-    const fixedWay = above.find((a) => !a.up);
-    const drift = fixedWay ? fixedWay.x - fixedWay.target : above.reduce((s, a) => s + (a.x - a.target), 0) / above.length;
-    for (const a of above) a.x -= drift;
+    // The way down to a card hung from above stays where it is; and so do the parents of the one the unit is
+    // built around, beside partners of theirs (of a couple with partners besides, the parents in the middle):
+    // their line comes straight down, and the others make room out to the sides.
+    const fixedWay = above.findIndex((a) => !a.up);
+    const core = new Set(u.core.map((m) => m.personId));
+    const own = above.map((a, j) => (a.up && core.has(a.up.personId) ? j : -1)).filter((j) => j >= 0);
+    const trunk = own.filter((j) => above[j].up!.parents.trunk);
+    // Of three or more, the one in the middle: the others go out to either side of it.
+    const middle =
+      own.length >= 2 && above.length >= 3 ? own.reduce((m, j) => (Math.abs(j - (above.length - 1) / 2) < Math.abs(m - (above.length - 1) / 2) ? j : m)) : -1;
+    const pivot = fixedWay >= 0 ? fixedWay : own.length === 1 ? own[0] : trunk.length === 1 ? trunk[0] : middle;
+    if (pivot >= 0) {
+      for (let j = pivot + 1; j < above.length; j++) above[j].x = Math.max(above[j].target, above[j - 1].x + seps[j - 1]);
+      for (let j = pivot - 1; j >= 0; j--) above[j].x = Math.min(above[j].target, above[j + 1].x - seps[j]);
+    } else {
+      for (let j = 1; j < above.length; j++) above[j].x = Math.max(above[j].target, above[j - 1].x + seps[j - 1]);
+      // Pushed apart evenly, not all to the right.
+      const drift = above.reduce((s, a) => s + (a.x - a.target), 0) / above.length;
+      for (const a of above) a.x -= drift;
+    }
     for (const a of above) {
       if (!a.up || !a.head) continue;
       block.merge(a.block, a.x, baseY);
@@ -541,6 +556,18 @@ function unitBlock(ctx: Ctx, u: Unit, facing: Facing, budget: number, hung: bool
     core.block,
     groups.map((g) => ({ stem: core.stems.get(g.familyId)!, res: groupBlock(ctx, g, each, { attach: 'centre', outer, stem: ctx.o.stem }) })),
   );
+  // Room for the family's background (see LayoutOptions.familyRoom): the box round the couple and their own
+  // children is kept clear of other families, as the cards are.
+  if (ctx.o.familyRoom && groups.length) {
+    const ids = new Set([...u.core, ...u.extras.flat()].map((m) => m.personId));
+    for (const g of groups) for (const k of g.kids) ids.add(k.personId);
+    const own = core.block.cards.filter((c) => ids.has(c.personId));
+    if (own.length > 1) {
+      const x0 = Math.min(...own.map((c) => c.x));
+      const y0 = Math.min(...own.map((c) => c.y));
+      core.block.box(x0, y0, Math.max(...own.map((c) => c.x + c.w)), Math.max(...own.map((c) => c.y + c.h)), ctx.o.siblingGap / 2);
+    }
+  }
   return {
     block: core.block,
     access: core.access,

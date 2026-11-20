@@ -1,4 +1,4 @@
-import { signal } from '@angular/core';
+import { computed, signal } from '@angular/core';
 import { ChartViewport, View, clampZoom } from './viewport';
 
 const DRAG_THRESHOLD = 5;
@@ -13,6 +13,11 @@ type Gesture =
  */
 export class ChartGestures {
   readonly panning = signal(false);
+  /** Scrolled (a touchpad's two fingers, not a zoom) a moment ago. */
+  private readonly scrolling = signal(false);
+  private scrollEnd: ReturnType<typeof setTimeout> | null = null;
+  /** The person is moving the chart about: dragging it or scrolling it. */
+  readonly moving = computed(() => this.panning() || this.scrolling());
   private readonly pointers = new Map<number, { x: number; y: number }>();
   private gesture: Gesture | null = null;
   private suppressClick = false;
@@ -22,6 +27,8 @@ export class ChartGestures {
     private readonly surface: () => SVGSVGElement,
     /** Called when the person moves the chart themselves. */
     private readonly onUserMove: () => void,
+    /** The element whose corner screen points are measured from (the surface can stand out beyond it). */
+    private readonly frame: () => Element = surface,
   ) {}
 
   /** True (once) when the click that follows a drag should be ignored. */
@@ -82,7 +89,7 @@ export class ChartGestures {
     if (this.pointers.size === 1 && g?.kind === 'pinch') {
       // Lifting one finger of a pinch carries on as a drag with the other.
       const [id, p] = [...this.pointers.entries()][0];
-      const rect = this.surface().getBoundingClientRect();
+      const rect = this.frame().getBoundingClientRect();
       const v: View = this.viewport.view();
       this.gesture = { kind: 'pan', id, sx: p.x + rect.left, sy: p.y + rect.top, vx: v.x, vy: v.y, moved: true };
       return;
@@ -125,7 +132,12 @@ export class ChartGestures {
     this.wheeled = null;
     this.wheelFrame = null;
     if (!w) return;
-    if (w.dx || w.dy) this.viewport.panBy(w.dx, w.dy);
+    if (w.dx || w.dy) {
+      this.scrolling.set(true);
+      if (this.scrollEnd) clearTimeout(this.scrollEnd);
+      this.scrollEnd = setTimeout(() => this.scrolling.set(false), 160);
+      this.viewport.panBy(w.dx, w.dy);
+    }
     if (w.zoom !== 1) this.viewport.zoomAt(w.zoom, w.px, w.py);
   }
 
@@ -135,7 +147,7 @@ export class ChartGestures {
   }
 
   private local(e: { clientX: number; clientY: number }): { x: number; y: number } {
-    const rect = this.surface().getBoundingClientRect();
+    const rect = this.frame().getBoundingClientRect();
     return { x: e.clientX - rect.left, y: e.clientY - rect.top };
   }
 
