@@ -2,6 +2,8 @@ import { computed, signal } from '@angular/core';
 import { ChartViewport, View, clampZoom } from './viewport';
 
 const DRAG_THRESHOLD = 5;
+/** How long after the last wheel or touchpad event a scroll or zoom counts as over. */
+const WHEEL_END = 140;
 
 type Gesture =
   | { kind: 'pan'; id: number; sx: number; sy: number; vx: number; vy: number; moved: boolean }
@@ -10,17 +12,24 @@ type Gesture =
 /**
  * Dragging, pinching and wheel zooming on the chart. A drag that moved does not
  * count as a click, so letting go over a card does not select it.
+ *
+ * While the chart is moved, the view it is moved to is only shown (`show`): the picture the chart was drawn as
+ * is slid and scaled, as a canvas would be, and nothing on the page is worked out or drawn again. The view is
+ * set, and the chart drawn at it, once the move ends (or when the picture would no longer cover the screen).
  */
 export class ChartGestures {
   readonly panning = signal(false);
-  /** Scrolled (a touchpad's two fingers, not a zoom) a moment ago. */
-  private readonly scrolling = signal(false);
-  private scrollEnd: ReturnType<typeof setTimeout> | null = null;
-  /** The person is moving the chart about: dragging it or scrolling it. */
-  readonly moving = computed(() => this.panning() || this.scrolling());
+  /** Scrolled or zoomed with a wheel or a touchpad a moment ago. */
+  private readonly wheeling = signal(false);
+  /** The person is moving the chart about. */
+  readonly moving = computed(() => this.panning() || this.wheeling());
   private readonly pointers = new Map<number, { x: number; y: number }>();
   private gesture: Gesture | null = null;
   private suppressClick = false;
+  /** Where the chart is being moved to, not set on the viewport yet. */
+  private live: View | null = null;
+  private frameId: number | null = null;
+  private wheelEnd: ReturnType<typeof setTimeout> | null = null;
 
   constructor(
     private readonly viewport: ChartViewport,
@@ -29,6 +38,11 @@ export class ChartGestures {
     private readonly onUserMove: () => void,
     /** The element whose corner screen points are measured from (the surface can stand out beyond it). */
     private readonly frame: () => Element = surface,
+    /**
+     * Shows the chart at a view without drawing it again; whether the picture still covers the screen there.
+     * Where it does not, the view is set and the chart drawn at it.
+     */
+    private readonly show: (view: View) => boolean = () => false,
   ) {}
 
   /** True (once) when the click that follows a drag should be ignored. */
@@ -38,12 +52,17 @@ export class ChartGestures {
     return true;
   }
 
+  /** The view as the person sees it: where it is being moved to, while it is. */
+  current(): View {
+    return this.live ?? this.viewport.view();
+  }
+
   down(e: PointerEvent): void {
     if (e.pointerType === 'mouse' && e.button !== 0) return;
     this.viewport.stop();
     const p = this.local(e);
     this.pointers.set(e.pointerId, p);
-    const v = this.viewport.view();
+    const v = this.current();
     if (this.pointers.size === 1) {
       this.gesture = { kind: 'pan', id: e.pointerId, sx: e.clientX, sy: e.clientY, vx: v.x, vy: v.y, moved: false };
     } else if (this.pointers.size === 2) {
@@ -64,7 +83,7 @@ export class ChartGestures {
       const k = clampZoom((g.k0 * (Math.hypot(a.x - b.x, a.y - b.y) || 1)) / g.d0);
       const wx = (g.mx - g.vx) / g.k0;
       const wy = (g.my - g.vy) / g.k0;
-      this.viewport.view.set({ x: (a.x + b.x) / 2 - wx * k, y: (a.y + b.y) / 2 - wy * k, k });
+      this.preview({ x: (a.x + b.x) / 2 - wx * k, y: (a.y + b.y) / 2 - wy * k, k });
       return;
     }
     if (g.kind === 'pan' && g.id === e.pointerId) {
@@ -75,7 +94,7 @@ export class ChartGestures {
         this.capture(e.pointerId);
         this.start();
       }
-      if (g.moved) this.viewport.view.set({ x: g.vx + dx, y: g.vy + dy, k: this.viewport.view().k });
+      if (g.moved) this.preview({ x: g.vx + dx, y: g.vy + dy, k: this.current().k });
     }
   }
 
@@ -90,12 +109,13 @@ export class ChartGestures {
       // Lifting one finger of a pinch carries on as a drag with the other.
       const [id, p] = [...this.pointers.entries()][0];
       const rect = this.frame().getBoundingClientRect();
-      const v: View = this.viewport.view();
+      const v: View = this.current();
       this.gesture = { kind: 'pan', id, sx: p.x + rect.left, sy: p.y + rect.top, vx: v.x, vy: v.y, moved: true };
       return;
     }
     if (!this.pointers.size) {
       this.gesture = null;
+      this.settle();
       this.panning.set(false);
     }
   }
@@ -104,41 +124,48 @@ export class ChartGestures {
   wheel(e: WheelEvent): void {
     e.preventDefault();
     this.viewport.stop();
-    this.onUserMove();
+    if (!this.wheeling()) {
+      this.wheeling.set(true);
+      this.onUserMove();
+    }
     const { x: px, y: py } = this.local(e);
     const lineScale = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? 400 : 1;
     const dx = e.deltaX * lineScale;
     const dy = e.deltaY * lineScale;
     const mouseWheel = e.deltaMode !== 0 || (dx === 0 && Math.abs(dy) >= 50 && Number.isInteger(dy));
-    const w = (this.wheeled ??= { zoom: 1, px, py, dx: 0, dy: 0 });
-    if (e.ctrlKey || e.metaKey) w.zoom *= Math.exp(-dy * 0.01);
-    else if (mouseWheel) w.zoom *= Math.exp(-dy * 0.0016);
-    else {
-      w.dx += dx;
-      w.dy += dy;
-    }
-    w.px = px;
-    w.py = py;
-    // A wheel or a touchpad sends many events a frame: they are added up and the chart moved once a frame, so
-    // the page is laid out and drawn once for all of them, not once for each.
-    if (this.wheelFrame === null) this.wheelFrame = requestAnimationFrame(() => this.flushWheel());
+    const v = this.current();
+    let next: View;
+    if (e.ctrlKey || e.metaKey || mouseWheel) {
+      const k = clampZoom(v.k * Math.exp(-dy * (e.ctrlKey || e.metaKey ? 0.01 : 0.0016)));
+      next = { x: px - ((px - v.x) / v.k) * k, y: py - ((py - v.y) / v.k) * k, k };
+    } else next = { ...v, x: v.x - dx, y: v.y - dy };
+    this.preview(next);
+    if (this.wheelEnd) clearTimeout(this.wheelEnd);
+    this.wheelEnd = setTimeout(() => {
+      this.wheelEnd = null;
+      if (this.gesture) return;
+      this.settle();
+      this.wheeling.set(false);
+    }, WHEEL_END);
   }
 
-  private wheeled: { zoom: number; px: number; py: number; dx: number; dy: number } | null = null;
-  private wheelFrame: number | null = null;
+  /** Shows the chart at `view`, once a frame however many events come in it. */
+  private preview(view: View): void {
+    this.live = view;
+    if (this.frameId === null)
+      this.frameId = requestAnimationFrame(() => {
+        this.frameId = null;
+        if (this.live && !this.show(this.live)) this.viewport.view.set(this.live);
+      });
+  }
 
-  private flushWheel(): void {
-    const w = this.wheeled;
-    this.wheeled = null;
-    this.wheelFrame = null;
-    if (!w) return;
-    if (w.dx || w.dy) {
-      this.scrolling.set(true);
-      if (this.scrollEnd) clearTimeout(this.scrollEnd);
-      this.scrollEnd = setTimeout(() => this.scrolling.set(false), 160);
-      this.viewport.panBy(w.dx, w.dy);
-    }
-    if (w.zoom !== 1) this.viewport.zoomAt(w.zoom, w.px, w.py);
+  /** The move is over: the view is set where it was moved to, and the chart drawn there. */
+  private settle(): void {
+    if (this.frameId !== null) cancelAnimationFrame(this.frameId);
+    this.frameId = null;
+    const v = this.live;
+    this.live = null;
+    if (v) this.viewport.view.set(v);
   }
 
   private start(): void {

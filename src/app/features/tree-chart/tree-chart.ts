@@ -4,6 +4,7 @@ import {
   DestroyRef,
   ElementRef,
   afterNextRender,
+  afterRenderEffect,
   computed,
   effect,
   inject,
@@ -83,13 +84,8 @@ export class TreeChart {
     () => this.svgRef().nativeElement,
     () => (this.motion.userMoved = true),
     () => this.host.nativeElement,
+    (view) => this.slideTo(view),
   );
-  /**
-   * The view the chart is drawn at. While the chart is dragged or scrolled it stays put and the drawing is only
-   * slid along (`slide`), which the browser does without drawing the chart again: the chart is drawn anew only
-   * when the slide nears the edge of the drawing, when the zoom changes, and when the move ends.
-   */
-  private readonly drawn = signal<View>(this.viewport.view());
   protected readonly size = signal<Screen>({ w: 0, h: 0 });
   /** The layout on screen; between two layouts it is an in-between frame. */
   protected readonly displayed = this.motion.displayed;
@@ -99,18 +95,12 @@ export class TreeChart {
   protected readonly shown = this.displayed;
 
   protected readonly worldTransform = computed(() => {
-    const { x, y, k } = this.drawn();
+    const { x, y, k } = this.viewport.view();
     return `translate(${(x + BLEED).toFixed(2)},${(y + BLEED).toFixed(2)}) scale(${k.toFixed(4)})`;
   });
   protected readonly dotTransform = computed(() => {
-    const { x, y } = this.drawn();
+    const { x, y } = this.viewport.view();
     return `translate(${(x + BLEED).toFixed(1)},${(y + BLEED).toFixed(1)})`;
-  });
-  /** How far the drawing is slid from where it was drawn (see `drawn`). */
-  protected readonly slide = computed(() => {
-    const v = this.viewport.view();
-    const d = this.drawn();
-    return v.x === d.x && v.y === d.y ? null : `translate3d(${(v.x - d.x).toFixed(1)}px,${(v.y - d.y).toFixed(1)}px,0)`;
   });
   protected readonly zoomPercent = computed(() => Math.round(this.viewport.view().k * 100));
   protected readonly isEmpty = computed(() => this.store.doc().people.length === 0);
@@ -221,7 +211,7 @@ export class TreeChart {
   protected readonly quickAdd = computed(() => {
     const c = this.selectedCard();
     const person = this.store.selectedPerson();
-    if (!c || !person || this.gestures.panning() || this.ui.adding() || this.ui.narrow()) return null;
+    if (!c || !person || this.gestures.moving() || this.ui.adding() || this.ui.narrow()) return null;
     const view = this.viewport.view();
     // Zoomed far out the buttons would cover the neighbours; the panel has the same actions.
     if (view.k < 0.5) return null;
@@ -275,13 +265,11 @@ export class TreeChart {
         }, 1400);
       });
     });
-    // The chart is drawn again when the view moves other than by a drag or a scroll, or the slide nears the
-    // edge of what is drawn round the screen (BLEED).
-    effect(() => {
-      const v = this.viewport.view();
-      const moving = this.gestures.moving();
-      const d = untracked(this.drawn);
-      if (!moving || v.k !== d.k || Math.abs(v.x - d.x) > BLEED * 0.6 || Math.abs(v.y - d.y) > BLEED * 0.6) this.drawn.set(v);
+    // Once the chart is drawn at a view, the picture slid there while it was moved (slideTo) is put back.
+    afterRenderEffect(() => {
+      this.viewport.view();
+      const svg = untracked(this.svgRef).nativeElement;
+      if (svg.style.transform) svg.style.transform = '';
     });
     // Keep the selected person in view when the selection changes.
     effect(() => {
@@ -353,6 +341,24 @@ export class TreeChart {
     this.viewport.zoomAt(factor, w / 2, h / 2, true);
   }
 
+  /**
+   * Shows the chart at `view` by sliding and scaling the picture of it as drawn at the viewport's view, without
+   * drawing it again (the browser moves the picture on its own layer); false where the picture, drawn BLEED
+   * beyond the screen's edges, would no longer cover the screen there.
+   */
+  private slideTo(view: View): boolean {
+    const svg = this.svgRef().nativeElement;
+    const d = this.viewport.view();
+    const { w, h } = this.size();
+    const s = view.k / d.k;
+    const tx = view.x + BLEED - s * (d.x + BLEED);
+    const ty = view.y + BLEED - s * (d.y + BLEED);
+    const covers = tx <= BLEED && ty <= BLEED && tx + s * (w + 2 * BLEED) >= BLEED + w && ty + s * (h + 2 * BLEED) >= BLEED + h;
+    if (!covers) return false;
+    svg.style.transform = `translate3d(${tx.toFixed(1)}px,${ty.toFixed(1)}px,0) scale(${s.toFixed(5)})`;
+    return true;
+  }
+
   private attach(destroyRef: DestroyRef): void {
     const host = this.host.nativeElement;
     const svg = this.svgRef().nativeElement;
@@ -367,9 +373,13 @@ export class TreeChart {
     if (!ro) measure();
     const wheel = (e: WheelEvent) => this.gestures.wheel(e);
     svg.addEventListener('wheel', wheel, { passive: false });
+    // Listened to here, not in the template: a drag then runs no change detection at every move.
+    const pointerMove = (e: PointerEvent) => this.gestures.move(e);
+    svg.addEventListener('pointermove', pointerMove);
     destroyRef.onDestroy(() => {
       ro?.disconnect();
       svg.removeEventListener('wheel', wheel);
+      svg.removeEventListener('pointermove', pointerMove);
       this.viewport.stop();
       this.motion.stop();
     });
@@ -379,10 +389,6 @@ export class TreeChart {
 
   protected onPointerDown(e: PointerEvent): void {
     this.gestures.down(e);
-  }
-
-  protected onPointerMove(e: PointerEvent): void {
-    this.gestures.move(e);
   }
 
   protected onPointerUp(e: PointerEvent): void {

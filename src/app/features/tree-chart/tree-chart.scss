@@ -11,8 +11,8 @@
   outline: none;
 }
 
-// Drawn BLEED (tree-chart.ts) beyond each edge, so a drag can slide it without drawing it again; its own layer, so the
-// slide is the browser moving a picture, not drawing the chart.
+// Drawn BLEED (tree-chart.ts) beyond each edge, so a drag or zoom can slide and scale the picture without drawing it
+// again (slideTo); its own layer, so that is the browser moving a picture, not drawing the chart.
 .canvas {
   position: absolute;
   top: -480px;
@@ -21,6 +21,7 @@
   width: calc(100% + 960px);
   height: calc(100% + 960px);
   cursor: grab;
+  transform-origin: 0 0;
   will-change: transform;
 }
 
