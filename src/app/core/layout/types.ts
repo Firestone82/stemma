@@ -74,6 +74,17 @@ export const LAYOUT: LayoutOptions = {
 };
 
 /**
+ * The editor's chart: families further apart than on a print, so each family's background stands on its own
+ * with room round it, and more room between generations, so lines of different families running through one
+ * gap keep well apart.
+ */
+export const EDITOR_LAYOUT: Partial<LayoutOptions> = {
+  familyGap: 64,
+  stem: 22,
+  drop: 22,
+};
+
+/**
  * The same with families as close together as they go: the least room between cards, families and lines that
  * still keeps every line clear of every card. For a print where the size of the cards matters most.
  */

@@ -1177,9 +1177,13 @@ export class Layouter {
   }
 }
 
-/** How far apart two lines of different families running side by side are: a quarter of the gap between rows, within reason. */
+/**
+ * How far apart two lines of different families running side by side are: a quarter of the gap between rows,
+ * within reason. Never much less than the rounding of a line's corners, or two lines turning side by side would
+ * run into one.
+ */
 function laneStep(o: LayoutOptions): number {
-  return Math.max(5, Math.min(8, (o.stem + o.drop) / 4));
+  return Math.max(5, Math.min(11, (o.stem + o.drop) / 4));
 }
 
 /** Everyone side by side: the tree as wide as it comes. */

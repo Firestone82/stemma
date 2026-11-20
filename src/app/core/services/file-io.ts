@@ -105,3 +105,9 @@ export function safeFilename(title: string, ext: string): string {
     .slice(0, 60);
   return `${base || 'family-tree'}.${ext}`;
 }
+
+/** A file name for a saved tree: as `safeFilename`, with the day it was saved: `rodokmen-2026-11-20.xml`. */
+export function datedFilename(title: string, ext: string, when: Date = new Date()): string {
+  const day = `${when.getFullYear()}-${String(when.getMonth() + 1).padStart(2, '0')}-${String(when.getDate()).padStart(2, '0')}`;
+  return safeFilename(title, ext).replace(/\.[^.]+$/, `-${day}.${ext}`);
+}

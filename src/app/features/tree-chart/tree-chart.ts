@@ -13,7 +13,7 @@ import {
   viewChild,
 } from '@angular/core';
 import { surnameKey, unitingOf } from '../../core/model/names';
-import { familyBackgrounds, paintBackgrounds } from './family-patches';
+import { Keep, familyBackgrounds, paintBackgrounds, squareOff } from './family-patches';
 import { FONT_SANS } from '../../core/card/card-design';
 import { LayoutCard } from '../../core/layout/types';
 import { TextMeasurer } from '../../core/services/text-measure';
@@ -578,13 +578,33 @@ export class TreeChart {
     for (const l of layout.lines)
       for (const parent of index.family(l.familyId)?.partners ?? [])
         for (const a of at.get(l.childId) ?? []) for (const b of at.get(parent) ?? []) links.push([a, b]);
-    const painted = paintBackgrounds(
-      familyBackgrounds(
-        layout.cards,
-        layout.cards.map((c) => [...(of.get(c.personId) ?? [])]),
-        CLUSTER_PAD,
-        links,
+    // Squared off where a gap in a family's background is small and empty: the cards, and every line, stay
+    // clear of the families they are not in.
+    const keep: Keep[] = [
+      ...layout.cards.map((c) => ({ box: c, tinctures: [...(of.get(c.personId) ?? [])] })),
+      ...layout.placeholders.map((h) => ({ box: h, tinctures: [] })),
+      ...layout.lines.flatMap((l) => {
+        const tinctures = [l.childId, ...(index.family(l.familyId)?.partners ?? [])].flatMap((id) => [...(of.get(id) ?? [])]);
+        return l.points.slice(1).map((b, i) => ({ box: lineBox(l.points[i], b), tinctures }));
+      }),
+      ...layout.unions.flatMap((u) => {
+        const tinctures = (index.family(u.familyId)?.partners ?? []).flatMap((id) => [...(of.get(id) ?? [])]);
+        return u.line.slice(1).map((b, i) => ({ box: lineBox(u.line[i], b), tinctures }));
+      }),
+    ];
+    const o = this.model.options();
+    const painted = squareOff(
+      paintBackgrounds(
+        familyBackgrounds(
+          layout.cards,
+          layout.cards.map((c) => [...(of.get(c.personId) ?? [])]),
+          CLUSTER_PAD,
+          links,
+        ),
       ),
+      keep,
+      o.cardWidth,
+      CLUSTER_PAD * 5,
     );
     const pairs = new Map<string, { id: string; a: string; b: string }>();
     for (const p of painted) if (p.with) pairs.set(`${p.tincture}-${p.with}`, { id: `stemma-stripes-${p.tincture}-${p.with}`, a: p.tincture, b: p.with });
@@ -597,5 +617,12 @@ export class TreeChart {
 }
 
 const BALLOON_FONT = `500 14px ${FONT_SANS}`;
+/** The box a straight stretch of a line takes, a hair thick. */
+function lineBox(a: { x: number; y: number }, b: { x: number; y: number }) {
+  const x = Math.min(a.x, b.x) - 1;
+  const y = Math.min(a.y, b.y) - 1;
+  return { x, y, w: Math.abs(a.x - b.x) + 2, h: Math.abs(a.y - b.y) + 2 };
+}
+
 /** How far a family's background reaches round each of its cards: about half the room between cards standing together. */
 const CLUSTER_PAD = 10;

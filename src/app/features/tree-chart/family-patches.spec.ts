@@ -1,4 +1,4 @@
-import { Painted, familyBackgrounds, familyPatches, paintBackgrounds } from './family-patches';
+import { Painted, familyBackgrounds, familyPatches, paintBackgrounds, squareOff } from './family-patches';
 
 const card = (x: number, y: number) => ({ x, y, w: 188, h: 66 });
 
@@ -133,5 +133,47 @@ describe('paintBackgrounds', () => {
     expect(at(218 + 94, 33)[0]).toMatchObject({ tincture: 'a', with: 'b' });
     expect(at(94, 33)[0]).toMatchObject({ tincture: 'a' });
     expect(at(94, 33)[0].with).toBeUndefined();
+  });
+});
+
+describe('squareOff', () => {
+  const box = (x: number, y: number, w: number, h: number) => ({ x, y, w, h });
+  const at = (painted: readonly Painted[], x: number, y: number) =>
+    painted.filter((p) => x > p.box.x && x < p.box.x + p.box.w && y > p.box.y && y < p.box.y + p.box.h).map((p) => p.tincture);
+  const meet = (a: Painted['box'], b: Painted['box']) => a.x < b.x + b.w - 0.01 && b.x < a.x + a.w - 0.01 && a.y < b.y + b.h - 0.01 && b.y < a.y + a.h - 0.01;
+  // An L: a wide row, and a narrower one under it, leaving a bite out of the bottom right corner.
+  const ell: Painted[] = [
+    { tincture: 'a', box: box(0, 0, 400, 100) },
+    { tincture: 'a', box: box(0, 100, 250, 100) },
+  ];
+
+  it('fills a small empty bite out of a corner, so the family stands in a rectangle', () => {
+    const out = squareOff(ell, [], 200, 20);
+    expect(at(out, 320, 150)).toEqual(['a']);
+    for (let i = 0; i < out.length; i++) for (let j = i + 1; j < out.length; j++) expect(meet(out[i].box, out[j].box)).toBe(false);
+  });
+
+  it('leaves a bite that is too big', () => {
+    expect(at(squareOff(ell, [], 120, 20), 320, 150)).toEqual([]);
+  });
+
+  it('leaves a bite with a card or another family’s line in it, and fills over the family’s own line', () => {
+    expect(at(squareOff(ell, [{ box: box(300, 120, 60, 40), tinctures: [] }], 200, 20), 320, 150)).toEqual([]);
+    expect(at(squareOff(ell, [{ box: box(330, 99, 2, 60), tinctures: ['b'] }], 200, 20), 320, 150)).toEqual([]);
+    expect(at(squareOff(ell, [{ box: box(330, 99, 2, 60), tinctures: ['a'] }], 200, 20), 320, 150)).toEqual(['a']);
+  });
+
+  it('keeps the room between two families: a gap next to another family is not filled', () => {
+    const out = squareOff([...ell, { tincture: 'b', box: box(250, 210, 150, 60) }, { tincture: 'b', box: box(400, 100, 50, 170) }], [], 200, 20);
+    expect(at(out, 320, 150)).toEqual([]);
+  });
+
+  it('fills a narrow channel between two parts of a family', () => {
+    const u: Painted[] = [
+      { tincture: 'a', box: box(0, 0, 500, 100) },
+      { tincture: 'a', box: box(0, 100, 200, 100) },
+      { tincture: 'a', box: box(300, 100, 200, 100) },
+    ];
+    expect(at(squareOff(u, [], 150, 20), 250, 150)).toEqual(['a']);
   });
 });

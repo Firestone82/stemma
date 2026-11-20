@@ -4,7 +4,7 @@ import { updateMeta, updateView } from '../core/model/operations';
 import { sampleDocument } from '../core/model/sample';
 import { emptyDocument } from '../core/model/types';
 import { Autosave } from './autosave';
-import { FileIo, safeFilename } from '../core/services/file-io';
+import { FileIo, datedFilename } from '../core/services/file-io';
 import { ToastService } from '../core/services/toast';
 import { TreeStore } from '../core/store/tree-store';
 import { XmlFormatError, parseTree } from '../core/xml/parser';
@@ -127,7 +127,7 @@ export class DocumentActions {
   async saveXml(): Promise<void> {
     this.ui.closeMenu();
     const xml = this.xml();
-    const filename = safeFilename(this.store.doc().meta.title, 'xml');
+    const filename = datedFilename(this.store.doc().meta.title, 'xml');
     if (!this.files.canSave(filename)) {
       this.ui.dialog.set({ kind: 'xml', xml, filename });
       return;
@@ -156,7 +156,7 @@ export class DocumentActions {
       this.toast.show(this.i18n.t('file.gedcomEmpty'));
       return;
     }
-    const filename = safeFilename(this.store.doc().meta.title, 'ged');
+    const filename = datedFilename(this.store.doc().meta.title, 'ged');
     const name = this.files.canSave(filename) ? filename : `${filename}.txt`;
     const outcome = await this.files.save(name, toGedcom(this.store.doc(), { filename }), 'text/plain;charset=utf-8');
     if (outcome === 'saved') this.toast.show(this.i18n.t(name === filename ? 'file.gedcomSaved' : 'file.gedcomSavedAsText', { name }));

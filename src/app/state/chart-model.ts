@@ -6,7 +6,7 @@ import { CardDesign, CardParts, cardDesign } from '../core/card/card-design';
 import { Layouter } from '../core/layout/engine';
 import { chartAnchor } from '../core/layout/structure';
 import { fitLayout } from '../core/layout/fit';
-import { LAYOUT, LayoutOptions, LayoutResult } from '../core/layout/types';
+import { EDITOR_LAYOUT, LAYOUT, LayoutOptions, LayoutResult } from '../core/layout/types';
 import { displayName, initials, nameUnknown, surnameKey, unitingOf } from '../core/model/names';
 import { FamilyBalloon, familyBalloons, familyViewScope, isPortal, withPortals } from '../core/model/family-view';
 import { isBrokenUp, relationshipStatus } from '../core/model/relationship';
@@ -96,7 +96,7 @@ export class ChartModel {
   readonly options = computed<LayoutOptions>(
     () => {
       const d = this.design();
-      return { ...LAYOUT, cardWidth: d.width, cardHeight: d.height };
+      return { ...LAYOUT, ...EDITOR_LAYOUT, cardWidth: d.width, cardHeight: d.height };
     },
     { equal: (a, b) => a.cardWidth === b.cardWidth && a.cardHeight === b.cardHeight },
   );
