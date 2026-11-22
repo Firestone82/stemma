@@ -142,13 +142,20 @@ describe('family document', () => {
           name: 'Name',
           born: 'Born',
           died: 'Died',
-          child: (sex) => (sex === 'male' ? 'son' : sex === 'female' ? 'daughter' : 'child'),
+          child: (sex) => (sex === 'male' ? 's' : sex === 'female' ? 'd' : 'c'),
           listedAbove: 'listed above',
           summary: (p, g) => `${p} people, ${g} generations`,
           with: (n) => `Children with ${n}`,
           withUnknown: 'Children with an unknown partner',
           continuesIn: (f) => `continues in the ${f} family`,
           see: (n) => `No. ${n}`,
+          legend: {
+            heading: 'Legend',
+            entries: [
+              { symbol: 's', meaning: 'son' },
+              { symbol: '?', meaning: 'not known' },
+            ],
+          },
         },
       }),
     );
@@ -168,11 +175,16 @@ describe('family document', () => {
     expect(body).toContain('continues in the Mikula family');
     expect(body).toContain('<w:tblHeader/>');
     // How a child is a child, in front of the name.
-    expect(body).toContain('>daughter  <');
+    expect(body).toContain('>d  <');
+    expect(body).toContain('>Legend<');
     // The contents: dots up to the page number, which points at the family's heading.
     expect(body).toContain('w:leader="dot"');
     expect(body).toContain('PAGEREF family-5');
     expect(body).toContain('w:name="family-5"');
+    // With the page it is on worked out already, for programs that do not fill fields in.
+    const pages = [...body.matchAll(/PAGEREF family-\d+ \\h <\/w:instrText>.*?<w:t xml:space="preserve">([^<]*)</g)].map((m) => m[1]);
+    expect(pages).toHaveLength(5);
+    for (const page of pages) expect(page).toMatch(/^\d+$/);
     expect(body).not.toContain('Karel');
     // Well-formed XML.
     for (const [name, xml] of files) {
