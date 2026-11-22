@@ -20,7 +20,7 @@ import {
   updatePerson,
   updateView,
 } from '../core/model/operations';
-import { linkBirth, shareBirth } from '../core/model/births';
+import { addBornTogether, shareBirth } from '../core/model/births';
 import { ChildRelation, Person } from '../core/model/types';
 import { relativesOf, relativesSettings } from '../core/poster/scope';
 import { ToastService } from '../core/services/toast';
@@ -35,8 +35,12 @@ export interface AddRelativeOptions {
   onlyThisChild?: boolean;
   partner?: AddPartnerOptions;
   child?: AddChildOptions;
-  /** A new sibling was born together with the person (a twin). */
-  twin?: boolean;
+  /**
+   * A new sibling was born together with the person: how many children were
+   * born together in all (2 for twins, 3 for triplets…). Siblings missing
+   * from the group are added with the new one.
+   */
+  bornTogether?: number;
 }
 
 /** People: selecting, adding relatives, editing, centring the tree, deleting. */
@@ -79,10 +83,10 @@ export class PersonActions {
             return addPartner(doc, personId, source, options.partner);
           case 'child':
             return addChild(doc, personId, source, options.child ?? { otherParentId: null, relation: options.relation });
-          case 'sibling': {
-            const added = addSibling(doc, personId, source, options.relation);
-            return options.twin ? { ...added, doc: linkBirth(added.doc, added.familyId, [personId, added.personId]) } : added;
-          }
+          case 'sibling':
+            return (options.bornTogether ?? 0) > 1
+              ? addBornTogether(doc, personId, source, options.bornTogether!, options.relation)
+              : addSibling(doc, personId, source, options.relation);
         }
       });
       const added = this.store.index().person(result.personId);

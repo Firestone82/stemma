@@ -3,7 +3,11 @@
  * their family (format 1.3). They stand next to each other among the children,
  * and their date and place of birth are kept the same: setting one sets all.
  */
-import { Family, FamilyChild, LifeEvent, TreeDocument } from './types';
+import { OpResult, PersonSource, addSibling } from './operations';
+import { ChildRelation, Family, FamilyChild, LifeEvent, TreeDocument } from './types';
+
+/** The most children the forms offer to mark as born together at once. */
+export const MAX_BORN_TOGETHER = 12;
 
 export interface BirthGroup {
   familyId: string;
@@ -26,6 +30,30 @@ export function birthGroupOf(doc: TreeDocument, personId: string): BirthGroup | 
 /** Twins, triplets…: how many were born together with someone (1 when nobody). */
 export function birthCount(doc: TreeDocument, personId: string): number {
   return birthGroupOf(doc, personId)?.memberIds.length ?? 1;
+}
+
+/**
+ * Adds a brother or sister born together with `personId`, and as many more
+ * as it takes for `size` children to be born together: picking quadruplets
+ * for a twin adds two. The first one added comes from `source`; the others
+ * are new people with the same surname, waiting for their names. Everyone
+ * takes the date and place of birth of the group. The result names the first
+ * one added.
+ */
+export function addBornTogether(doc: TreeDocument, personId: string, source: PersonSource, size: number, relation?: ChildRelation): OpResult {
+  const first = addSibling(doc, personId, source, relation);
+  const have = birthCount(doc, personId);
+  const extra = Math.max(0, Math.min(size, MAX_BORN_TOGETHER) - have - 1);
+  const added = first.doc.people.find((p) => p.id === first.personId);
+  const surname = 'draft' in source ? source.draft.surname : added?.name.surname;
+  let next = first.doc;
+  const ids = [personId, first.personId];
+  for (let i = 0; i < extra; i++) {
+    const more = addSibling(next, personId, { draft: { surname, sex: 'unknown' } }, relation);
+    next = more.doc;
+    ids.push(more.personId);
+  }
+  return { ...first, doc: linkBirth(next, first.familyId, ids) };
 }
 
 function nextKey(f: Family): string {

@@ -12,7 +12,7 @@
           [title]="s.tag ? t('births.unlink') : t('births.link')"
           (click)="toggleTwin(s)"
         >
-          <stemma-icon [name]="s.tag ? 'link' : 'plus'" [size]="12" />{{ s.tag ? t('births.2') : t('births.linkShort') }}
+          <stemma-icon [name]="s.tag ? 'link' : 'plus'" [size]="12" />{{ s.tag ? together() : t('births.linkShort') }}
         </button>
       }
     </div>

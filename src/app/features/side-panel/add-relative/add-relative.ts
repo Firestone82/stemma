@@ -1,10 +1,12 @@
 import { ChangeDetectionStrategy, Component, ElementRef, computed, effect, inject, input, signal, untracked } from '@angular/core';
+import { MAX_BORN_TOGETHER, birthCount } from '../../../core/model/births';
 import { bornLongAgo } from '../../../core/model/completeness';
 import { PersonSource } from '../../../core/model/operations';
 import { RelationshipStatus, relationshipStatus } from '../../../core/model/relationship';
 import { ChildRelation, GenDate, Person, Sex } from '../../../core/model/types';
 import { TreeStore } from '../../../core/store/tree-store';
 import { I18n } from '../../../i18n/i18n';
+import { bornTogetherLabel } from '../../../i18n/labels';
 import { Icon } from '../../../shared/icon/icon';
 import { PersonPicker } from '../../../shared/person-picker/person-picker';
 import { SegmentOption, Segmented } from '../../../shared/segmented/segmented';
@@ -52,6 +54,8 @@ export class AddRelativePanel {
   protected readonly joinFamily = signal(true);
   /** A new sibling is a twin of the person: born together, same date and place. */
   protected readonly twin = signal(false);
+  /** How many were born together in all, when the sizes offered are not left at the smallest. */
+  private readonly sizeInput = signal<number | null>(null);
 
   private readonly index = this.store.index;
   protected readonly name = computed(() => this.i18n.name(this.index().person(this.request().personId)));
@@ -133,6 +137,21 @@ export class AddRelativePanel {
     (['biological', 'adopted', 'foster', 'step'] as const).map((value) => ({ value, label: this.t(`childKind.${value}`) })),
   );
 
+  /** How many the person was born together with already, themselves included (1 when nobody). */
+  private readonly groupSize = computed(() => (this.request().relation === 'sibling' ? birthCount(this.store.doc(), this.request().personId) : 1));
+  /** Twins, triplets, quadruplets…: each size the new sibling's birth group can have. */
+  protected readonly sizes = computed(() => {
+    const out: { value: number; label: string }[] = [];
+    for (let n = this.groupSize() + 1; n <= MAX_BORN_TOGETHER; n++) out.push({ value: n, label: bornTogetherLabel(this.t, n) });
+    return out;
+  });
+  protected readonly size = computed(() => Math.max(this.sizeInput() ?? 0, this.groupSize() + 1));
+  /** Brothers and sisters added besides the one in the form, to make up the group. */
+  protected readonly extraNote = computed(() => {
+    const extra = this.size() - this.groupSize() - 1;
+    return extra > 0 ? this.t('add.bornTogetherMore', { count: extra }) : '';
+  });
+
   protected readonly twinLabel = computed(() => this.t('add.twin', { name: this.index().person(this.request().personId)?.name.given || this.name() }));
 
   protected readonly canSubmit = computed(() =>
@@ -162,6 +181,7 @@ export class AddRelativePanel {
         this.withSiblings.set(true);
         this.joinFamily.set(true);
         this.twin.set(false);
+        this.sizeInput.set(null);
         setTimeout(() => this.host.nativeElement.querySelector<HTMLInputElement>('#add-given')?.focus(), 40);
       });
     });
@@ -183,6 +203,10 @@ export class AddRelativePanel {
 
   protected setSex(sex: Sex): void {
     this.sexInput.set(sex);
+  }
+
+  protected setSize(event: Event): void {
+    this.sizeInput.set(Number((event.target as HTMLSelectElement).value));
   }
 
   protected checked(event: Event): boolean {
@@ -238,7 +262,7 @@ export class AddRelativePanel {
         this.people.addRelative('child', req.personId, source, { child: { otherParentId: this.otherParentId(), relation: this.relation() } });
         break;
       case 'sibling':
-        this.people.addRelative('sibling', req.personId, source, { twin: this.twin(), relation: this.relation() });
+        this.people.addRelative('sibling', req.personId, source, { bornTogether: this.twin() ? this.size() : undefined, relation: this.relation() });
         break;
     }
   }

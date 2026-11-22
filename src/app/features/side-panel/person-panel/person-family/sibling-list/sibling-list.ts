@@ -4,7 +4,7 @@ import { FamilyActions } from '../../../../../state/family-actions';
 import { Person } from '../../../../../core/model/types';
 import { TreeStore } from '../../../../../core/store/tree-store';
 import { I18n } from '../../../../../i18n/i18n';
-import { bornTogetherTag } from '../../../../../i18n/labels';
+import { bornTogetherLabel, bornTogetherTag } from '../../../../../i18n/labels';
 import { Icon } from '../../../../../shared/icon/icon';
 import { PersonRow } from '../../../../../shared/person-row/person-row';
 import { PersonActions } from '../../../../../state/person-actions';
@@ -43,6 +43,9 @@ export class SiblingList {
       familyId: index.parentFamilies(id).find((f) => f.children.some((c) => c.personId === p.id))?.id,
     }));
   });
+
+  /** "Twins", "Triplets"…: the person's own birth group, on the link of each sibling in it. */
+  protected readonly together = computed(() => bornTogetherLabel(this.t, birthGroupOf(this.store.doc(), this.person().id)?.memberIds.length ?? 2));
 
   /** Marks the sibling as born together with the person, or not after all. */
   protected toggleTwin(s: { id: string; familyId?: string; tag: string }): void {

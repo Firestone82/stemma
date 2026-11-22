@@ -89,6 +89,19 @@
           <input type="checkbox" [checked]="twin()" (change)="twin.set(checked($event))" />
           {{ twinLabel() }}
         </label>
+        @if (twin() && sizes().length) {
+          <div class="field born-together">
+            <label for="add-born-size">{{ t('add.bornTogetherSize') }}</label>
+            <select class="select" id="add-born-size" (change)="setSize($event)">
+              @for (s of sizes(); track s.value) {
+                <option [value]="s.value" [selected]="s.value === size()">{{ s.label }}</option>
+              }
+            </select>
+            @if (extraNote()) {
+              <span class="hint">{{ extraNote() }}</span>
+            }
+          </div>
+        }
       </section>
     }
   }

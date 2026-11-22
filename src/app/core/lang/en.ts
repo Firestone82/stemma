@@ -191,7 +191,7 @@ export const english: ChartLanguage = {
   others: 'Other families',
   families: 'Families',
   bornWith: (sex, count) => {
-    const word = ['', '', 'twin', 'triplet', 'quadruplet', 'quintuplet', 'sextuplet'][count];
+    const word = ['', '', 'twin', 'triplet', 'quadruplet', 'quintuplet', 'sextuplet', 'septuplet', 'octuplet'][count];
     if (!word) return bySex(sex, 'brother', 'sister', 'sibling');
     return bySex(sex, `${word} brother`, `${word} sister`, word);
   },

@@ -3,7 +3,7 @@ import { Layouter, WIDE } from '../layout/engine';
 import { LAYOUT } from '../layout/types';
 import { TreeIndex } from './tree-index';
 import { DocBuilder } from '../testing/fixtures';
-import { birthCount, birthGroupOf, leaveBirth, linkBirth, shareBirth, splitBirth } from './births';
+import { MAX_BORN_TOGETHER, addBornTogether, birthCount, birthGroupOf, leaveBirth, linkBirth, shareBirth, splitBirth } from './births';
 import { updatePerson } from './operations';
 
 function family() {
@@ -18,6 +18,45 @@ function family() {
   doc.people.find((p) => p.id === 'A')!.birth!.place = 'Leeds';
   return doc;
 }
+
+describe('adding siblings born together', () => {
+  it('adds a twin', () => {
+    const r = addBornTogether(family(), 'A', { draft: { given: 'Amy', surname: 'Lee', sex: 'female' } }, 2);
+    expect(birthGroupOf(r.doc, 'A')?.memberIds).toEqual(['A', r.personId]);
+    expect(r.doc.people.find((p) => p.id === r.personId)!.birth).toEqual({ date: { value: '1990-04-02' }, place: 'Leeds' });
+  });
+
+  it('adds the missing siblings for quadruplets, with the surname and the shared birth', () => {
+    const r = addBornTogether(family(), 'A', { draft: { given: 'Amy', surname: 'Lee', sex: 'female' } }, 4);
+    const group = birthGroupOf(r.doc, 'A')!;
+    expect(group.memberIds.length).toBe(4);
+    expect(group.memberIds.slice(0, 2)).toEqual(['A', r.personId]);
+    const extras = group.memberIds.slice(2).map((id) => r.doc.people.find((p) => p.id === id)!);
+    expect(extras.map((p) => [p.name.given, p.name.surname, p.sex])).toEqual([
+      ['', 'Lee', 'unknown'],
+      ['', 'Lee', 'unknown'],
+    ]);
+    expect(extras.every((p) => p.birth?.place === 'Leeds' && p.birth?.date?.value === '1990-04-02')).toBe(true);
+    expect(r.doc.people.find((p) => p.id === r.personId)!.name.given).toBe('Amy');
+  });
+
+  it('counts the group the person is already in', () => {
+    const twins = linkBirth(family(), 'F1', ['A', 'C']);
+    const r = addBornTogether(twins, 'A', { draft: { given: 'Eve', surname: 'Lee' } }, 5);
+    expect(birthCount(r.doc, 'A')).toBe(5);
+    expect(r.doc.people.length).toBe(twins.people.length + 3);
+    // Asking for no more than there already are still adds the one in the form.
+    expect(birthCount(addBornTogether(twins, 'A', { draft: { given: 'Eve' } }, 2).doc, 'A')).toBe(3);
+  });
+
+  it('works for someone with no parents in the tree, and stops at the most offered', () => {
+    const b = new DocBuilder();
+    b.person('X', 'Xena', 'Ng', 'female');
+    const r = addBornTogether(b.build(), 'X', { draft: { given: 'Yan', surname: 'Ng' } }, 99);
+    expect(birthCount(r.doc, 'X')).toBe(MAX_BORN_TOGETHER);
+    expect(r.doc.families.length).toBe(1);
+  });
+});
 
 describe('children born together', () => {
   it('links twins, puts them side by side and gives them one birth', () => {

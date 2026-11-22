@@ -306,7 +306,7 @@ export const czech: ChartLanguage = {
   others: 'Ostatní rodiny',
   families: 'Rody',
   bornWith: (sex, count) => {
-    const word = ['', '', 'dvojče', 'trojče', 'čtyřče', 'paterče', 'šesterče'][count];
+    const word = ['', '', 'dvojče', 'trojče', 'čtyřče', 'paterče', 'šesterče', 'sedmerče', 'osmerče'][count];
     if (!word) return sex === 'male' ? 'bratr' : sex === 'female' ? 'sestra' : 'sourozenec';
     return sex === 'male' ? `bratr-${word}` : sex === 'female' ? `sestra-${word}` : word;
   },

@@ -1,6 +1,7 @@
 /** Message keys for values of the model, shared by the parts of the app that name them. */
 import { RelationshipStatus } from '../core/model/relationship';
 import { MessageKey } from './locales';
+import { MessageParams } from './message';
 
 export const STATUS_LABEL: Record<RelationshipStatus, MessageKey> = {
   married: 'status.married',
@@ -15,13 +16,29 @@ export const STATUS_LABEL: Record<RelationshipStatus, MessageKey> = {
 };
 
 /** "Twins", "Triplets"… for `count` children born together. */
-export function bornTogetherLabel(t: (key: MessageKey) => string, count: number): string {
-  const keys: Partial<Record<number, MessageKey>> = { 2: 'births.2', 3: 'births.3', 4: 'births.4', 5: 'births.5', 6: 'births.6' };
-  return t(keys[count] ?? 'births.many');
+export function bornTogetherLabel(t: (key: MessageKey, params?: MessageParams) => string, count: number): string {
+  const keys: Partial<Record<number, MessageKey>> = {
+    2: 'births.2',
+    3: 'births.3',
+    4: 'births.4',
+    5: 'births.5',
+    6: 'births.6',
+    7: 'births.7',
+    8: 'births.8',
+  };
+  return t(keys[count] ?? 'births.many', { count });
 }
 
 /** "twin", "triplet"… for one of `count` children born together. */
 export function bornTogetherTag(t: (key: MessageKey) => string, count: number): string {
-  const keys: Partial<Record<number, MessageKey>> = { 2: 'births.one.2', 3: 'births.one.3', 4: 'births.one.4', 5: 'births.one.5', 6: 'births.one.6' };
+  const keys: Partial<Record<number, MessageKey>> = {
+    2: 'births.one.2',
+    3: 'births.one.3',
+    4: 'births.one.4',
+    5: 'births.one.5',
+    6: 'births.one.6',
+    7: 'births.one.7',
+    8: 'births.one.8',
+  };
   return t(keys[count] ?? 'births.one.many');
 }
