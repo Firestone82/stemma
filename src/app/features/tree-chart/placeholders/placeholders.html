@@ -1,7 +1,7 @@
 @for (p of holders(); track p.familyId) {
-  <svg:g class="placeholder" [attr.transform]="'translate(' + (p.x + p.w / 2) + ',' + (p.y + p.h / 2) + ')'" (click)="onPick(p.familyId, $event)">
-    <svg:rect [attr.x]="-p.w / 2" [attr.y]="-p.h / 2" [attr.width]="p.w" [attr.height]="p.h" [attr.rx]="radius" />
-    <svg:text text-anchor="middle" dominant-baseline="central">?</svg:text>
+  <svg:g class="placeholder" (click)="onPick(p.familyId, $event)">
+    <svg:rect [attr.x]="p.x" [attr.y]="p.y" [attr.width]="p.w" [attr.height]="p.h" [attr.rx]="radius" />
+    <svg:text [attr.x]="p.x + p.w / 2" [attr.y]="p.y + p.h / 2" text-anchor="middle" dominant-baseline="central">?</svg:text>
     <svg:title>{{ t('chart.placeholder') }}</svg:title>
   </svg:g>
 }

@@ -4,7 +4,7 @@ import { Tincture } from '../../../core/colors/tinctures';
 import { LayoutCard } from '../../../core/layout/types';
 import { I18n } from '../../../i18n/i18n';
 import { CardLabel } from '../../../state/chart-model';
-import { shiftPath } from '../svg-path';
+import { placePath } from '../svg-path';
 
 /**
  * One person on the chart, drawn as SVG inside the chart's <svg>: the same card as on prints (see
@@ -20,7 +20,6 @@ import { shiftPath } from '../svg-path';
     class: 'card',
     role: 'button',
     tabindex: '0',
-    '[attr.transform]': 'transform()',
     '[attr.data-person]': 'card().personId',
     '[attr.data-tincture]': 'tincture()',
     '[attr.data-sex]': 'label().sex',
@@ -51,10 +50,18 @@ export class PersonCard {
   readonly ribbons = input(true);
   readonly pick = output<Event>();
 
-  protected readonly transform = computed(() => {
-    const c = this.card();
-    return `translate(${round(c.x)},${round(c.y)})`;
-  });
+  /**
+   * Where the card's top left corner stands on the chart. Everything on the card is drawn at its place on the chart
+   * rather than moved there by a transform: every transform splits the chart into more pieces for the browser to
+   * put back together at each frame of a drag or a zoom.
+   */
+  protected readonly at = computed(
+    () => {
+      const c = this.card();
+      return { x: round(c.x), y: round(c.y) };
+    },
+    { equal: (a, b) => a.x === b.x && a.y === b.y },
+  );
   /** Where each line of text stands on this card. */
   protected readonly lines = computed(() => cardLines(this.design(), this.parts(), { birth: !!this.label().birth }));
   protected readonly accent = computed(() => (this.parts().sexAccent ? accentOf(this.label().sex) : undefined));
@@ -63,24 +70,31 @@ export class PersonCard {
     const d = this.design();
     const h = this.card().h;
     const r = d.radius;
-    return `M${r},0H${d.accent}V${h}H${r}Q0,${h} 0,${h - r}V${r}Q0,0 ${r},0Z`;
+    const { x, y } = this.at();
+    return `M${x + r},${y}h${d.accent - r}v${h}h${r - d.accent}q${-r},0 ${-r},${-r}v${2 * r - h}q0,${-r} ${r},${-r}z`;
   });
   /** The ribbon across the top right corner, for this card's width. */
-  protected readonly ribbon = computed(() => ribbonPath(this.design(), this.card().w));
+  protected readonly ribbon = computed(() => {
+    const { x, y } = this.at();
+    return placePath(ribbonPath(this.design(), this.card().w), x, y);
+  });
   /** Whether the card shows the ribbon: the mark for someone kept off prints then stands clear of it. */
   protected readonly mourning = computed(() => this.ribbons() && this.label().deceased);
-  /**
-   * The shield and the badge, drawn where they stand on the card rather than moved there by a transform: every
-   * transform splits the chart into more pieces for the browser to put together at each frame of a drag or zoom.
-   */
-  protected readonly marks = computed(() => {
-    const d = this.design();
-    return { shield: d.shield ? shiftPath(d.shield.path, d.shield.x, d.shield.y) : '', badge: shiftPath(d.badge.mark, d.badge.x, d.badge.y) };
+  protected readonly shieldPath = computed(() => {
+    const s = this.design().shield;
+    const { x, y } = this.at();
+    return s ? placePath(s.path, x + s.x, y + s.y) : '';
+  });
+  protected readonly badgeMark = computed(() => {
+    const b = this.design().badge;
+    const { x, y } = this.at();
+    return placePath(b.mark, x + b.x, y + b.y);
   });
   /** The crossed out printer of someone kept off prints, clear of the ribbon. */
   protected readonly noPrintMark = computed(() => {
     const d = this.design();
-    return shiftPath(NO_PRINT_MARK, this.card().w - (this.mourning() ? 30 + d.ribbonBand.to : 30), 4);
+    const { x, y } = this.at();
+    return placePath(NO_PRINT_MARK, x + this.card().w - (this.mourning() ? 30 + d.ribbonBand.to : 30), y + 4);
   });
   protected readonly flag = computed<'problem' | 'missing' | null>(() => {
     const l = this.label();

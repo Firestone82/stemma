@@ -2,19 +2,20 @@
 @let d = design();
 @let l = label();
 @let y = lines();
-<svg:rect class="card-shadow" y="1.6" [attr.width]="c.w" [attr.height]="c.h" [attr.rx]="d.radius" />
-<svg:rect class="card-shape" [attr.width]="c.w" [attr.height]="c.h" [attr.rx]="d.radius" />
+@let o = at();
+<svg:rect class="card-shadow" [attr.x]="o.x" [attr.y]="o.y + 1.6" [attr.width]="c.w" [attr.height]="c.h" [attr.rx]="d.radius" />
+<svg:rect class="card-shape" [attr.x]="o.x" [attr.y]="o.y" [attr.width]="c.w" [attr.height]="c.h" [attr.rx]="d.radius" />
 @if (accent()) {
   <svg:path class="accent" [attr.d]="accentPath()" />
 }
 @if (d.shield; as s) {
   <svg:g class="shield">
-    <svg:path class="shield-field" [attr.d]="marks().shield" />
+    <svg:path class="shield-field" [attr.d]="shieldPath()" />
     <svg:text
       class="shield-initials"
       [attr.font-size]="s.font.size"
-      [attr.x]="s.x + s.w / 2"
-      [attr.y]="s.y + s.h * 0.46"
+      [attr.x]="o.x + s.x + s.w / 2"
+      [attr.y]="o.y + s.y + s.h * 0.46"
       text-anchor="middle"
       dominant-baseline="central"
     >
@@ -23,17 +24,17 @@
   </svg:g>
 }
 @if (l.kin) {
-  <svg:text class="kin" [attr.font-size]="d.kin.size" [attr.x]="d.textX" [attr.y]="y.kin">{{ l.kin }}</svg:text>
+  <svg:text class="kin" [attr.font-size]="d.kin.size" [attr.x]="o.x + d.textX" [attr.y]="o.y + y.kin">{{ l.kin }}</svg:text>
 }
-<svg:text class="given" [attr.font-size]="d.given.size" [attr.x]="d.textX" [attr.y]="y.given">{{ l.given }}</svg:text>
+<svg:text class="given" [attr.font-size]="d.given.size" [attr.x]="o.x + d.textX" [attr.y]="o.y + y.given">{{ l.given }}</svg:text>
 @if (l.surname) {
-  <svg:text class="surname" [attr.font-size]="d.surname.size" [attr.x]="d.textX" [attr.y]="y.surname">{{ l.surname }}</svg:text>
+  <svg:text class="surname" [attr.font-size]="d.surname.size" [attr.x]="o.x + d.textX" [attr.y]="o.y + y.surname">{{ l.surname }}</svg:text>
 }
 @if (l.birth) {
-  <svg:text class="birth" [attr.font-size]="d.birth.size" [attr.x]="d.textX" [attr.y]="y.birth">{{ l.birth }}</svg:text>
+  <svg:text class="birth" [attr.font-size]="d.birth.size" [attr.x]="o.x + d.textX" [attr.y]="o.y + y.birth">{{ l.birth }}</svg:text>
 }
 @if (l.dates) {
-  <svg:text class="dates" [attr.font-size]="d.dates.size" [attr.x]="d.textX" [attr.y]="y.dates">{{ l.dates }}</svg:text>
+  <svg:text class="dates" [attr.font-size]="d.dates.size" [attr.x]="o.x + d.textX" [attr.y]="o.y + y.dates">{{ l.dates }}</svg:text>
 }
 @if (mourning()) {
   <svg:path class="mourning" [class.at-birth]="l.diedAtBirth" [attr.d]="ribbon()">
@@ -49,8 +50,8 @@
 @if (flag(); as f) {
   <svg:g class="badge" [class.problem]="f === 'problem'">
     <svg:title>{{ l.problem ? l.problem + (l.missing ? '\n' + l.missing : '') : l.missing }}</svg:title>
-    <svg:circle [attr.cx]="d.badge.x" [attr.cy]="d.badge.y" [attr.r]="d.badge.r" />
-    <svg:path [attr.d]="marks().badge" />
+    <svg:circle [attr.cx]="o.x + d.badge.x" [attr.cy]="o.y + d.badge.y" [attr.r]="d.badge.r" />
+    <svg:path [attr.d]="badgeMark()" />
   </svg:g>
 }
 <svg:title>{{ c.ghost ? t('card.standIn', { name: l.title }) : l.title }}</svg:title>

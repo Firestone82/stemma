@@ -11,22 +11,41 @@
   outline: none;
 }
 
-// Drawn BLEED (tree-chart.ts) beyond each edge, so a drag or zoom can slide and scale the picture without drawing it
-// again (slideTo); its own layer, so that is the browser moving a picture, not drawing the chart.
-.canvas {
+// What the person drags, scrolls and zooms: the paper, the picture of the tree on it, and the pane over both.
+.stage {
   position: absolute;
-  top: -480px;
-  left: -480px;
-  display: block;
-  width: calc(100% + 960px);
-  height: calc(100% + 960px);
+  inset: 0;
+  overflow: hidden;
   cursor: grab;
-  transform-origin: 0 0;
+}
+
+:host(.is-panning) .stage {
+  cursor: grabbing;
+}
+
+// The dots on the paper, a step wider than the screen each way, slid by less than a step as the chart moves.
+.dots {
+  position: absolute;
+  top: -22px;
+  left: -22px;
+  width: calc(100% + 44px);
+  height: calc(100% + 44px);
+  background-image: radial-gradient(circle at 1.2px 1.2px, var(--t-dots) 1.05px, transparent 1.35px);
+  background-size: 22px 22px;
+  pointer-events: none;
   will-change: transform;
 }
 
-:host(.is-panning) .canvas {
-  cursor: grabbing;
+// The whole tree, drawn at one zoom (ChartViewport.drawnK) and moved and scaled to the view as a picture on its
+// own layer (TreeChart.place): the browser slides it without drawing the chart again.
+.canvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: block;
+  overflow: visible;
+  transform-origin: 0 0;
+  will-change: transform;
 }
 
 // While the chart is moved a clear pane lies over it: the browser finds the pane under the pointer at every step
@@ -34,25 +53,12 @@
 .glass {
   position: absolute;
   inset: 0;
-  cursor: grab;
   // Let through when the chart stands still; laid down by a change of this alone, which the browser need not lay out or draw.
   pointer-events: none;
 }
 
 :host(.is-moving) .glass {
   pointer-events: auto;
-}
-
-:host(.is-panning) .glass {
-  cursor: grabbing;
-}
-
-.backdrop {
-  fill: url(#stemma-dots);
-}
-
-.dot {
-  fill: var(--t-dots);
 }
 
 /* Zoom and who is shown, in the bottom left corner. */

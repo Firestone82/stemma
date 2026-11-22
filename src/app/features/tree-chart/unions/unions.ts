@@ -1,7 +1,8 @@
 import { ChangeDetectionStrategy, Component, computed, inject, input, output } from '@angular/core';
 import { roundedPath } from '../../../core/layout/lines';
 import { LayoutResult } from '../../../core/layout/types';
-import { unionMark } from '../../../core/layout/union-marks';
+import { UnionMark, unionMark } from '../../../core/layout/union-marks';
+import { placePath } from '../svg-path';
 import { RelationshipStatus, relationshipStatus } from '../../../core/model/relationship';
 import { TreeStore } from '../../../core/store/tree-store';
 import { I18n } from '../../../i18n/i18n';
@@ -56,7 +57,7 @@ export class Unions {
         familyId: u.familyId,
         d: roundedPath(u.line, 6),
         at: { x: u.x, y: u.y },
-        mark: unionMark(fam?.kind ?? 'unknown', status, RING_RADIUS),
+        mark: placed(unionMark(fam?.kind ?? 'unknown', status, RING_RADIUS), u.x, u.y),
         title: `${t(STATUS_TITLE[status])} ${t('chart.union.select')}`,
       };
     });
@@ -71,4 +72,18 @@ export class Unions {
     event.stopPropagation();
     this.pick.emit(familyId);
   }
+}
+
+/**
+ * A couple's marker drawn at its place on the chart rather than moved there by a transform, which would split the
+ * chart into more pieces for the browser to put back together at each frame of a drag or a zoom.
+ */
+function placed(m: UnionMark, x: number, y: number): UnionMark {
+  return {
+    ...m,
+    plate: { ...m.plate, x: m.plate.x + x, y: m.plate.y + y },
+    rings: m.rings.map((r) => ({ ...r, cx: r.cx + x, cy: r.cy + y })),
+    stone: m.stone ? placePath(m.stone, x, y) : m.stone,
+    slash: m.slash ? placePath(m.slash, x, y) : m.slash,
+  };
 }

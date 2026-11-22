@@ -15,9 +15,18 @@ export function clampZoom(k: number): number {
   return Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, k));
 }
 
-/** Pan and zoom of the chart, with smooth moves when the person did not cause them directly. */
+/**
+ * Pan and zoom of the chart, with smooth moves when the person did not cause them directly.
+ *
+ * The chart is drawn at one zoom (`drawnK`) and the picture of it is moved and scaled to show the view: a pan
+ * never draws the chart again, and a zoom only once it has come to rest.
+ */
 export class ChartViewport {
   readonly view = signal<View>({ x: 0, y: 0, k: 1 });
+  /** The zoom the chart is drawn at; the view's own zoom once the view is still. */
+  readonly drawnK = signal(1);
+  /** The view is gliding somewhere (`go`). */
+  readonly gliding = signal(false);
   private animation: number | null = null;
 
   constructor(private readonly reduceMotion: boolean) {}
@@ -26,7 +35,7 @@ export class ChartViewport {
   go(target: View, animate: boolean): void {
     this.stop();
     if (!animate || this.reduceMotion) {
-      this.view.set(target);
+      this.set(target);
       return;
     }
     const from = this.view();
@@ -37,13 +46,27 @@ export class ChartViewport {
       const e = easeInOut(t);
       this.view.set({ x: from.x + (target.x - from.x) * e, y: from.y + (target.y - from.y) * e, k: from.k + (target.k - from.k) * e });
       this.animation = t < 1 ? requestAnimationFrame(step) : null;
+      if (t >= 1) {
+        this.gliding.set(false);
+        this.drawnK.set(target.k);
+      }
     };
+    this.gliding.set(true);
     this.animation = requestAnimationFrame(step);
   }
 
+  /** Puts the view at `v` at once, the chart drawn at its zoom. */
+  set(v: View): void {
+    this.view.set(v);
+    this.drawnK.set(v.k);
+  }
+
   stop(): void {
-    if (this.animation !== null) cancelAnimationFrame(this.animation);
+    if (this.animation === null) return;
+    cancelAnimationFrame(this.animation);
     this.animation = null;
+    this.gliding.set(false);
+    this.drawnK.set(this.view().k);
   }
 
   /** Zooms by `factor`, keeping the point px,py (screen pixels) still. */

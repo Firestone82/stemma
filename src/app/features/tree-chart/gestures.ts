@@ -15,7 +15,8 @@ type Gesture =
  *
  * While the chart is moved, the view it is moved to is only shown (`show`): the picture the chart was drawn as
  * is slid and scaled, as a canvas would be, and nothing on the page is worked out or drawn again. The view is
- * set, and the chart drawn at it, once the move ends (or when the picture would no longer cover the screen).
+ * set once the move ends, and the chart drawn again only if the zoom changed (or, during a long zoom, when the
+ * picture has grown or shrunk too far to look sharp).
  */
 export class ChartGestures {
   readonly panning = signal(false);
@@ -35,7 +36,7 @@ export class ChartGestures {
 
   constructor(
     private readonly viewport: ChartViewport,
-    private readonly surface: () => SVGSVGElement,
+    private readonly surface: () => Element,
     /** Called when the person moves the chart themselves. */
     private readonly onUserMove: () => void,
     /** The element whose corner screen points are measured from (the surface can stand out beyond it). */
@@ -164,7 +165,7 @@ export class ChartGestures {
     if (this.frameId === null)
       this.frameId = requestAnimationFrame(() => {
         this.frameId = null;
-        if (this.live && !this.show(this.live)) this.viewport.view.set(this.live);
+        if (this.live && !this.show(this.live)) this.viewport.set(this.live);
       });
   }
 
@@ -174,7 +175,7 @@ export class ChartGestures {
     this.frameId = null;
     const v = this.live;
     this.live = null;
-    if (v) this.viewport.view.set(v);
+    if (v) this.viewport.set(v);
   }
 
   private start(): void {

@@ -76,13 +76,15 @@ export class TreeChart {
   readonly insetBottom = input(0);
 
   private readonly svgRef = viewChild.required<ElementRef<SVGSVGElement>>('svg');
+  private readonly stageRef = viewChild.required<ElementRef<HTMLElement>>('stage');
+  private readonly dotsRef = viewChild.required<ElementRef<HTMLElement>>('dots');
   private readonly reduceMotion = typeof matchMedia !== 'undefined' && matchMedia('(prefers-reduced-motion: reduce)').matches;
 
   protected readonly viewport = new ChartViewport(this.reduceMotion);
   private readonly motion = new LayoutMotion(this.viewport, this.reduceMotion);
   protected readonly gestures = new ChartGestures(
     this.viewport,
-    () => this.svgRef().nativeElement,
+    () => this.stageRef().nativeElement,
     () => (this.motion.userMoved = true),
     () => this.host.nativeElement,
     (view) => this.slideTo(view),
@@ -95,13 +97,25 @@ export class TreeChart {
   /** The layout the chart draws. */
   protected readonly shown = this.displayed;
 
+  /**
+   * The part of the chart's plane the picture covers: the whole tree with room round it, in steps of EXTENT_STEP so
+   * that a tree growing or gliding rarely makes the picture a different size.
+   */
+  protected readonly extent = computed(
+    () => {
+      const b = this.shown().bounds;
+      const lo = (v: number) => Math.floor((v - EXTENT_ROOM) / EXTENT_STEP) * EXTENT_STEP;
+      const hi = (v: number) => Math.ceil((v + EXTENT_ROOM) / EXTENT_STEP) * EXTENT_STEP;
+      const x = lo(b.x);
+      const y = lo(b.y);
+      return { x, y, w: hi(b.x + b.w) - x, h: hi(b.y + b.h) - y };
+    },
+    { equal: (a, b) => a.x === b.x && a.y === b.y && a.w === b.w && a.h === b.h },
+  );
+  /** The tree drawn at the zoom the chart is drawn at; where on the screen the picture stands is up to `place`. */
   protected readonly worldTransform = computed(() => {
-    const { x, y, k } = this.viewport.view();
-    return `translate(${(x + BLEED).toFixed(2)},${(y + BLEED).toFixed(2)}) scale(${k.toFixed(4)})`;
-  });
-  protected readonly dotTransform = computed(() => {
-    const { x, y } = this.viewport.view();
-    return `translate(${(x + BLEED).toFixed(1)},${(y + BLEED).toFixed(1)})`;
+    const e = this.extent();
+    return `scale(${this.viewport.drawnK().toFixed(4)}) translate(${-e.x},${-e.y})`;
   });
   protected readonly zoomPercent = computed(() => Math.round(this.viewport.view().k * 100));
   protected readonly isEmpty = computed(() => this.store.doc().people.length === 0);
@@ -266,11 +280,12 @@ export class TreeChart {
         }, 1400);
       });
     });
-    // Once the chart is drawn at a view, the picture slid there while it was moved (slideTo) is put back.
+    // The picture of the chart stands where the view says, once the chart is drawn (or while it is being moved).
     afterRenderEffect(() => {
       this.viewport.view();
-      const svg = untracked(this.svgRef).nativeElement;
-      if (svg.style.transform) svg.style.transform = '';
+      this.viewport.drawnK();
+      this.extent();
+      untracked(() => this.place(this.gestures.current(), this.gestures.moving() || this.viewport.gliding()));
     });
     // Keep the selected person in view when the selection changes.
     effect(() => {
@@ -343,26 +358,31 @@ export class TreeChart {
   }
 
   /**
-   * Shows the chart at `view` by sliding and scaling the picture of it as drawn at the viewport's view, without
-   * drawing it again (the browser moves the picture on its own layer); false where the picture, drawn BLEED
-   * beyond the screen's edges, would no longer cover the screen there.
+   * Shows the chart at `view` by moving and scaling the picture of the whole tree, as drawn at the zoom it was
+   * drawn at, on its own layer: the browser moves a picture and works nothing out again. False when the picture
+   * would have to grow or shrink so far that it should be drawn afresh at the new zoom.
    */
   private slideTo(view: View): boolean {
-    const svg = this.svgRef().nativeElement;
-    const d = this.viewport.view();
-    const { w, h } = this.size();
-    const s = view.k / d.k;
-    const tx = view.x + BLEED - s * (d.x + BLEED);
-    const ty = view.y + BLEED - s * (d.y + BLEED);
-    const covers = tx <= BLEED && ty <= BLEED && tx + s * (w + 2 * BLEED) >= BLEED + w && ty + s * (h + 2 * BLEED) >= BLEED + h;
-    if (!covers) return false;
-    svg.style.transform = `translate3d(${tx.toFixed(1)}px,${ty.toFixed(1)}px,0) scale(${s.toFixed(5)})`;
+    const s = view.k / this.viewport.drawnK();
+    if (s < 1 / MAX_STRETCH || s > MAX_STRETCH) return false;
+    this.place(view, true);
     return true;
+  }
+
+  /** Moves the picture of the chart (and the dots under it) to show `view`; `moving`: as one step of a move. */
+  private place(view: View, moving: boolean): void {
+    const e = this.extent();
+    const s = view.k / this.viewport.drawnK();
+    const tx = view.x + e.x * view.k;
+    const ty = view.y + e.y * view.k;
+    const mod = (v: number) => ((v % DOT_STEP) + DOT_STEP) % DOT_STEP;
+    setTransform(this.svgRef().nativeElement, `translate3d(${tx.toFixed(2)}px,${ty.toFixed(2)}px,0) scale(${s.toFixed(5)})`, moving);
+    setTransform(this.dotsRef().nativeElement, `translate3d(${mod(view.x).toFixed(2)}px,${mod(view.y).toFixed(2)}px,0)`, moving);
   }
 
   private attach(destroyRef: DestroyRef): void {
     const host = this.host.nativeElement;
-    const svg = this.svgRef().nativeElement;
+    const stage = this.stageRef().nativeElement;
     const measure = () => {
       const rect = host.getBoundingClientRect();
       const prev = this.size();
@@ -372,34 +392,20 @@ export class TreeChart {
     const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(measure) : null;
     ro?.observe(host);
     if (!ro) measure();
-    // While the chart moves a pane lies over it (.glass), so what reaches the pane is meant for the chart: the wheel
-    // (listened to on the host), a second finger for a pinch, and a pointer moving again after a scroll.
-    const glass = host.querySelector<HTMLElement>('.glass')!;
-    const wheel = (e: WheelEvent) => {
-      if (e.target === glass || svg.contains(e.target as Node)) this.gestures.wheel(e);
-    };
-    host.addEventListener('wheel', wheel, { passive: false });
-    const glassDown = (e: PointerEvent) => this.gestures.down(e);
-    const glassUp = (e: PointerEvent) => this.gestures.up(e);
-    const glassMove = (e: PointerEvent) => {
-      // A hand resting on the mouse while it scrolls nudges it; only a real move ends the scroll.
-      if (Math.abs(e.movementX) + Math.abs(e.movementY) > 2) this.gestures.stopWheeling();
-    };
-    glass.addEventListener('pointerdown', glassDown);
-    glass.addEventListener('pointerup', glassUp);
-    glass.addEventListener('pointercancel', glassUp);
-    glass.addEventListener('pointermove', glassMove);
+    const wheel = (e: WheelEvent) => this.gestures.wheel(e);
+    stage.addEventListener('wheel', wheel, { passive: false });
     // Listened to here, not in the template: a drag then runs no change detection at every move.
-    const pointerMove = (e: PointerEvent) => this.gestures.move(e);
-    svg.addEventListener('pointermove', pointerMove);
+    const pointerMove = (e: PointerEvent) => {
+      // Over the pane laid on the chart after a scroll (.glass): a hand resting on the mouse nudges it, and only a
+      // real move ends the scroll.
+      if (e.target === this.glass(e) && Math.abs(e.movementX) + Math.abs(e.movementY) > 2) this.gestures.stopWheeling();
+      this.gestures.move(e);
+    };
+    stage.addEventListener('pointermove', pointerMove);
     destroyRef.onDestroy(() => {
       ro?.disconnect();
-      host.removeEventListener('wheel', wheel);
-      glass.removeEventListener('pointerdown', glassDown);
-      glass.removeEventListener('pointerup', glassUp);
-      glass.removeEventListener('pointercancel', glassUp);
-      glass.removeEventListener('pointermove', glassMove);
-      svg.removeEventListener('pointermove', pointerMove);
+      stage.removeEventListener('wheel', wheel);
+      stage.removeEventListener('pointermove', pointerMove);
       this.viewport.stop();
       this.motion.stop();
     });
@@ -417,8 +423,16 @@ export class TreeChart {
 
   // -- picking ----------------------------------------------------------------
 
-  protected onBackgroundClick(): void {
+  /** The pane laid over the chart while it moves, when the event is on it. */
+  private glass(e: Event): Element | null {
+    const t = e.target as Element | null;
+    return t?.classList?.contains('glass') ? t : null;
+  }
+
+  protected onBackgroundClick(e: Event): void {
     if (this.gestures.swallowClick()) return;
+    // Meant for whatever was under the pane a moment after a scroll: better nothing than clearing the selection.
+    if (this.glass(e)) return;
     this.ui.adding.set(null);
     this.store.selectPerson(null);
   }
@@ -664,8 +678,39 @@ export class TreeChart {
 }
 
 const BALLOON_FONT = `500 14px ${FONT_SANS}`;
-/** How far the chart is drawn beyond each edge of the screen, so a drag or scroll can slide it that far without drawing it again. */
-const BLEED = 480;
+/** Room round the tree in the picture of it (in the chart's units), and the steps its size goes in. */
+const EXTENT_ROOM = 160;
+const EXTENT_STEP = 800;
+/** How far the picture of the chart is grown or shrunk while it is zoomed before it is drawn afresh at the new zoom. */
+const MAX_STRETCH = 2;
+/** How far apart the dots on the paper are, in screen pixels. */
+const DOT_STEP = 22;
+
+const holds = new WeakMap<Element, Animation>();
+
+/**
+ * Gives an element a transform. During a move it is held by an animation that stands still (the same transform at
+ * both ends), changed at every step: the browser then hands the change straight to the layer the element is drawn
+ * on, while a change of its style would have it put the whole page's layers together again first. Once the move is
+ * over the transform goes back to its style, and no animation is left running.
+ */
+function setTransform(el: HTMLElement | SVGElement, transform: string, moving: boolean): void {
+  const held = holds.get(el);
+  if (moving && typeof el.animate === 'function') {
+    const frames = [{ transform }, { transform }];
+    if (held) (held.effect as KeyframeEffect).setKeyframes(frames);
+    else holds.set(el, el.animate(frames, { duration: HOLD_MS, fill: 'forwards' }));
+    return;
+  }
+  el.style.transform = transform;
+  if (held) {
+    held.cancel();
+    holds.delete(el);
+  }
+}
+
+/** Long enough for any move. */
+const HOLD_MS = 3_600_000;
 
 /** The box a straight stretch of a line takes, a hair thick. */
 function lineBox(a: { x: number; y: number }, b: { x: number; y: number }) {

@@ -1,103 +1,105 @@
 @let view = model.view();
-<!-- eslint-disable-next-line @angular-eslint/template/click-events-have-key-events -- a click on empty space clears the selection; Escape does the same -->
-<svg
-  #svg
-  class="canvas"
-  role="group"
-  [attr.aria-label]="t('chart.label')"
+<!-- eslint-disable-next-line @angular-eslint/template/click-events-have-key-events, @angular-eslint/template/interactive-supports-focus -- a click on empty space clears the selection; Escape does the same -->
+<div
+  #stage
+  class="stage"
   (pointerdown)="onPointerDown($event)"
   (pointerup)="onPointerUp($event)"
   (pointercancel)="onPointerUp($event)"
-  (click)="onBackgroundClick()"
+  (click)="onBackgroundClick($event)"
   (contextmenu)="onContextMenu($event)"
 >
-  <defs>
-    <pattern id="stemma-dots" width="22" height="22" patternUnits="userSpaceOnUse" [attr.patternTransform]="dotTransform()">
-      <circle cx="1.2" cy="1.2" r="1.05" class="dot" />
-    </pattern>
-  </defs>
-  <rect class="backdrop" width="100%" height="100%" />
-
-  <g class="world" [attr.transform]="worldTransform()">
-    @if (view.familyBackgrounds) {
-      @let bg = clusters();
-      <g class="clusters" aria-hidden="true">
-        <!-- Where two families share a piece of background (a partner who married in), stripes of the two. -->
-        @for (s of bg.stripes; track s.id) {
-          <pattern [attr.id]="s.id" width="16" height="16" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
-            <rect class="cluster-paint" [attr.data-tincture]="s.a" width="8" height="16" />
-            <rect class="cluster-paint" [attr.data-tincture]="s.b" x="8" width="8" height="16" />
-          </pattern>
-        }
-        @for (r of bg.painted; track $index) {
-          @if (r.with) {
-            <rect
-              [attr.x]="r.box.x"
-              [attr.y]="r.box.y"
-              [attr.width]="r.box.w"
-              [attr.height]="r.box.h"
-              [attr.fill]="'url(#stemma-stripes-' + r.tincture + '-' + r.with + ')'"
-            />
-          } @else {
-            <rect
-              class="cluster-paint"
-              [attr.data-tincture]="r.tincture"
-              [attr.x]="r.box.x"
-              [attr.y]="r.box.y"
-              [attr.width]="r.box.w"
-              [attr.height]="r.box.h"
-            />
+  <div #dots class="dots" aria-hidden="true"></div>
+  <!-- The whole tree, drawn once at one zoom; panning and zooming move and scale this picture (TreeChart.place). -->
+  <svg
+    #svg
+    class="canvas"
+    role="group"
+    [attr.aria-label]="t('chart.label')"
+    [style.width.px]="extent().w * viewport.drawnK()"
+    [style.height.px]="extent().h * viewport.drawnK()"
+  >
+    <g class="world" [attr.transform]="worldTransform()">
+      @if (view.familyBackgrounds) {
+        @let bg = clusters();
+        <g class="clusters" aria-hidden="true">
+          <!-- Where two families share a piece of background (a partner who married in), stripes of the two. -->
+          @for (s of bg.stripes; track s.id) {
+            <pattern [attr.id]="s.id" width="16" height="16" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+              <rect class="cluster-paint" [attr.data-tincture]="s.a" width="8" height="16" />
+              <rect class="cluster-paint" [attr.data-tincture]="s.b" x="8" width="8" height="16" />
+            </pattern>
           }
+          @for (r of bg.painted; track $index) {
+            @if (r.with) {
+              <rect
+                [attr.x]="r.box.x"
+                [attr.y]="r.box.y"
+                [attr.width]="r.box.w"
+                [attr.height]="r.box.h"
+                [attr.fill]="'url(#stemma-stripes-' + r.tincture + '-' + r.with + ')'"
+              />
+            } @else {
+              <rect
+                class="cluster-paint"
+                [attr.data-tincture]="r.tincture"
+                [attr.x]="r.box.x"
+                [attr.y]="r.box.y"
+                [attr.width]="r.box.w"
+                [attr.height]="r.box.h"
+              />
+            }
+          }
+        </g>
+      }
+      <g stemmaFamilyLines [layout]="shown()" [cuts]="cutTitles()" [hover]="hoverId()" (takeOut)="onCut($event)"></g>
+      <g stemmaUnions [layout]="shown()" [cuts]="cutTitles()" (pick)="onUnionPick($event)" (takeOut)="onCut($event)"></g>
+      <g stemmaPlaceholders [layout]="shown()" (pick)="onPlaceholderPick($event)"></g>
+      @if (familyActive()) {
+        <g stemmaFamilyBalloons [slots]="familySlots()" [labels]="balloonLabels()" [hint]="showFamilies" (pick)="onBalloonPick($event)"></g>
+      }
+
+      <g class="cards">
+        @for (c of shown().cards; track c.key) {
+          <g
+            stemmaCard
+            [card]="c"
+            [label]="model.labels().get(c.personId)!"
+            [tincture]="tinctureOf(c.personId)"
+            [design]="model.design()"
+            [parts]="model.parts()"
+            [selected]="c.personId === selectedId() && !c.ghost"
+            [focus]="c.personId === model.focusId() && !c.ghost"
+            [ribbons]="view.showRibbons"
+            [class.flash]="flashId() === c.personId"
+            (pointerenter)="hoverId.set(c.personId)"
+            (pointerleave)="hoverId.set(null)"
+            (pick)="onCardPick(c.personId, $event)"
+            (dblclick)="onCardDoubleClick(c.personId, $event)"
+            (contextmenu)="onContextMenu($event, c.personId)"
+          ></g>
         }
       </g>
-    }
-    <g stemmaFamilyLines [layout]="shown()" [cuts]="cutTitles()" [hover]="hoverId()" (takeOut)="onCut($event)"></g>
-    <g stemmaUnions [layout]="shown()" [cuts]="cutTitles()" (pick)="onUnionPick($event)" (takeOut)="onCut($event)"></g>
-    <g stemmaPlaceholders [layout]="shown()" (pick)="onPlaceholderPick($event)"></g>
-    @if (familyActive()) {
-      <g stemmaFamilyBalloons [slots]="familySlots()" [labels]="balloonLabels()" [hint]="showFamilies" (pick)="onBalloonPick($event)"></g>
-    }
 
-    <g class="cards">
-      @for (c of shown().cards; track c.key) {
-        <g
-          stemmaCard
-          [card]="c"
-          [label]="model.labels().get(c.personId)!"
-          [tincture]="tinctureOf(c.personId)"
-          [design]="model.design()"
-          [parts]="model.parts()"
-          [selected]="c.personId === selectedId() && !c.ghost"
-          [focus]="c.personId === model.focusId() && !c.ghost"
-          [ribbons]="view.showRibbons"
-          [class.flash]="flashId() === c.personId"
-          (pointerenter)="hoverId.set(c.personId)"
-          (pointerleave)="hoverId.set(null)"
-          (pick)="onCardPick(c.personId, $event)"
-          (dblclick)="onCardDoubleClick(c.personId, $event)"
-          (contextmenu)="onContextMenu($event, c.personId)"
-        ></g>
-      }
+      <g class="selection">
+        @if (selectedCard(); as c) {
+          <rect
+            class="selection-ring"
+            [attr.x]="c.x - 4.5"
+            [attr.y]="c.y - 4.5"
+            [attr.width]="c.w + 9"
+            [attr.height]="c.h + 9"
+            [attr.rx]="model.design().radius + 4"
+          />
+        }
+        @if (selectedUnion(); as m) {
+          <circle class="selection-ring" [attr.cx]="m.x" [attr.cy]="m.y" r="15" />
+        }
+      </g>
     </g>
-
-    <g class="selection">
-      @if (selectedCard(); as c) {
-        <rect
-          class="selection-ring"
-          [attr.x]="c.x - 4.5"
-          [attr.y]="c.y - 4.5"
-          [attr.width]="c.w + 9"
-          [attr.height]="c.h + 9"
-          [attr.rx]="model.design().radius + 4"
-        />
-      }
-      @if (selectedUnion(); as m) {
-        <circle class="selection-ring" [attr.cx]="m.x" [attr.cy]="m.y" r="15" />
-      }
-    </g>
-  </g>
-</svg>
-<div class="glass" aria-hidden="true"></div>
+  </svg>
+  <div class="glass" aria-hidden="true"></div>
+</div>
 
 @if (chartBusy.busy()) {
   <div class="busy" role="status" aria-live="polite">
