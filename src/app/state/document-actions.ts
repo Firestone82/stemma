@@ -7,7 +7,7 @@ import { Autosave } from './autosave';
 import { ChartModel } from './chart-model';
 import { LegendEntry, familyDocument } from '../core/family-document/family-document';
 import { ChartLanguage } from '../core/lang/language';
-import { familyOutline } from '../core/family-document/outline';
+import { familyOutline, linkedFamilies } from '../core/family-document/outline';
 import { FileIo, datedFilename } from '../core/services/file-io';
 import { ToastService } from '../core/services/toast';
 import { TreeStore } from '../core/store/tree-store';
@@ -191,11 +191,21 @@ export class DocumentActions {
       this.toast.show(this.i18n.t('file.gedcomEmpty'));
       return;
     }
-    const filename = datedFilename(doc.meta.title, 'docx');
-    if (!this.files.canSave(filename)) {
+    if (!this.files.canSave(datedFilename(doc.meta.title, 'docx'))) {
       this.toast.error(this.i18n.t('file.familyDocumentUnavailable'));
       return;
     }
+    // First the families to set out (see FamilyExport), then saveFamilyDocument.
+    this.ui.dialog.set({ kind: 'family-export' });
+  }
+
+  /**
+   * Saves the family document of the families `keys`, set out in full, and of the families they lead into
+   * (a daughter's children carry on her husband's), with only the people they lead to.
+   */
+  async saveFamilyDocument(keys: readonly string[]): Promise<void> {
+    const doc = this.store.doc();
+    const filename = datedFilename(doc.meta.title, 'docx');
     const t = this.i18n.t;
     const language = this.chart.language();
     const names = this.chart.familyNames();
@@ -208,6 +218,8 @@ export class DocumentActions {
       birthSurnames: this.chart.birthSurnames(),
       language,
       compare: this.i18n.compare,
+      keys,
+      partial: linkedFamilies(this.store.index(), this.chart.familyKeyOf(), keys),
     });
     const bytes = familyDocument({
       title: doc.meta.title,
@@ -224,7 +236,6 @@ export class DocumentActions {
         born: t('familyDocument.born'),
         died: t('familyDocument.died'),
         child: (sex, relation) => t(CHILD_WORDS[relation][sex === 'male' ? 0 : sex === 'female' ? 1 : 2]),
-        listedAbove: t('familyDocument.listedAbove'),
         summary: (people, generations) => t('overview.generations', { count: generations, people: t('overview.people', { count: people }) }),
         with: (name) => t('familyDocument.with', { name }),
         withUnknown: t('familyDocument.withUnknown'),

@@ -2,7 +2,7 @@ import { english } from '../lang/en';
 import { TreeIndex } from '../model/tree-index';
 import { DocBuilder } from '../testing/fixtures';
 import { familyDocument } from './family-document';
-import { OutlinePerson, familyOutline } from './outline';
+import { OutlineInput, OutlinePerson, familyOutline, linkedFamilies, numberOutline } from './outline';
 import { crc32 } from './zip';
 
 /** The files of a stored (uncompressed) ZIP archive, by name. */
@@ -27,7 +27,7 @@ function unzip(bytes: Uint8Array): Map<string, string> {
  * Jan Novák with two wives: with Eva, Petr (who has a son) and Marie (who married a Mikula and has a daughter,
  * a Mikula); with Hana, Karel. Karel is left out of prints.
  */
-function tree() {
+function tree(scope: Pick<OutlineInput, 'keys' | 'partial'> = {}) {
   const b = new DocBuilder();
   b.person('jan', 'Jan', 'Novák', 'male', '1900');
   b.person('eva', 'Eva', 'Nováková', 'female', '1902');
@@ -64,10 +64,14 @@ function tree() {
   };
   const labels: Record<string, string> = { novak: 'Novák', dvorak: 'Dvořák', mala: 'Malá', cerna: 'Černá', mikula: 'Mikula' };
   const birthSurnames = new Map(doc.people.map((p) => [p.id, p.name.birthSurname ?? p.name.surname]));
+  const index = new TreeIndex(doc);
+  const keyOf = new Map(Object.entries(born));
+  if (scope.keys && !scope.partial) scope = { ...scope, partial: linkedFamilies(index, keyOf, scope.keys) };
   return familyOutline({
+    ...scope,
     doc,
-    index: new TreeIndex(doc),
-    keyOf: new Map(Object.entries(born)),
+    index,
+    keyOf,
     labelOf: (k) => labels[k] ?? k,
     birthSurnames,
     language: english,
@@ -118,13 +122,35 @@ describe('family document', () => {
     expect(families.find((f) => f.key === 'mikula')!.rows.map((r) => r.kind === 'person' && r.personId)).toEqual(['josef', 'anna']);
   });
 
-  it('numbers everyone once in the whole document, and keeps the number wherever they appear', () => {
-    // Families by name: Černá (Lída), Dvořák (Eva), Malá (Hana), Mikula (Josef, Anna), Novák (Jan, Petr, Tomáš, Marie).
-    const numberOf = new Map(families.flatMap((f) => f.rows.flatMap((r) => (r.kind === 'person' ? [[r.personId, r.number] as const] : []))));
-    expect(Object.fromEntries(numberOf)).toEqual({ lida: '1', eva: '2', hana: '3', josef: '4', anna: '5', jan: '6', petr: '7', tomas: '8', marie: '9' });
-    // Anna under her mother in the Novák table, and Eva among Jan's partners, with their own numbers.
-    expect(people.find((r) => r.personId === 'anna')!.number).toBe('5');
-    expect(people[0].partners[0].number).toBe('2');
+  it('numbers everyone once in the order the tables come, and keeps the number wherever they appear', () => {
+    // Novák first, then Mikula: Anna, written already under her mother, is not mentioned again in the Mikula table.
+    const order = ['novak', 'mikula', 'cerna', 'dvorak', 'mala'].map((k) => families.find((f) => f.key === k)!);
+    const numbered = numberOutline(order);
+    const persons = numbered.flatMap((f) => f.rows.filter((r): r is OutlinePerson => r.kind === 'person'));
+    expect(Object.fromEntries(persons.filter((r) => !r.continuesIn).map((r) => [r.personId, r.number]))).toEqual({
+      jan: '1',
+      petr: '2',
+      tomas: '3',
+      marie: '4',
+      josef: '5',
+      anna: '6',
+      lida: '7',
+      eva: '8',
+      hana: '9',
+    });
+    // Anna under her mother, with the number of her own family's table; Eva among Jan's partners.
+    expect(persons.find((r) => r.personId === 'anna' && r.continuesIn)!.number).toBe('6');
+    expect(persons.find((r) => r.personId === 'jan')!.partners[0].number).toBe('8');
+    // The other way round, Anna is in the Mikula table first, and not mentioned again under her mother.
+    const reversed = numberOutline(['mikula', 'novak'].map((k) => families.find((f) => f.key === k)!));
+    expect(reversed[1].rows.some((r) => r.kind === 'person' && r.personId === 'anna')).toBe(false);
+  });
+
+  it('sets out the families chosen in full, and the ones they lead into with only those descendants', () => {
+    const some = tree({ keys: ['novak'] });
+    // Anna, Marie's daughter, carries on the Mikula family: it comes in with her alone, not her father.
+    expect(some.map((f) => f.key)).toEqual(['mikula', 'novak']);
+    expect(some[0].rows.map((r) => r.kind === 'person' && r.personId)).toEqual(['anna']);
   });
 
   it('is a Word document with the families in it', () => {
@@ -143,7 +169,6 @@ describe('family document', () => {
           born: 'Born',
           died: 'Died',
           child: (sex) => (sex === 'male' ? 's' : sex === 'female' ? 'd' : 'c'),
-          listedAbove: 'listed above',
           summary: (p, g) => `${p} people, ${g} generations`,
           with: (n) => `Children with ${n}`,
           withUnknown: 'Children with an unknown partner',

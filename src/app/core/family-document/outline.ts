@@ -8,7 +8,6 @@
  * listed under their mother with the family they carry on in.
  */
 import { ChartLanguage, surnameLinesIn } from '../lang/language';
-import { birthGroupOf } from '../model/births';
 import { dateSortKey } from '../model/dates';
 import { relationshipStatus } from '../model/relationship';
 import { TreeIndex } from '../model/tree-index';
@@ -45,12 +44,8 @@ export interface OutlinePerson {
   /** How they are the child of the parent they are listed under; undefined for the oldest of a branch. */
   childRelation?: ChildRelation;
   partners: OutlinePartner[];
-  /** "twin sister" for someone born together with brothers or sisters; empty otherwise. */
-  bornWith: string;
   /** For a child born into another family: that family's name. */
   continuesIn?: string;
-  /** Listed already in the same table (a family whose parents are related): not set out again. */
-  repeated?: boolean;
 }
 
 /** Above the children of one of several partners: "with Jana Nová". */
@@ -84,11 +79,19 @@ export interface OutlineInput {
   language: ChartLanguage;
   /** Orders the families' names, in the language of the document. */
   compare: (a: string, b: string) => number;
-  /** Only these families (by key), in this order; all of them otherwise, by name. */
+  /** The families set out in full (by key); all of them when not given. */
   keys?: readonly string[];
+  /**
+   * Families set out only in part, by key: the people of theirs to list, the descendants of the families
+   * set out in full who carry on another family (see linkedFamilies).
+   */
+  partial?: ReadonlyMap<string, ReadonlySet<string>>;
 }
 
-/** The outline of each family, by name; people with no surname last. People left out of prints are left out. */
+/**
+ * The outline of each family, by name, people with no surname last; not numbered yet (see numberOutline).
+ * People left out of prints are left out.
+ */
 export function familyOutline(input: OutlineInput): OutlineFamily[] {
   const { doc, index, keyOf, language } = input;
   const shown = (id: string | undefined): Person | undefined => {
@@ -106,9 +109,14 @@ export function familyOutline(input: OutlineInput): OutlineFamily[] {
     members.set(k, list);
   }
 
-  const keys = input.keys
-    ? input.keys.filter((k) => members.has(k))
-    : [...members.keys()].sort((a, b) => Number(!a) - Number(!b) || input.compare(input.labelOf(a), input.labelOf(b)));
+  // A family set out in part has only the people it is set out for.
+  for (const [key, ids] of input.partial ?? []) {
+    if (input.keys?.includes(key)) continue;
+    const list = (members.get(key) ?? []).filter((p) => ids.has(p.id));
+    if (list.length) members.set(key, list);
+  }
+  const wanted = new Set([...(input.keys ?? members.keys()), ...(input.keys ? (input.partial?.keys() ?? []) : [])]);
+  const keys = [...members.keys()].filter((k) => wanted.has(k)).sort((a, b) => Number(!a) - Number(!b) || input.compare(input.labelOf(a), input.labelOf(b)));
 
   const nameOf = (p: Person) => {
     const lines = surnameLinesIn(language, p, input.birthSurnames.get(p.id));
@@ -129,7 +137,7 @@ export function familyOutline(input: OutlineInput): OutlineFamily[] {
   };
   const childrenOf = (f: Family) => f.children.map((c) => shown(c.personId)).filter((p): p is Person => !!p);
 
-  const families = keys.map((key) => {
+  return keys.map((key) => {
     const own = members.get(key) ?? [];
     const inFamily = new Set(own.map((p) => p.id));
     // The oldest known of each branch: nobody they descend from is listed in the family.
@@ -143,9 +151,9 @@ export function familyOutline(input: OutlineInput): OutlineFamily[] {
     let deepest = 0;
 
     const add = (p: Person, level: number, childRelation?: ChildRelation) => {
-      const before = listed.has(p.id);
+      // Listed already in this table (a family whose parents are related): not again.
+      if (listed.has(p.id)) return;
       const n = nameOf(p);
-      const group = birthGroupOf(doc, p.id);
       const base: OutlinePerson = {
         kind: 'person',
         number: '',
@@ -158,12 +166,7 @@ export function familyOutline(input: OutlineInput): OutlineFamily[] {
         sex: p.sex,
         childRelation,
         partners: [],
-        bornWith: group ? language.bornWith(p.sex, group.memberIds.length) : '',
       };
-      if (before) {
-        rows.push({ ...base, repeated: true });
-        return;
-      }
       if (!inFamily.has(p.id)) {
         rows.push({ ...base, continuesIn: input.labelOf(keyFor(p.id)) });
         return;
@@ -188,14 +191,21 @@ export function familyOutline(input: OutlineInput): OutlineFamily[] {
 
     return { key, label: input.labelOf(key), people: listed.size, generations: deepest + 1, rows };
   });
+}
 
-  // Numbers in the order the families set their own people out; everyone keeps theirs wherever they appear.
+/**
+ * Numbers everyone in the order the families, as they will be printed, set their own people out; they
+ * keep the number wherever else they appear. A child carrying on a family whose table comes earlier is
+ * written there already, and is not mentioned again.
+ */
+export function numberOutline(families: readonly OutlineFamily[]): OutlineFamily[] {
   const numbers = new Map<string, string>();
-  for (const f of families) {
-    for (const r of f.rows)
-      if (r.kind === 'person' && !r.continuesIn && !r.repeated && !numbers.has(r.personId)) numbers.set(r.personId, String(numbers.size + 1));
-  }
-  for (const f of families) {
+  const out = families.map((f) => {
+    const rows = f.rows.filter((r) => !(r.kind === 'person' && r.continuesIn && numbers.has(r.personId)));
+    for (const r of rows) if (r.kind === 'person' && !r.continuesIn && !numbers.has(r.personId)) numbers.set(r.personId, String(numbers.size + 1));
+    return { ...f, rows };
+  });
+  for (const f of out) {
     for (const r of f.rows) {
       if (r.kind === 'person') {
         r.number = numbers.get(r.personId) ?? '';
@@ -205,5 +215,29 @@ export function familyOutline(input: OutlineInput): OutlineFamily[] {
       }
     }
   }
-  return families;
+  return out;
+}
+
+/**
+ * The families the families `keys` lead into: their descendants born into other families (a daughter's
+ * children, who bear their father's name), and theirs further down, by the family they carry on.
+ */
+export function linkedFamilies(index: TreeIndex, keyOf: ReadonlyMap<string, string>, keys: Iterable<string>): Map<string, Set<string>> {
+  const full = new Set(keys);
+  const out = new Map<string, Set<string>>();
+  const seen = new Set<string>();
+  const stack = [...keyOf].filter(([, k]) => full.has(k)).map(([id]) => id);
+  while (stack.length) {
+    const id = stack.pop()!;
+    if (seen.has(id)) continue;
+    seen.add(id);
+    const key = keyOf.get(id) ?? '';
+    if (!full.has(key)) {
+      const set = out.get(key) ?? new Set<string>();
+      set.add(id);
+      out.set(key, set);
+    }
+    for (const c of index.children(id)) stack.push(c.id);
+  }
+  return out;
 }

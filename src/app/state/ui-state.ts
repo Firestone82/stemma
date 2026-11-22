@@ -17,7 +17,8 @@ export type DialogRequest =
   | { kind: 'import-report'; title: string; notes: Notice[]; upgrades: Notice[] }
   | { kind: 'newer-version'; notice: Notice; xml: string; name: string }
   | { kind: 'xml'; xml: string; filename: string }
-  | { kind: 'about' };
+  | { kind: 'about' }
+  | { kind: 'family-export' };
 
 export type MenuName = 'file' | 'appearance' | 'relatives';
 
