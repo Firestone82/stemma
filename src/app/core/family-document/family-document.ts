@@ -2,11 +2,7 @@
  * The family document: a Word file to print, with a table for each family
  * that sets out its branches (see outline.ts), the youngest indented under
  * their parents with how they are their child, their partners under them,
-<<<<<<< HEAD
  * each generation in a colour of its own, everyone under one number in the whole
-=======
- * each branch in a colour of its own, everyone under one number in the whole
->>>>>>> 56d24cf3cbebd0db0b066117b9b03f4794cc1a38
  * document.
  */
 import { ChildRelation, Sex } from '../model/types';
@@ -63,22 +59,10 @@ const INK = '3B2F23';
 const MUTED = '6B5E4E';
 const HEAD_FILL = 'EDE4D3';
 /**
-<<<<<<< HEAD
  * The generations under the oldest of a family, each in a colour of its own: children, grandchildren,
  * great-grandchildren and on, the colours coming round again. A family of parents and children only has none.
  */
 const GENERATIONS: readonly string[] = ['EADCC3', 'D6E6DA', 'D8E2EF', 'ECD9D9', 'E4DDF0'];
-=======
- * The branches under the oldest of a family, each in a colour of its own, in turn: the shades from the
- * children down to the great-grandchildren and further, lighter the further down.
- */
-const BANDS: readonly (readonly string[])[] = [
-  ['EADCC3', 'F3EADA', 'F9F4EC'],
-  ['D6E6DA', 'E5EFE7', 'F1F7F2'],
-  ['D8E2EF', 'E6EDF5', 'F2F5FA'],
-  ['ECD9D9', 'F4E7E7', 'F9F2F2'],
-];
->>>>>>> 56d24cf3cbebd0db0b066117b9b03f4794cc1a38
 /** No., name (with how they are a child, and their partners under it), born, died. */
 const WIDTHS = [650, DOCX_TEXT_WIDTH - 650 - 1500 - 1500, 1500, 1500];
 /** Families of no more rows than this share pages. */
@@ -146,14 +130,10 @@ function legendTable(entries: readonly LegendEntry[]): DocxBlock {
     rows: entries.map((e) => ({
       cells: [
         // The colours stand for themselves: the first branch's.
-<<<<<<< HEAD
         {
           shade: e.colours ? GENERATIONS[0] : undefined,
           paragraphs: [para([{ text: e.symbol, bold: !e.colours || undefined, color: e.colours ? MUTED : INK }])],
         },
-=======
-        { shade: e.colours ? BANDS[0][0] : undefined, paragraphs: [para([{ text: e.symbol, bold: !e.colours || undefined, color: e.colours ? MUTED : INK }])] },
->>>>>>> 56d24cf3cbebd0db0b066117b9b03f4794cc1a38
         { paragraphs: [para([{ text: e.meaning }])] },
       ],
     })),
@@ -170,22 +150,10 @@ function headRow(words: FamilyDocumentWords): DocxRow {
   };
 }
 
-<<<<<<< HEAD
 /** The table's rows: where it goes down more than one generation, each generation in its own colour. */
 function rows(outline: readonly OutlineRow[], words: FamilyDocumentWords): DocxRow[] {
   const nested = outline.some((r) => r.level > 1);
   return outline.map((r) => row(r, words, nested && r.level > 0 ? GENERATIONS[(r.level - 1) % GENERATIONS.length] : undefined));
-=======
-/** The table's rows: each branch under the oldest in its own colour, the deeper the lighter. */
-function rows(outline: readonly OutlineRow[], words: FamilyDocumentWords): DocxRow[] {
-  let band = -1;
-  return outline.map((r) => {
-    if (r.level === 0) band = -1;
-    else if (r.level === 1 && r.kind === 'person') band++;
-    const shade = r.level > 0 && band >= 0 ? BANDS[band % BANDS.length][Math.min(r.level, 3) - 1] : undefined;
-    return row(r, words, shade);
-  });
->>>>>>> 56d24cf3cbebd0db0b066117b9b03f4794cc1a38
 }
 
 function row(r: OutlineRow, words: FamilyDocumentWords, shade: string | undefined): DocxRow {
@@ -197,16 +165,12 @@ function row(r: OutlineRow, words: FamilyDocumentWords, shade: string | undefine
   }
   const cell = (paragraphs: DocxParagraph[]): DocxCell => ({ paragraphs, shade });
   return {
-<<<<<<< HEAD
     cells: [
       cell([para([{ text: r.number, color: MUTED }])]),
       cell(nameCell(r, words)),
       cell([para([{ text: yearBelow(r.birth) }])]),
       cell([para([{ text: yearBelow(r.death) }])]),
     ],
-=======
-    cells: [cell([para([{ text: r.number, color: MUTED }])]), cell(nameCell(r, words)), cell([para([{ text: r.birth }])]), cell([para([{ text: r.death }])])],
->>>>>>> 56d24cf3cbebd0db0b066117b9b03f4794cc1a38
   };
 }
 
