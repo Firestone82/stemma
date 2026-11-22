@@ -36,8 +36,9 @@
   will-change: transform;
 }
 
-// The whole tree, drawn at one zoom (ChartViewport.drawnK) and moved and scaled to the view as a picture on its
-// own layer (TreeChart.place): the browser slides it without drawing the chart again.
+// The whole tree, drawn at one zoom (ChartViewport.drawnK) and moved and scaled to the view as a picture
+// (TreeChart.place): while it moves, on a layer of its own that the browser slides without drawing the chart again;
+// at rest, drawn with the page, so that its words are as sharp as the screen allows.
 .canvas {
   position: absolute;
   top: 0;
@@ -45,7 +46,6 @@
   display: block;
   overflow: visible;
   transform-origin: 0 0;
-  will-change: transform;
 }
 
 // While the chart is moved a clear pane lies over it: the browser finds the pane under the pointer at every step
@@ -139,4 +139,10 @@
 
 .clusters {
   pointer-events: none;
+}
+
+// Hidden while the cards glide to a new layout, and shown again where they come to rest (TreeChart.clusters).
+// Shown at once rather than faded in: a fade would redraw the whole tree's picture at every frame of it.
+.clusters.gliding {
+  visibility: hidden;
 }

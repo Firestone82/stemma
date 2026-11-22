@@ -153,9 +153,12 @@ $tinctures: 'azure', 'gules', 'vert', 'purpure', 'or', 'tenne', 'sanguine', 'cel
   --tc-edge: var(--tc-argent-edge);
 }
 
+// Faded in by its paint, not its opacity: a fading opacity would lift the card onto a layer of its own, and the
+// browser would then have to split the picture of the whole tree around it at every frame of the fade.
 @keyframes card-in {
   from {
-    opacity: 0;
+    fill-opacity: 0;
+    stroke-opacity: 0;
   }
 }
 

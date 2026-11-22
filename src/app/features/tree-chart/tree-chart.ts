@@ -14,9 +14,9 @@ import {
   viewChild,
 } from '@angular/core';
 import { surnameKey, unitingOf } from '../../core/model/names';
-import { Keep, familyBackgrounds, paintBackgrounds, squareOff } from './family-patches';
+import { Keep, Painted, familyBackgrounds, paintBackgrounds, squareOff } from './family-patches';
 import { FONT_SANS } from '../../core/card/card-design';
-import { LayoutCard } from '../../core/layout/types';
+import { LayoutCard, LayoutResult } from '../../core/layout/types';
 import { TextMeasurer } from '../../core/services/text-measure';
 import { FamilyView } from '../../state/family-view';
 import { TreeStore } from '../../core/store/tree-store';
@@ -34,6 +34,7 @@ import { Screen, coupleCentre, fitView, floatOver, revealView } from './framing'
 import { ChartGestures } from './gestures';
 import { chartKey, neighbour } from './keyboard';
 import { LayoutMotion } from './layout-motion';
+import { EMPTY_LAYOUT } from './tween';
 import { PersonCard } from './person-card/person-card';
 import { Placeholders } from './placeholders/placeholders';
 import { QuickAdd } from './quick-add/quick-add';
@@ -92,6 +93,15 @@ export class TreeChart {
   protected readonly size = signal<Screen>({ w: 0, h: 0 });
   /** The layout on screen; between two layouts it is an in-between frame. */
   protected readonly displayed = this.motion.displayed;
+  /** The chart is gliding to a new layout. */
+  protected readonly gliding = this.motion.gliding;
+  /**
+   * The layout the family backgrounds are worked out for: the chart's, a frame after it changed, so that the
+   * cards are on the screen in their new places first and the backgrounds (slow to work out on a big tree) follow.
+   */
+  private readonly backgroundLayout = signal<LayoutResult>(EMPTY_LAYOUT);
+  /** The backgrounds are not worked out for the chart's layout yet: they are hidden. */
+  protected readonly backgroundsBehind = computed(() => this.backgroundLayout() !== this.model.layout());
   protected readonly flashId = signal<string | null>(null);
 
   /** The layout the chart draws. */
@@ -253,6 +263,19 @@ export class TreeChart {
         }
       });
     });
+    effect((onCleanup) => {
+      const layout = this.model.layout();
+      if (untracked(this.backgroundLayout) === EMPTY_LAYOUT) {
+        this.backgroundLayout.set(layout);
+        return;
+      }
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const frame = requestAnimationFrame(() => (timer = setTimeout(() => this.backgroundLayout.set(layout))));
+      onCleanup(() => {
+        cancelAnimationFrame(frame);
+        clearTimeout(timer);
+      });
+    });
     effect(() => {
       const req = this.ui.focusRequest();
       if (req) untracked(() => this.centreOnPerson(req.personId));
@@ -376,8 +399,17 @@ export class TreeChart {
     const tx = view.x + e.x * view.k;
     const ty = view.y + e.y * view.k;
     const mod = (v: number) => ((v % DOT_STEP) + DOT_STEP) % DOT_STEP;
-    setTransform(this.svgRef().nativeElement, `translate3d(${tx.toFixed(2)}px,${ty.toFixed(2)}px,0) scale(${s.toFixed(5)})`, moving);
-    setTransform(this.dotsRef().nativeElement, `translate3d(${mod(view.x).toFixed(2)}px,${mod(view.y).toFixed(2)}px,0)`, moving);
+    if (moving) {
+      setTransform(this.svgRef().nativeElement, `translate3d(${tx.toFixed(2)}px,${ty.toFixed(2)}px,0) scale(${s.toFixed(5)})`, true);
+      setTransform(this.dotsRef().nativeElement, `translate3d(${mod(view.x).toFixed(2)}px,${mod(view.y).toFixed(2)}px,0)`, true);
+      return;
+    }
+    // At rest the picture stands on whole screen pixels and is drawn with the page, not moved as a layer of its own:
+    // a picture between pixels, or on a layer drawn once at another size, shows its words blurred.
+    const px = (v: number) => (Math.round(v * devicePixelRatio) / devicePixelRatio).toFixed(3);
+    const scale = s === 1 ? '' : ` scale(${s.toFixed(5)})`;
+    setTransform(this.svgRef().nativeElement, `translate(${px(tx)}px,${px(ty)}px)${scale}`, false);
+    setTransform(this.dotsRef().nativeElement, `translate(${px(mod(view.x))}px,${px(mod(view.y))}px)`, false);
   }
 
   private attach(destroyRef: DestroyRef): void {
@@ -601,7 +633,11 @@ export class TreeChart {
    */
   protected readonly clusters = computed(() => {
     if (!this.model.view().familyBackgrounds) return { painted: [], stripes: [] };
-    const layout = this.shown();
+    // Hidden until worked out for the new layout: kept as they were meanwhile, not worked out for the old one again.
+    if (this.backgroundsBehind() && this.clusterMemo) return this.clusterMemo.shown;
+    // Of the layout the chart is going to, not of every frame of the glide there: the backgrounds are hidden while
+    // the cards glide (`.clusters.gliding`) and shown again, worked out once, where the cards come to rest.
+    const layout = this.backgroundLayout();
     const index = this.store.index();
     // Everyone in their own family; and whoever married into a family, in that family too (the couple stands in
     // one box, and only the one who married in is striped in the colours of both).
@@ -654,23 +690,21 @@ export class TreeChart {
       }),
     ];
     const o = this.model.options();
-    const painted = squareOff(
-      paintBackgrounds(
-        familyBackgrounds(
-          layout.cards,
-          layout.cards.map((c) => [...(of.get(c.personId) ?? [])]),
-          CLUSTER_PAD,
-          links,
-        ),
-      ),
-      keep,
-      o.cardWidth,
-      CLUSTER_PAD * 5,
-    );
+    const tinctures = layout.cards.map((c) => [...(of.get(c.personId) ?? [])]);
+    // Most edits (a name, a date) leave every box and colour as it was: the backgrounds then stay as they were.
+    const key = clusterKey(layout.cards, tinctures, links, keep, o.cardWidth);
+    const painted =
+      key === this.clusterMemo?.key
+        ? this.clusterMemo.painted
+        : squareOff(paintBackgrounds(familyBackgrounds(layout.cards, tinctures, CLUSTER_PAD, links)), keep, o.cardWidth, CLUSTER_PAD * 5);
     const pairs = new Map<string, { id: string; a: string; b: string }>();
     for (const p of painted) if (p.with) pairs.set(`${p.tincture}-${p.with}`, { id: `stemma-stripes-${p.tincture}-${p.with}`, a: p.tincture, b: p.with });
-    return { painted, stripes: [...pairs.values()] };
+    const shown = { painted, stripes: [...pairs.values()] };
+    this.clusterMemo = { key, painted, shown };
+    return shown;
   });
+
+  private clusterMemo?: { key: string; painted: Painted[]; shown: { painted: Painted[]; stripes: { id: string; a: string; b: string }[] } };
 
   protected tinctureOf(personId: string) {
     return this.model.colors().byPerson.get(personId) ?? 'argent';
@@ -711,6 +745,23 @@ function setTransform(el: HTMLElement | SVGElement, transform: string, moving: b
 
 /** Long enough for any move. */
 const HOLD_MS = 3_600_000;
+
+/** Everything the family backgrounds are worked out from, as one string: the same string, the same backgrounds. */
+function clusterKey(
+  cards: readonly { x: number; y: number; w: number; h: number }[],
+  tinctures: readonly string[][],
+  links: readonly [number, number][],
+  keep: readonly Keep[],
+  cardWidth: number,
+): string {
+  const box = (b: { x: number; y: number; w: number; h: number }) => `${b.x},${b.y},${b.w},${b.h}`;
+  return [
+    cardWidth,
+    cards.map((c, i) => `${box(c)}:${tinctures[i].join('+')}`).join(';'),
+    links.join(';'),
+    keep.map((k) => `${box(k.box)}:${k.tinctures.join('+')}`).join(';'),
+  ].join('|');
+}
 
 /** The box a straight stretch of a line takes, a hair thick. */
 function lineBox(a: { x: number; y: number }, b: { x: number; y: number }) {
