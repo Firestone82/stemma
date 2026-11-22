@@ -4,6 +4,9 @@ import { updateMeta, updateView } from '../core/model/operations';
 import { sampleDocument } from '../core/model/sample';
 import { emptyDocument } from '../core/model/types';
 import { Autosave } from './autosave';
+import { ChartModel } from './chart-model';
+import { familyDocument } from '../core/family-document/family-document';
+import { familyOutline } from '../core/family-document/outline';
 import { FileIo, datedFilename } from '../core/services/file-io';
 import { ToastService } from '../core/services/toast';
 import { TreeStore } from '../core/store/tree-store';
@@ -12,6 +15,8 @@ import { serializeTree } from '../core/xml/serializer';
 import { I18n } from '../i18n/i18n';
 import { Preferences } from './preferences';
 import { UiState } from './ui-state';
+
+const DOCX_MIME = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
 
 /** Whole trees: starting, opening, saving, the example family and the print studio. */
 @Injectable({ providedIn: 'root' })
@@ -23,6 +28,7 @@ export class DocumentActions {
   private readonly autosave = inject(Autosave);
   private readonly prefs = inject(Preferences);
   private readonly i18n = inject(I18n);
+  private readonly chart = inject(ChartModel);
 
   /** Reopens the tree from the last visit, or shows the example family the first time. */
   restore(): void {
@@ -161,6 +167,64 @@ export class DocumentActions {
     const outcome = await this.files.save(name, toGedcom(this.store.doc(), { filename }), 'text/plain;charset=utf-8');
     if (outcome === 'saved') this.toast.show(this.i18n.t(name === filename ? 'file.gedcomSaved' : 'file.gedcomSavedAsText', { name }));
     else if (outcome !== 'declined') this.toast.error(this.i18n.t('file.saveFailed'));
+  }
+
+  /**
+   * Saves the family document: a Word file (.docx) to print, with a table for each family setting out its
+   * branches, children under their parents (see core/family-document).
+   */
+  async exportFamilyDocument(): Promise<void> {
+    this.ui.closeMenu();
+    const doc = this.store.doc();
+    if (!doc.people.length) {
+      this.toast.show(this.i18n.t('file.gedcomEmpty'));
+      return;
+    }
+    const filename = datedFilename(doc.meta.title, 'docx');
+    if (!this.files.canSave(filename)) {
+      this.toast.error(this.i18n.t('file.familyDocumentUnavailable'));
+      return;
+    }
+    const t = this.i18n.t;
+    const language = this.chart.language();
+    const names = this.chart.familyNames();
+    const now = new Date();
+    const families = familyOutline({
+      doc,
+      index: this.store.index(),
+      keyOf: this.chart.familyKeyOf(),
+      labelOf: (key) => names.get(key)?.label ?? key,
+      birthSurnames: this.chart.birthSurnames(),
+      language,
+      compare: this.i18n.compare,
+    });
+    const bytes = familyDocument({
+      title: doc.meta.title,
+      description: doc.meta.description,
+      families,
+      language: this.i18n.code(),
+      now,
+      words: {
+        heading: t('familyDocument.heading'),
+        date: language.longDate(now),
+        contents: t('familyDocument.contents'),
+        number: t('familyDocument.number'),
+        name: t('familyDocument.name'),
+        born: t('familyDocument.born'),
+        died: t('familyDocument.died'),
+        partners: t('familyDocument.partners'),
+        summary: (people, generations) => t('overview.generations', { count: generations, people: t('overview.people', { count: people }) }),
+        with: (name) => t('familyDocument.with', { name }),
+        withUnknown: t('familyDocument.withUnknown'),
+        continuesIn: (family) => t('familyDocument.continuesIn', { family }),
+        see: (number) => t('familyDocument.see', { number }),
+      },
+    });
+    const blob = new Blob([bytes], { type: DOCX_MIME });
+    const outcome = await this.files.save(filename, blob, DOCX_MIME);
+    if (outcome === 'saved') this.toast.show(t('file.familyDocumentSaved', { name: filename }));
+    else if (outcome === 'unsupported') this.toast.error(t('file.familyDocumentUnavailable'));
+    else if (outcome === 'failed') this.toast.error(t('file.saveFailed'));
   }
 
   /** True when an .xml download can be offered directly. */
