@@ -63,7 +63,11 @@ export const cs: Catalogue = {
   'file.gedcomSaved': 'Uloženo {name}.',
   'file.gedcomSavedAsText': 'Uloženo {name}. Před nahráním ho přejmenujte na .ged.',
   'file.gedcomEmpty': 'Nejdřív do stromu někoho přidejte.',
+<<<<<<< HEAD
   'file.familyDocument': 'Exportovat do Wordu (.docx)',
+=======
+  'file.familyDocument': 'Exportovat do dokumentu (.docx)',
+>>>>>>> 56d24cf3cbebd0db0b066117b9b03f4794cc1a38
   'file.familyDocumentSaved': 'Uloženo {name}.',
   'file.familyDocumentUnavailable': 'Dokumenty Wordu tu uložit nejde.',
   'familyDocument.heading': 'Rody a jejich větve',
@@ -102,9 +106,15 @@ export const cs: Catalogue = {
   'familyDocument.legend.born': 'narozen(a)',
   'familyDocument.legend.died': 'zemřel(a)',
   'familyDocument.legend.unknown': 'datum není známé',
+<<<<<<< HEAD
   'familyDocument.legend.colours': 'každá generace pod nejstarším z rodu má svou barvu, pokud rod sahá níž než o jednu generaci',
   'familyDocument.legend.colourSample': 'barvy',
   'file.print': 'Tisk',
+=======
+  'familyDocument.legend.colours': 'každá větev pod nejstarším z rodu má svou barvu, s každou další generací světlejší',
+  'familyDocument.legend.colourSample': 'barvy',
+  'file.print': 'Tisk a export',
+>>>>>>> 56d24cf3cbebd0db0b066117b9b03f4794cc1a38
   'file.sample': 'Otevřít ukázkovou rodinu',
   'file.about': 'O formátu souboru',
   'file.sampleOpened': 'Otevřena ukázková rodina.',
