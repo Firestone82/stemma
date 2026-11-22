@@ -6,7 +6,7 @@
  * document.
  */
 import { ChildRelation, Sex } from '../model/types';
-import { DOCX_TEXT_WIDTH, DocxBlock, DocxCell, DocxParagraph, DocxRow, DocxRun, docx } from './docx';
+import { DOCX_TEXT_WIDTH, DocxBlock, DocxCell, DocxParagraph, DocxRow, DocxRun, docx, estimatePages } from './docx';
 import { OutlineFamily, OutlinePartner, OutlinePerson, OutlineRow } from './outline';
 
 /** The words of the document, in its language. */
@@ -35,6 +35,15 @@ export interface FamilyDocumentWords {
   see(number: string): string;
   /** The heading of the list of families. */
   contents: string;
+  /** What the shortcuts and symbols mean, at the start. */
+  legend: { heading: string; entries: readonly LegendEntry[] };
+}
+
+/** "s", "son"; with `colours`, the meaning of the branches' colours. */
+export interface LegendEntry {
+  symbol: string;
+  meaning: string;
+  colours?: boolean;
 }
 
 export interface FamilyDocumentInput {
@@ -75,6 +84,8 @@ export function familyDocument(input: FamilyDocumentInput): Uint8Array<ArrayBuff
   ];
   if (input.description?.trim()) blocks.push({ kind: 'p', runs: [{ text: input.description.trim() }] }, { kind: 'p', runs: [] });
 
+  blocks.push({ kind: 'p', style: 'Heading1', runs: [{ text: words.legend.heading }] }, legendTable(words.legend.entries));
+
   const several = input.families.length > 1;
   const mark = (i: number) => `family-${i + 1}`;
   if (several) {
@@ -105,7 +116,30 @@ export function familyDocument(input: FamilyDocumentInput): Uint8Array<ArrayBuff
     );
   });
 
+  // The pages in the contents as they will come out; Word puts in its own when it opens the document.
+  const pages = estimatePages(blocks);
+  for (const b of blocks) {
+    if (b.kind !== 'p') continue;
+    for (const r of b.runs) {
+      const at = r.field && /PAGEREF (\S+)/.exec(r.field);
+      if (at) r.text = String(pages.get(at[1]) ?? '');
+    }
+  }
   return docx(blocks, { title: input.title, language: input.language, footer: input.title, now: input.now });
+}
+
+function legendTable(entries: readonly LegendEntry[]): DocxBlock {
+  return {
+    kind: 'table',
+    widths: [1300, DOCX_TEXT_WIDTH - 1300],
+    rows: entries.map((e) => ({
+      cells: [
+        // The colours stand for themselves: the first branch's.
+        { shade: e.colours ? BANDS[0][0] : undefined, paragraphs: [para([{ text: e.symbol, bold: !e.colours || undefined, color: e.colours ? MUTED : INK }])] },
+        { paragraphs: [para([{ text: e.meaning }])] },
+      ],
+    })),
+  };
 }
 
 function headRow(words: FamilyDocumentWords): DocxRow {

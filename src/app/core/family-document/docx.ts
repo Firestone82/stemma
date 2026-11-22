@@ -62,7 +62,7 @@ export interface DocxOptions {
   title: string;
   /** BCP 47 tag of the text, for spelling and hyphenation: "cs". */
   language: string;
-  /** Text in the footer, before the page number. */
+  /** Text on the left of the footer; the page number is on the right. */
   footer?: string;
   now?: Date;
 }
@@ -141,9 +141,10 @@ export function docx(blocks: readonly DocxBlock[], options: DocxOptions): Uint8A
         name: 'word/footer1.xml',
         data:
           xmlHead() +
-          `<w:ftr xmlns:w="${W}"><w:p><w:pPr><w:pStyle w:val="Note"/><w:jc w:val="center"/></w:pPr>` +
-          (options.footer ? `<w:r><w:t xml:space="preserve">${esc(options.footer)} · </w:t></w:r>` : '') +
-          `<w:fldSimple w:instr=" PAGE "><w:r><w:t>1</w:t></w:r></w:fldSimple></w:p></w:ftr>`,
+          // The footer text on the left, the page number on the right.
+          `<w:ftr xmlns:w="${W}"><w:p><w:pPr><w:pStyle w:val="Note"/><w:tabs><w:tab w:val="right" w:pos="${DOCX_TEXT_WIDTH}"/></w:tabs></w:pPr>` +
+          (options.footer ? `<w:r><w:t xml:space="preserve">${esc(options.footer)}</w:t></w:r>` : '') +
+          `<w:r><w:tab/></w:r><w:fldSimple w:instr=" PAGE "><w:r><w:t>1</w:t></w:r></w:fldSimple></w:p></w:ftr>`,
       },
       { name: 'word/document.xml', data: xmlHead() + `<w:document xmlns:w="${W}" xmlns:r="${R}"><w:body>${body}${sect}</w:body></w:document>` },
     ],
@@ -191,7 +192,8 @@ function run(r: DocxRun): string {
       .map((part) => `<w:t xml:space="preserve">${esc(part)}</w:t>`)
       .join('<w:br/>');
   if (!r.field) return `<w:r>${rPr}${text}</w:r>`;
-  const char = (type: string) => `<w:r>${rPr}<w:fldChar w:fldCharType="${type}"/></w:r>`;
+  // Marked as out of date, so Word fills it in when it opens the document.
+  const char = (type: string) => `<w:r>${rPr}<w:fldChar w:fldCharType="${type}"${type === 'begin' ? ' w:dirty="true"' : ''}/></w:r>`;
   return (
     (r.tab ? `<w:r>${rPr}<w:tab/></w:r>` : '') +
     char('begin') +
@@ -274,4 +276,104 @@ function esc(text: string): string {
       .replace(/>/g, '&gt;')
       .replace(/"/g, '&quot;')
   );
+}
+
+/** Points per line of type a point high: Cambria's height with the document's line spacing (1.05). */
+const LINE = 1.17 * 1.05;
+/** The average letter, as a part of the type's size. */
+const LETTER = 0.48;
+/** The height of the text on a page, in twips: A4 less the margins. */
+const PAGE_HEIGHT = 16838 - 2 * 1021;
+
+const STYLE_SIZE: Record<NonNullable<DocxParagraph['style']> | 'Normal', number> = {
+  Normal: 10,
+  Title: 24,
+  Subtitle: 11,
+  Heading1: 16,
+  Note: 8.5,
+  Contents: 11,
+};
+/** Space before and after paragraphs of each style, in twips (see styles()). */
+const STYLE_SPACE: Partial<Record<NonNullable<DocxParagraph['style']>, [number, number]>> = {
+  Title: [0, 60],
+  Subtitle: [0, 240],
+  Heading1: [360, 80],
+  Contents: [0, 60],
+};
+
+/**
+ * The page each bookmark will be on, worked out as Word lays the document out: near enough to stand in
+ * the contents until Word fills in the numbers itself, and for programs that never do.
+ */
+export function estimatePages(blocks: readonly DocxBlock[]): Map<string, number> {
+  const pages = new Map<string, number>();
+  let page = 1;
+  let used = 0;
+  const place = (height: number, keepWith = 0) => {
+    if (used > 0 && used + height + keepWith > PAGE_HEIGHT) {
+      page++;
+      used = 0;
+    }
+    used += height;
+  };
+  for (let i = 0; i < blocks.length; i++) {
+    const b = blocks[i];
+    if (b.kind === 'table') {
+      const head = b.rows.filter((r) => r.header).reduce((s, r) => s + rowHeight(r, b.widths), 0);
+      for (const row of b.rows) {
+        const h = rowHeight(row, b.widths);
+        if (!row.header && used > 0 && used + h > PAGE_HEIGHT) {
+          // Rows are not split: the row goes over to the next page, under the table's heading again.
+          page++;
+          used = head;
+        }
+        used += h;
+      }
+      continue;
+    }
+    if (b.pageBreak && used > 0) {
+      page++;
+      used = 0;
+    }
+    // A paragraph kept with the next stays with them, down to the first row of a table.
+    let keepWith = 0;
+    for (let j = i; j < blocks.length; j++) {
+      const k = blocks[j];
+      if (k.kind === 'p' && !(k.keepNext || k.style === 'Heading1')) break;
+      const next = blocks[j + 1];
+      if (!next) break;
+      if (next.kind === 'table') {
+        keepWith += next.rows.slice(0, 2).reduce((s, r) => s + rowHeight(r, next.widths), 0);
+        break;
+      }
+      keepWith += paragraphHeight(next, DOCX_TEXT_WIDTH);
+    }
+    place(paragraphHeight(b, DOCX_TEXT_WIDTH), keepWith);
+    if (b.bookmark) pages.set(b.bookmark, page);
+  }
+  return pages;
+}
+
+function rowHeight(row: DocxRow, widths: readonly number[]): number {
+  let col = 0;
+  let tallest = 0;
+  for (const c of row.cells) {
+    const span = Math.max(1, c.span ?? 1);
+    const w = widths.slice(col, col + span).reduce((s, x) => s + x, 0) - 160;
+    col += span;
+    tallest = Math.max(tallest, c.paragraphs.reduce((s, p) => s + paragraphHeight(p, w), 0) || paragraphHeight({ kind: 'p', runs: [] }, w));
+  }
+  // The cell's margins above and below, and the line between rows.
+  return tallest + 80 + 10;
+}
+
+function paragraphHeight(p: DocxParagraph, width: number): number {
+  const base = STYLE_SIZE[p.style ?? 'Normal'];
+  const size = p.runs.reduce((m, r) => Math.max(m, r.size ?? base), p.runs.length ? 0 : base) || base;
+  const room = Math.max(1, (width - (p.indent ?? 0)) / (size * 20 * LETTER));
+  // Each line of the text (a run may break it), wrapped at the width.
+  const text = p.runs.map((r) => (r.tab ? '\t' : '') + r.text).join('');
+  const lines = text.split('\n').reduce((n, line) => n + Math.max(1, Math.ceil(line.length / room)), 0);
+  const [before, after] = (p.style && STYLE_SPACE[p.style]) || [0, 0];
+  return before + after + lines * size * LINE * 20;
 }
