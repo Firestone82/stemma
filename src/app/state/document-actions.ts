@@ -222,8 +222,6 @@ export class DocumentActions {
         name: t('familyDocument.name'),
         born: t('familyDocument.born'),
         died: t('familyDocument.died'),
-        partners: t('familyDocument.partners'),
-        relation: t('familyDocument.relation'),
         child: (sex, relation) => t(CHILD_WORDS[relation][sex === 'male' ? 0 : sex === 'female' ? 1 : 2]),
         listedAbove: t('familyDocument.listedAbove'),
         summary: (people, generations) => t('overview.generations', { count: generations, people: t('overview.people', { count: people }) }),
