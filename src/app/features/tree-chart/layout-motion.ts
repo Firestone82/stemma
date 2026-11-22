@@ -5,6 +5,11 @@ import { ChartViewport } from './viewport';
 
 const GLIDE_MS = 380;
 /**
+ * A gap between two frames of a glide longer than this (in ms) and the glide stops where it is going: on a big
+ * tree, or a slow computer, every frame of it redraws so much that it would stutter rather than glide.
+ */
+const SLOW_FRAME_MS = 45;
+/**
  * More people coming or going than this and the chart changes at once: a
  * glide redraws every card on every frame, which on a big tree turns into a
  * stutter (switching the family view, a Relatives step).
@@ -19,6 +24,8 @@ const MAX_GLIDE_CHANGES = 40;
 export class LayoutMotion {
   /** The layout on screen; during a glide, a frame between two layouts. */
   readonly displayed = signal<LayoutResult>(EMPTY_LAYOUT);
+  /** The chart is gliding from one layout to another. */
+  readonly gliding = signal(false);
   /** Set when the person moves the chart during a glide; the view then stops following. */
   userMoved = false;
 
@@ -53,13 +60,20 @@ export class LayoutMotion {
       return false;
     }
     const start = performance.now();
+    let last = -1;
+    let frames = 0;
     const step = (now: number) => {
-      const t = Math.min(1, (now - start) / GLIDE_MS);
+      // The first frame carries the work of the change itself; the ones after show how heavy a frame of the glide is.
+      const slow = frames++ > 1 && now - last > SLOW_FRAME_MS;
+      last = now;
+      const t = slow ? 1 : Math.min(1, (now - start) / GLIDE_MS);
       const e = easeInOut(t);
-      this.displayed.set(lerpLayout(from, target, e));
+      this.displayed.set(t < 1 ? lerpLayout(from, target, e) : target);
       if (!this.userMoved) this.viewport.view.set({ x: v0.x - shift.x * v0.k * e, y: v0.y - shift.y * v0.k * e, k: v0.k });
       this.frame = t < 1 ? requestAnimationFrame(step) : null;
+      if (t >= 1) this.gliding.set(false);
     };
+    this.gliding.set(true);
     this.frame = requestAnimationFrame(step);
     return false;
   }
@@ -67,6 +81,7 @@ export class LayoutMotion {
   stop(): void {
     if (this.frame !== null) cancelAnimationFrame(this.frame);
     this.frame = null;
+    this.gliding.set(false);
   }
 }
 

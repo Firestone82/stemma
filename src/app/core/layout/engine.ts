@@ -54,18 +54,95 @@ interface Wing {
   rank: number;
 }
 
-/** A piece of the chart in its own coordinates, moved as one. */
+/** A block placed inside another, moved by (dx, dy): its pieces are copied out only when they are asked for. */
+class Placed {
+  constructor(
+    readonly block: Block,
+    readonly dx: number,
+    readonly dy: number,
+  ) {}
+}
+
+type Kind = 'cards' | 'unions' | 'lines' | 'holders' | 'wings';
+const KINDS: readonly Kind[] = ['cards', 'unions', 'lines', 'holders', 'wings'];
+
+/** How each kind of piece is copied, moved by (dx, dy). */
+const MOVED: { [K in Kind]: (p: PieceOf<K>, dx: number, dy: number) => PieceOf<K> } = {
+  cards: (c, dx, dy) => ({ ...c, x: c.x + dx, y: c.y + dy }),
+  unions: (u, dx, dy) => ({ ...u, x: u.x + dx, y: u.y + dy, line: move(u.line, dx, dy) }),
+  lines: (l, dx, dy) => ({ ...l, points: move(l.points, dx, dy) }),
+  holders: (h, dx, dy) => ({ ...h, x: h.x + dx, y: h.y + dy }),
+  wings: (w, dx, dy) => ({ ...w, head: move(w.head, dx, dy) }),
+};
+
+interface Pieces {
+  cards: LayoutCard;
+  unions: LayoutUnion;
+  lines: LayoutLine;
+  holders: LayoutPlaceholder;
+  wings: Wing;
+}
+type PieceOf<K extends Kind> = Pieces[K];
+
+/**
+ * A piece of the chart in its own coordinates, moved as one.
+ *
+ * Blocks go inside blocks many levels deep. A block merged into another is kept as a reference with its offset,
+ * and its cards, lines and the rest are copied out, moved, only when the outer block's are asked for: copying
+ * them at every level would copy the whole tree once for every generation.
+ */
 class Block {
-  cards: LayoutCard[] = [];
-  unions: LayoutUnion[] = [];
-  lines: LayoutLine[] = [];
-  holders: LayoutPlaceholder[] = [];
+  private readonly own: { [K in Kind]: (PieceOf<K> | Placed)[] } = { cards: [], unions: [], lines: [], holders: [], wings: [] };
+  private readonly nested: Record<Kind, boolean> = { cards: false, unions: false, lines: false, holders: false, wings: false };
   boxes: Box[] = [];
-  wings: Wing[] = [];
   x0 = Infinity;
   y0 = Infinity;
   x1 = -Infinity;
   y1 = -Infinity;
+
+  get cards(): LayoutCard[] {
+    return this.flat('cards');
+  }
+  get unions(): LayoutUnion[] {
+    return this.flat('unions');
+  }
+  get lines(): LayoutLine[] {
+    return this.flat('lines');
+  }
+  get holders(): LayoutPlaceholder[] {
+    return this.flat('holders');
+  }
+  get wings(): Wing[] {
+    return this.flat('wings');
+  }
+  set wings(w: Wing[]) {
+    this.own.wings = w;
+    this.nested.wings = false;
+  }
+
+  /** The pieces of one kind, with those of the blocks placed in this one copied out and moved. */
+  private flat<K extends Kind>(kind: K): PieceOf<K>[] {
+    if (this.nested[kind]) {
+      const out: PieceOf<K>[] = [];
+      this.copyOut(kind, 0, 0, out, false);
+      (this.own[kind] as (PieceOf<K> | Placed)[]) = out;
+      this.nested[kind] = false;
+    }
+    return this.own[kind] as PieceOf<K>[];
+  }
+
+  private copyOut<K extends Kind>(kind: K, dx: number, dy: number, out: PieceOf<K>[], copy: boolean): void {
+    const moved = MOVED[kind] as (p: PieceOf<K>, dx: number, dy: number) => PieceOf<K>;
+    for (const p of this.own[kind] as (PieceOf<K> | Placed)[]) {
+      if (p instanceof Placed) p.block.copyOut(kind, dx + p.dx, dy + p.dy, out, true);
+      else out.push(copy ? moved(p, dx, dy) : p);
+    }
+  }
+
+  /** Adds pieces of one kind of this block's own (without copying out what was merged in so far). */
+  add<K extends Kind>(kind: K, ...pieces: PieceOf<K>[]): void {
+    (this.own[kind] as (PieceOf<K> | Placed)[]).push(...pieces);
+  }
 
   box(x0: number, y0: number, x1: number, y1: number, pad: number): void {
     this.boxes.push({ x0, y0, x1, y1, pad });
@@ -86,22 +163,24 @@ class Block {
 
   /** Takes a copy of `o`, moved by (dx, dy). */
   merge(o: Block, dx: number, dy: number): void {
-    for (const c of o.cards) this.cards.push({ ...c, x: c.x + dx, y: c.y + dy });
-    for (const u of o.unions) this.unions.push({ ...u, x: u.x + dx, y: u.y + dy, line: move(u.line, dx, dy) });
-    for (const l of o.lines) this.lines.push({ ...l, points: move(l.points, dx, dy) });
-    for (const h of o.holders) this.holders.push({ ...h, x: h.x + dx, y: h.y + dy });
+    const placed = new Placed(o, dx, dy);
+    for (const kind of KINDS) {
+      // Only what `o` has: an empty kind adds nothing to copy out later.
+      if (!o.own[kind].length) continue;
+      (this.own[kind] as unknown[]).push(placed);
+      this.nested[kind] = true;
+    }
     for (const b of o.boxes) this.box(b.x0 + dx, b.y0 + dy, b.x1 + dx, b.y1 + dy, b.pad);
-    for (const w of o.wings) this.wings.push({ ...w, head: move(w.head, dx, dy) });
   }
 
   /** The same piece seen in a mirror: left and right swapped. */
   mirrored(): Block {
     const m = new Block();
     const flip = (points: readonly Pt[]) => points.map((p) => ({ x: -p.x, y: p.y }));
-    for (const c of this.cards) m.cards.push({ ...c, x: -(c.x + c.w) });
-    for (const u of this.unions) m.unions.push({ ...u, x: -u.x, line: flip(u.line) });
-    for (const l of this.lines) m.lines.push({ ...l, points: flip(l.points) });
-    for (const h of this.holders) m.holders.push({ ...h, x: -(h.x + h.w) });
+    for (const c of this.cards) m.add('cards', { ...c, x: -(c.x + c.w) });
+    for (const u of this.unions) m.add('unions', { ...u, x: -u.x, line: flip(u.line) });
+    for (const l of this.lines) m.add('lines', { ...l, points: flip(l.points) });
+    for (const h of this.holders) m.add('holders', { ...h, x: -(h.x + h.w) });
     for (const b of this.boxes) m.box(-b.x1, b.y0, -b.x0, b.y1, b.pad);
     return m;
   }
@@ -255,12 +334,12 @@ function unitRow(ctx: Ctx, u: Unit, facing: Facing): UnitRow {
   const stems = new Map<string, Stem>();
 
   if (u.placeholder) {
-    block.holders.push({ familyId: u.placeholder, x: 0, y: 0, w: W, h: H });
+    block.add('holders', { familyId: u.placeholder, x: 0, y: 0, w: W, h: H });
     block.box(0, 0, W, H, pad);
     stems.set(u.placeholder, { familyId: u.placeholder, x: W / 2, head: [{ x: W / 2, y: H }] });
   }
   row.forEach((m, i) => {
-    block.cards.push({
+    block.add('cards', {
       key: m.ghost ? `${m.personId}~u${u.id}` : m.personId,
       personId: m.personId,
       x: xOf(i),
@@ -296,7 +375,7 @@ function unitRow(ctx: Ctx, u: Unit, facing: Facing): UnitRow {
     }
     gapTaken.add(a);
     const x = xOf(a) + wOf(a) + G / 2;
-    block.unions.push({
+    block.add('unions', {
       familyId: f.id,
       kind: f.kind,
       ended: isBrokenUp(relationshipStatus(f)),
@@ -352,7 +431,7 @@ function unitRow(ctx: Ctx, u: Unit, facing: Facing): UnitRow {
       { x: to, y },
       { x: to, y: edge },
     ];
-    block.unions.push({ familyId: f.id, kind: f.kind, ended: isBrokenUp(relationshipStatus(f)), x, y, line });
+    block.add('unions', { familyId: f.id, kind: f.kind, ended: isBrokenUp(relationshipStatus(f)), x, y, line });
     block.path(line);
     stems.set(f.id, {
       familyId: f.id,
@@ -454,7 +533,7 @@ function unitCore(ctx: Ctx, u: Unit, facing: Facing, hung: boolean, open: Open =
         { x: a.target, y: 0 },
       ];
       block.path(tail);
-      block.lines.push({
+      block.add('lines', {
         key: `${a.up.familyId}|${a.up.personId}`,
         familyId: a.up.familyId,
         childId: a.up.personId,
@@ -534,7 +613,7 @@ function hang(ctx: Ctx, block: Block, items: Hung[], H = ctx.o.cardHeight): void
       : [];
     if (jog.length) block.path([{ x: item.stem.x, y: H }, ...jog]);
     for (const l of item.res.lines) {
-      block.lines.push({ ...l, points: tidy([...item.stem.head, ...jog, ...move(shift[i] ? jogged(l.points, ctx.o.stem) : l.points.slice(1), x, H)]) });
+      block.add('lines', { ...l, points: tidy([...item.stem.head, ...jog, ...move(shift[i] ? jogged(l.points, ctx.o.stem) : l.points.slice(1), x, H)]) });
     }
   });
 }
@@ -584,7 +663,7 @@ function kidBlock(ctx: Ctx, familyId: string, kid: Kid, facing: Facing, budget: 
   if (!kid.unit) {
     const block = new Block();
     const w = widthOf(ctx, kid.personId);
-    block.cards.push({ key: `${kid.personId}~${familyId}`, personId: kid.personId, x: 0, y: 0, w, h: H, ghost: true });
+    block.add('cards', { key: `${kid.personId}~${familyId}`, personId: kid.personId, x: 0, y: 0, w, h: H, ghost: true });
     block.box(0, 0, w, H, siblingGap / 2);
     return { block, access: facing === 'west' ? { x: 0, y: H / 2 } : facing === 'east' ? { x: w, y: H / 2 } : { x: w / 2, y: 0 }, leaf: true };
   }
@@ -834,7 +913,7 @@ function upBlock(ctx: Ctx, up: Up, side: Side, open: Open, level: number): { blo
   const head = move([...way.head, { x: way.x, y: foot }], -way.x, -foot);
   const block = new Block();
   block.merge(core.block, -way.x, -foot);
-  if (winged && siblings) block.wings.push({ sides: wing, group: siblings, head, rank: pa.rank });
+  if (winged && siblings) block.add('wings', { sides: wing, group: siblings, head, rank: pa.rank });
   return { block, head };
 }
 
@@ -880,7 +959,7 @@ function stackCore(ctx: Ctx, u: Unit): Stack {
     if (hasKids.has(familyId)) block.path([from[from.length - 1], { x, y: foot }]);
   };
   if (u.placeholder) {
-    block.holders.push({ familyId: u.placeholder, x: 0, y: 0, w: W, h: H });
+    block.add('holders', { familyId: u.placeholder, x: 0, y: 0, w: W, h: H });
     block.box(0, 0, W, H, pad);
     const stub = [
       { x: W, y: H / 2 },
@@ -892,7 +971,7 @@ function stackCore(ctx: Ctx, u: Unit): Stack {
   }
   order.forEach((m, i) => {
     const y = i * (H + stackGap);
-    block.cards.push({
+    block.add('cards', {
       key: m.ghost ? `${m.personId}~u${u.id}` : m.personId,
       personId: m.personId,
       x: 0,
@@ -937,7 +1016,7 @@ function stackCore(ctx: Ctx, u: Unit): Stack {
       { x: W, y: mid(b) },
     ];
     const marker = { x, y: (mid(a) + mid(b)) / 2 };
-    block.unions.push({ familyId: f.id, kind: f.kind, ended: isBrokenUp(relationshipStatus(f)), x: marker.x, y: marker.y, line });
+    block.add('unions', { familyId: f.id, kind: f.kind, ended: isBrokenUp(relationshipStatus(f)), x: marker.x, y: marker.y, line });
     block.path(line);
     anchors.set(f.id, marker);
     down(f.id, x, [marker]);
@@ -998,7 +1077,7 @@ function layoutStructure(ctx: Ctx, s: Structure): Block {
     scene.path([at, { x, y: at.y }]);
     cont.add(res.block.boxes, x, at.y);
     cont.span(Math.min(at.x, x) - LINE_PAD, Math.max(at.x, x) + LINE_PAD, at.y - LINE_PAD, at.y + LINE_PAD);
-    for (const l of res.lines) scene.lines.push({ ...l, points: tidy([...w.head, ...move(l.points, x, at.y)]) });
+    for (const l of res.lines) scene.add('lines', { ...l, points: tidy([...w.head, ...move(l.points, x, at.y)]) });
   };
   for (const w of wings) {
     const kids = w.group.kids;

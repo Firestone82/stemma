@@ -22,7 +22,7 @@
     <g class="world" [attr.transform]="worldTransform()">
       @if (view.familyBackgrounds) {
         @let bg = clusters();
-        <g class="clusters" aria-hidden="true">
+        <g class="clusters" aria-hidden="true" [class.gliding]="gliding() || backgroundsBehind()">
           <!-- Where two families share a piece of background (a partner who married in), stripes of the two. -->
           @for (s of bg.stripes; track s.id) {
             <pattern [attr.id]="s.id" width="16" height="16" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
