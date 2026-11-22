@@ -38,6 +38,13 @@ export class Shortcuts {
     } else if (mod && key === 'p') {
       e.preventDefault();
       this.documents.openPrint();
+    } else if (mod && key === 'f' && !e.shiftKey && !e.altKey) {
+      // The people list's own search instead of the browser's find bar. The browser keeps Ctrl+F where the app has
+      // no search to offer: a small tree (no search field), the print studio, a dialog, or a relative being added.
+      if (this.ui.peopleSearchable() && !this.ui.printOpen() && !this.ui.dialog() && !this.ui.adding()) {
+        e.preventDefault();
+        this.ui.find();
+      }
     } else if (e.key === 'Escape') {
       this.escape();
     } else if (!typing && (e.key === 'Delete' || e.key === 'Backspace')) {

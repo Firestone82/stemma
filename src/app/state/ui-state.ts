@@ -151,9 +151,14 @@ export class UiState {
   readonly flash = signal<{ personId: string; seq: number } | null>(null);
   /** The field to focus when the person panel opens next. */
   readonly focusField = signal<string | null>(null);
+  /** Ctrl+F asked for the search field of the people list; the list focuses it once it is showing. */
+  readonly findRequested = signal(false);
   /** Phone-sized screen: the panel becomes a bottom sheet. */
   readonly narrow = signal(false);
   readonly viewportHeight = signal(typeof innerHeight === 'number' ? innerHeight : 800);
+
+  /** The people list has a search field: only once there are more people than fit at a glance. */
+  readonly peopleSearchable = computed(() => this.store.doc().people.length > 6);
 
   /** The panel is showing (always on wide screens; on phones when there is something in it). */
   readonly sheetOpen = computed(() => !this.narrow() || !!this.adding() || !!this.store.selection() || this.peopleOpen());
@@ -201,6 +206,12 @@ export class UiState {
     this.adding.set(null);
     this.store.selection.set(null);
     if (this.narrow()) this.peopleOpen.set(true);
+  }
+
+  /** Ctrl+F: back to the overview, with the search field of the people list focused. */
+  find(): void {
+    this.showOverview();
+    this.findRequested.set(true);
   }
 
   togglePeople(): void {

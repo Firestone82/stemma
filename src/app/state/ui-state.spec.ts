@@ -89,3 +89,21 @@ describe('undo and redo in the print studio', () => {
     expect(ui.printOmitted()).toEqual([]);
   });
 });
+
+describe('Ctrl+F', () => {
+  let ui: UiState;
+  let store: TreeStore;
+
+  beforeEach(() => {
+    store = TestBed.inject(TreeStore);
+    ui = TestBed.inject(UiState);
+    store.load(sampleDocument());
+  });
+
+  it('goes back to the overview and asks for the search field', () => {
+    store.selectPerson('I29');
+    ui.find();
+    expect(store.selection()).toBeNull();
+    expect(ui.findRequested()).toBe(true);
+  });
+});

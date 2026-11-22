@@ -6,7 +6,16 @@
   <div class="search">
     <stemma-icon name="search" [size]="16" />
     <label class="visually-hidden" for="people-search">{{ t('overview.find') }}</label>
-    <input id="people-search" class="input" type="search" autocomplete="off" [placeholder]="t('overview.find')" [value]="query()" (input)="search($event)" />
+    <input
+      #searchField
+      id="people-search"
+      class="input"
+      type="search"
+      autocomplete="off"
+      [placeholder]="t('overview.find')"
+      [value]="query()"
+      (input)="search($event)"
+    />
   </div>
 }
 @let groups = families();

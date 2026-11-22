@@ -217,6 +217,7 @@ export const cs: Catalogue = {
   'overview.tip.print': 'Tisk a export vyplní arch kartami tak velkými, jak papír dovolí. Zvolte papír a kam až strom sahá.',
   'overview.tip.move': 'Tažením se posouváte, kolečkem nebo sevřením prstů přibližujete. Klávesou F zobrazíte všechny.',
   'overview.tip.keys': 'Když je někdo vybraný, šipkami přejdete na jeho rodiče, děti a sousedy.',
+  'overview.tip.find': 'Klávesou Ctrl+F (na Macu Cmd+F) hledáte v seznamu osob.',
   'overview.tip.save':
     'Vše se průběžně ukládá v tomto prohlížeči. Přes Soubor a Uložit jako XML si uchováte kopii, kterou otevřete v jakékoli verzi aplikace Stemma.',
   'legend.familyTitle': 'Barvy rodů',

@@ -17,6 +17,8 @@
 
   .input {
     padding-left: 34px;
+    // Scrolled to by Ctrl+F: below the sticky panel head (title and summary), with the People heading in view.
+    scroll-margin-top: 150px;
   }
 }
 

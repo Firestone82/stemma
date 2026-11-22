@@ -12,6 +12,8 @@ const ARROWS: Record<string, Direction> = { ArrowUp: 'up', ArrowDown: 'down', Ar
 export function chartKey(e: KeyboardEvent): ChartKey {
   const target = e.target as Element | null;
   if (target?.closest?.('input, textarea, select, stemma-quick-add')) return null;
+  // Ctrl+F, Ctrl+0, Ctrl+plus and the like belong to the app (Shortcuts) and the browser, not to the chart.
+  if (e.ctrlKey || e.metaKey || e.altKey) return null;
   if (e.key === '+' || e.key === '=') return { kind: 'zoom', factor: 1.25 };
   if (e.key === '-' || e.key === '_') return { kind: 'zoom', factor: 0.8 };
   if (e.key === '0' || e.key.toLowerCase() === 'f') return { kind: 'fit' };

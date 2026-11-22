@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, computed, inject, output, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, ElementRef, afterRenderEffect, computed, inject, output, signal, viewChild } from '@angular/core';
 import { normalizeQuery, searchText, unitingOf } from '../../../../core/model/names';
 import { Person } from '../../../../core/model/types';
 import { relativesOf } from '../../../../core/poster/scope';
@@ -40,8 +40,21 @@ export class PeopleList {
   readonly add = output<void>();
 
   protected readonly query = signal('');
-  protected readonly searchable = computed(() => this.store.doc().people.length > 6);
+  protected readonly searchable = this.ui.peopleSearchable;
+  private readonly searchField = viewChild<ElementRef<HTMLInputElement>>('searchField');
   private readonly openByDefault = computed(() => this.store.doc().people.length <= OPEN_UP_TO);
+
+  constructor() {
+    // Ctrl+F (Shortcuts): the search field takes the focus once it is on the page, with anything typed in it selected.
+    afterRenderEffect(() => {
+      const input = this.searchField()?.nativeElement;
+      if (!input || !this.ui.findRequested()) return;
+      this.ui.findRequested.set(false);
+      input.focus({ preventScroll: true });
+      input.scrollIntoView({ block: 'nearest' });
+      input.select();
+    });
+  }
 
   protected readonly families = computed(() => {
     const q = normalizeQuery(this.query());
