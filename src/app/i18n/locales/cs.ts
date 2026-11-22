@@ -414,7 +414,12 @@ export const cs: Catalogue = {
   'births.unlink': 'Nenarodili se společně',
   'add.twin': 'Narozen(a) společně s osobou {name}: stejné datum a místo narození',
   'add.bornTogetherSize': 'Kolik dětí se narodilo společně',
-  'add.bornTogetherMore': { one: 'Přidá se i další sourozenec, kterého pojmenujete později.', few: 'Přidají se i další {count} sourozenci, které pojmenujete později.', many: 'Přidá se i dalších {count} sourozenců, které pojmenujete později.', other: 'Přidá se i dalších {count} sourozenců, které pojmenujete později.' },
+  'add.bornTogetherMore': {
+    one: 'Přidá se i další sourozenec, kterého pojmenujete později.',
+    few: 'Přidají se i další {count} sourozenci, které pojmenujete později.',
+    many: 'Přidá se i dalších {count} sourozenců, které pojmenujete později.',
+    other: 'Přidá se i dalších {count} sourozenců, které pojmenujete později.',
+  },
   'childKind.biological': 'Vlastní',
   'childKind.adopted': 'Adoptivní',
   'childKind.foster': 'Pěstounský',

@@ -414,7 +414,10 @@ export const en = {
   'births.unlink': 'Not born together',
   'add.twin': 'Born together with {name}: same date and place of birth',
   'add.bornTogetherSize': 'How many were born together',
-  'add.bornTogetherMore': { one: 'One more brother or sister is added too, to be named later.', other: '{count} more brothers or sisters are added too, to be named later.' },
+  'add.bornTogetherMore': {
+    one: 'One more brother or sister is added too, to be named later.',
+    other: '{count} more brothers or sisters are added too, to be named later.',
+  },
   'childKind.biological': 'Birth',
   'childKind.adopted': 'Adoptive',
   'childKind.foster': 'Foster',

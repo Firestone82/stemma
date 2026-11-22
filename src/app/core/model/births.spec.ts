@@ -3,7 +3,18 @@ import { Layouter, WIDE } from '../layout/engine';
 import { LAYOUT } from '../layout/types';
 import { TreeIndex } from './tree-index';
 import { DocBuilder } from '../testing/fixtures';
-import { BIRTH_COLORS, MAX_BORN_TOGETHER, addBornTogether, birthColor, birthCount, birthGroupOf, leaveBirth, linkBirth, shareBirth, splitBirth } from './births';
+import {
+  BIRTH_COLORS,
+  MAX_BORN_TOGETHER,
+  addBornTogether,
+  birthColor,
+  birthCount,
+  birthGroupOf,
+  leaveBirth,
+  linkBirth,
+  shareBirth,
+  splitBirth,
+} from './births';
 import { updatePerson } from './operations';
 
 function family() {
