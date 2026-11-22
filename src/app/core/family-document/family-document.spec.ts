@@ -36,7 +36,7 @@ function tree() {
   b.person('marie', 'Marie', 'Mikulová', 'female', '1927');
   b.person('karel', 'Karel', 'Novák', 'male', '1935');
   b.person('josef', 'Josef', 'Mikula', 'male', '1924');
-  b.person('anna', 'Anna', 'Mikulová', 'female', '1950');
+  b.person('anna', 'Anna', 'Mikulová', 'female');
   b.person('tomas', 'Tomáš', 'Novák', 'male', '1955');
   b.person('lida', 'Lída', 'Nováková', 'female', '1930');
   b.family('f1', ['jan', 'eva'], ['petr', 'marie'], { start: { date: { value: '1924-06-01' } } });
@@ -49,6 +49,7 @@ function tree() {
   doc.people.find((p) => p.id === 'hana')!.name.birthSurname = 'Malá';
   doc.people.find((p) => p.id === 'lida')!.name.birthSurname = 'Černá';
   doc.people.find((p) => p.id === 'karel')!.hiddenFromPrint = true;
+  doc.people.find((p) => p.id === 'anna')!.death = {};
   const born: Record<string, string> = {
     jan: 'novak',
     petr: 'novak',
@@ -101,6 +102,10 @@ describe('family document', () => {
     // No wedding dates, no places.
     expect(jan.partners[0].union).toBe('married');
     expect(jan.birth).toBe('1900');
+    // Not known: a question mark; died, but nobody knows when: one too.
+    expect(people.find((r) => r.personId === 'marie')!.death).toBe('');
+    const anna = people.find((r) => r.personId === 'anna')!;
+    expect([anna.birth, anna.death]).toEqual(['?', '?']);
     // Karel, Hana's only child, is left out of prints: no heading over nobody.
     expect(novak.rows.filter((r) => r.kind === 'union')).toHaveLength(0);
   });
