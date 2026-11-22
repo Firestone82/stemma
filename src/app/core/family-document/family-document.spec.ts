@@ -83,13 +83,13 @@ describe('family document', () => {
     expect(families.map((f) => f.label)).toEqual(['Černá', 'Dvořák', 'Malá', 'Mikula', 'Novák']);
   });
 
-  it('sets out a family from its oldest member down, numbered by branch', () => {
-    expect(people.map((r) => [r.number, r.level, r.personId])).toEqual([
-      ['1', 0, 'jan'],
-      ['1.1', 1, 'petr'],
-      ['1.1.1', 2, 'tomas'],
-      ['1.2', 1, 'marie'],
-      ['1.2.1', 2, 'anna'],
+  it('sets out a family from its oldest member down, children with how they are children', () => {
+    expect(people.map((r) => [r.level, r.personId, r.childRelation])).toEqual([
+      [0, 'jan', undefined],
+      [1, 'petr', 'biological'],
+      [2, 'tomas', 'biological'],
+      [1, 'marie', 'biological'],
+      [2, 'anna', 'biological'],
     ]);
     expect(novak.people).toBe(4);
     expect(novak.generations).toBe(3);
@@ -98,7 +98,9 @@ describe('family document', () => {
   it('names partners with their dates and wedding, and children under the parent they had them with', () => {
     const jan = people[0];
     expect(jan.partners.map((p) => p.name)).toEqual(['Eva Nováková, née Dvořáková', 'Hana Nováková, née Malá']);
-    expect(jan.partners[0].union).toBe('∞ 1 June 1924');
+    // No wedding dates, no places.
+    expect(jan.partners[0].union).toBe('married');
+    expect(jan.birth).toBe('1900');
     // Karel, Hana's only child, is left out of prints: no heading over nobody.
     expect(novak.rows.filter((r) => r.kind === 'union')).toHaveLength(0);
   });
@@ -109,6 +111,15 @@ describe('family document', () => {
     const anna = people.find((r) => r.personId === 'anna')!;
     expect(anna.continuesIn).toBe('Mikula');
     expect(families.find((f) => f.key === 'mikula')!.rows.map((r) => r.kind === 'person' && r.personId)).toEqual(['josef', 'anna']);
+  });
+
+  it('numbers everyone once in the whole document, and keeps the number wherever they appear', () => {
+    // Families by name: Černá (Lída), Dvořák (Eva), Malá (Hana), Mikula (Josef, Anna), Novák (Jan, Petr, Tomáš, Marie).
+    const numberOf = new Map(families.flatMap((f) => f.rows.flatMap((r) => (r.kind === 'person' ? [[r.personId, r.number] as const] : []))));
+    expect(Object.fromEntries(numberOf)).toEqual({ lida: '1', eva: '2', hana: '3', josef: '4', anna: '5', jan: '6', petr: '7', tomas: '8', marie: '9' });
+    // Anna under her mother in the Novák table, and Eva among Jan's partners, with their own numbers.
+    expect(people.find((r) => r.personId === 'anna')!.number).toBe('5');
+    expect(people[0].partners[0].number).toBe('2');
   });
 
   it('is a Word document with the families in it', () => {
@@ -127,11 +138,14 @@ describe('family document', () => {
           born: 'Born',
           died: 'Died',
           partners: 'Partners',
+          relation: 'Relation',
+          child: (sex) => (sex === 'male' ? 'son' : sex === 'female' ? 'daughter' : 'child'),
+          listedAbove: 'listed above',
           summary: (p, g) => `${p} people, ${g} generations`,
           with: (n) => `Children with ${n}`,
           withUnknown: 'Children with an unknown partner',
           continuesIn: (f) => `continues in the ${f} family`,
-          see: (n) => `see ${n}`,
+          see: (n) => `No. ${n}`,
         },
       }),
     );
@@ -150,6 +164,11 @@ describe('family document', () => {
     expect(body).toContain('>Tomáš Novák<');
     expect(body).toContain('continues in the Mikula family');
     expect(body).toContain('<w:tblHeader/>');
+    expect(body).toContain('>daughter<');
+    // The contents: dots up to the page number, which points at the family's heading.
+    expect(body).toContain('w:leader="dot"');
+    expect(body).toContain('PAGEREF family-5');
+    expect(body).toContain('w:name="family-5"');
     expect(body).not.toContain('Karel');
     // Well-formed XML.
     for (const [name, xml] of files) {

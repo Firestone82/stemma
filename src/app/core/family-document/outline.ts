@@ -1,30 +1,34 @@
 /**
  * The families of a tree as an outline, for the family document: each family
  * (everyone born with its name, see ChartModel.familyKeyOf) set out from its
- * oldest known members down, children under their parents, numbered by branch
- * (1, 1.2, 1.2.3). Children born into another family (a daughter's children,
- * who bear their father's name) are listed under their mother with the family
- * they carry on in, which has a table of its own.
+ * oldest known members down, children under their parents. Everyone has one
+ * number in the whole document, given in the order the families list them, and
+ * keeps it wherever else they appear: among the partners, or as a child born
+ * into another family (a daughter's children, who bear their father's name),
+ * listed under their mother with the family they carry on in.
  */
 import { ChartLanguage, surnameLinesIn } from '../lang/language';
 import { birthGroupOf } from '../model/births';
 import { dateSortKey } from '../model/dates';
 import { relationshipStatus } from '../model/relationship';
 import { TreeIndex } from '../model/tree-index';
-import { Family, LifeEvent, Person, TreeDocument } from '../model/types';
+import { ChildRelation, Family, Person, Sex, TreeDocument } from '../model/types';
 
 export interface OutlinePartner {
+  personId: string;
+  /** Their number in the document. */
+  number: string;
   /** "Jana Nová, née Dvořáková". */
   name: string;
   /** "1920 – 1990". */
   lifespan: string;
-  /** "∞ 12 May 1950", "∞ 1979, divorced", "engaged"; empty when nothing is known. */
+  /** How the couple stand: "married", "divorced"; empty when nothing is known. */
   union: string;
 }
 
 export interface OutlinePerson {
   kind: 'person';
-  /** By branch: "1", "1.2", "1.2.3". */
+  /** The person's number in the whole document. */
   number: string;
   /** 0 for the oldest of a branch. */
   level: number;
@@ -33,17 +37,20 @@ export interface OutlinePerson {
   name: string;
   /** "née Nováková"; empty when the same as now. */
   bornAs: string;
-  /** "17 May 1923, Brno"; empty when not known. */
+  /** "17 May 1923"; empty when not known. */
   birth: string;
-  /** The death in the same way; "†" when only known to have died; empty for the living. */
+  /** The date of death; "†" when only known to have died; empty for the living. */
   death: string;
+  sex: Sex;
+  /** How they are the child of the parent they are listed under; undefined for the oldest of a branch. */
+  childRelation?: ChildRelation;
   partners: OutlinePartner[];
   /** "twin sister" for someone born together with brothers or sisters; empty otherwise. */
   bornWith: string;
   /** For a child born into another family: that family's name. */
   continuesIn?: string;
-  /** Listed already (in a family whose parents are related): the number they are listed under. */
-  seeNumber?: string;
+  /** Listed already in the same table (a family whose parents are related): not set out again. */
+  repeated?: boolean;
 }
 
 /** Above the children of one of several partners: "with Jana Nová". */
@@ -112,11 +119,17 @@ export function familyOutline(input: OutlineInput): OutlineFamily[] {
     const other = shown(f.partners.find((id) => id !== personId));
     if (!other) return undefined;
     const n = nameOf(other);
-    return { name: n.bornAs ? `${n.name}, ${n.bornAs}` : n.name, lifespan: language.lifespan(other), union: unionText(language, f) };
+    return {
+      personId: other.id,
+      number: '',
+      name: n.bornAs ? `${n.name}, ${n.bornAs}` : n.name,
+      lifespan: language.lifespan(other),
+      union: language.union(relationshipStatus(f)),
+    };
   };
   const childrenOf = (f: Family) => f.children.map((c) => shown(c.personId)).filter((p): p is Person => !!p);
 
-  return keys.map((key) => {
+  const families = keys.map((key) => {
     const own = members.get(key) ?? [];
     const inFamily = new Set(own.map((p) => p.id));
     // The oldest known of each branch: nobody they descend from is listed in the family.
@@ -126,34 +139,36 @@ export function familyOutline(input: OutlineInput): OutlineFamily[] {
     const roots = own.filter((p) => !hasParentIn(p)).sort(byAge);
 
     const rows: OutlineRow[] = [];
-    const listed = new Map<string, string>();
+    const listed = new Set<string>();
     let deepest = 0;
 
-    const add = (p: Person, level: number, number: string) => {
-      const before = listed.get(p.id);
+    const add = (p: Person, level: number, childRelation?: ChildRelation) => {
+      const before = listed.has(p.id);
       const n = nameOf(p);
       const group = birthGroupOf(doc, p.id);
       const base: OutlinePerson = {
         kind: 'person',
-        number,
+        number: '',
         level,
         personId: p.id,
         name: n.name,
         bornAs: n.bornAs,
-        birth: eventText(language, p.birth),
-        death: p.death ? eventText(language, p.death) || '†' : '',
+        birth: p.birth?.date ? language.fullDate(p.birth.date) : '',
+        death: p.death ? (p.death.date ? language.fullDate(p.death.date) : '') || '†' : '',
+        sex: p.sex,
+        childRelation,
         partners: [],
         bornWith: group ? language.bornWith(p.sex, group.memberIds.length) : '',
       };
       if (before) {
-        rows.push({ ...base, seeNumber: before });
+        rows.push({ ...base, repeated: true });
         return;
       }
       if (!inFamily.has(p.id)) {
         rows.push({ ...base, continuesIn: input.labelOf(keyFor(p.id)) });
         return;
       }
-      listed.set(p.id, number);
+      listed.add(p.id);
       deepest = Math.max(deepest, level);
       const families = index.partnerFamilies(p.id);
       base.partners = families.map((f) => partnerOf(f, p.id)).filter((x): x is OutlinePartner => !!x);
@@ -161,33 +176,34 @@ export function familyOutline(input: OutlineInput): OutlineFamily[] {
 
       // A family with only this parent known is among them too.
       const withChildren = families.filter((f) => childrenOf(f).length);
-      let child = 0;
       for (const f of withChildren) {
         if (withChildren.length > 1) rows.push({ kind: 'union', level: level + 1, partner: partnerOf(f, p.id) });
-        for (const c of childrenOf(f)) add(c, level + 1, `${number}.${++child}`);
+        for (const c of childrenOf(f)) add(c, level + 1, index.childRelation(f, c.id));
       }
     };
 
-    roots.forEach((p, i) => add(p, 0, String(i + 1)));
+    for (const p of roots) add(p, 0);
     // Anyone not reached (a loop of parents in a broken file) starts a branch of their own.
-    for (const p of [...own].sort(byAge)) if (!listed.has(p.id)) add(p, 0, String(rows.filter((r) => r.kind === 'person' && r.level === 0).length + 1));
+    for (const p of [...own].sort(byAge)) if (!listed.has(p.id)) add(p, 0);
 
     return { key, label: input.labelOf(key), people: listed.size, generations: deepest + 1, rows };
   });
-}
 
-/** "∞ 12 May 1950", "∞ 1979, divorced", "engaged"; the wedding (or start of a partnership) and how the couple stand. */
-function unionText(language: ChartLanguage, f: Family): string {
-  const status = relationshipStatus(f);
-  const word = language.union(status);
-  const when = f.start?.date ? language.fullDate(f.start.date) : '';
-  if (!when) return word;
-  if (f.kind !== 'marriage') return [word, when].filter(Boolean).join(' ');
-  return status === 'married' ? `∞ ${when}` : [`∞ ${when}`, word].filter(Boolean).join(', ');
-}
-
-/** "17 May 1923, Brno". */
-function eventText(language: ChartLanguage, event: LifeEvent | undefined): string {
-  if (!event) return '';
-  return [event.date ? language.fullDate(event.date) : '', event.place?.trim() ?? ''].filter(Boolean).join(', ');
+  // Numbers in the order the families set their own people out; everyone keeps theirs wherever they appear.
+  const numbers = new Map<string, string>();
+  for (const f of families) {
+    for (const r of f.rows)
+      if (r.kind === 'person' && !r.continuesIn && !r.repeated && !numbers.has(r.personId)) numbers.set(r.personId, String(numbers.size + 1));
+  }
+  for (const f of families) {
+    for (const r of f.rows) {
+      if (r.kind === 'person') {
+        r.number = numbers.get(r.personId) ?? '';
+        for (const partner of r.partners) partner.number = numbers.get(partner.personId) ?? '';
+      } else if (r.partner) {
+        r.partner.number = numbers.get(r.partner.personId) ?? '';
+      }
+    }
+  }
+  return families;
 }

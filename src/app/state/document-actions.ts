@@ -2,7 +2,7 @@ import { toGedcom } from '../core/gedcom/gedcom';
 import { Injectable, inject } from '@angular/core';
 import { updateMeta, updateView } from '../core/model/operations';
 import { sampleDocument } from '../core/model/sample';
-import { emptyDocument } from '../core/model/types';
+import { ChildRelation, emptyDocument } from '../core/model/types';
 import { Autosave } from './autosave';
 import { ChartModel } from './chart-model';
 import { familyDocument } from '../core/family-document/family-document';
@@ -13,8 +13,18 @@ import { TreeStore } from '../core/store/tree-store';
 import { XmlFormatError, parseTree } from '../core/xml/parser';
 import { serializeTree } from '../core/xml/serializer';
 import { I18n } from '../i18n/i18n';
+import { MessageKey } from '../i18n/locales';
 import { Preferences } from './preferences';
 import { UiState } from './ui-state';
+
+/** The family document's words for a son, a daughter, a child, by how they are a child. */
+const CHILD_WORDS: Record<ChildRelation, readonly [MessageKey, MessageKey, MessageKey]> = {
+  biological: ['familyDocument.son', 'familyDocument.daughter', 'familyDocument.child'],
+  unknown: ['familyDocument.son', 'familyDocument.daughter', 'familyDocument.child'],
+  adopted: ['familyDocument.adoptedSon', 'familyDocument.adoptedDaughter', 'familyDocument.adoptedChild'],
+  step: ['familyDocument.stepSon', 'familyDocument.stepDaughter', 'familyDocument.stepChild'],
+  foster: ['familyDocument.fosterSon', 'familyDocument.fosterDaughter', 'familyDocument.fosterChild'],
+};
 
 const DOCX_MIME = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
 
@@ -213,6 +223,9 @@ export class DocumentActions {
         born: t('familyDocument.born'),
         died: t('familyDocument.died'),
         partners: t('familyDocument.partners'),
+        relation: t('familyDocument.relation'),
+        child: (sex, relation) => t(CHILD_WORDS[relation][sex === 'male' ? 0 : sex === 'female' ? 1 : 2]),
+        listedAbove: t('familyDocument.listedAbove'),
         summary: (people, generations) => t('overview.generations', { count: generations, people: t('overview.people', { count: people }) }),
         with: (name) => t('familyDocument.with', { name }),
         withUnknown: t('familyDocument.withUnknown'),

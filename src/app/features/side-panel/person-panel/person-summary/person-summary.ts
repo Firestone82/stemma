@@ -48,11 +48,8 @@ export class PersonSummary {
 
   private event(prefix: 'fact.born' | 'fact.died', e: LifeEvent | undefined): string {
     if (!e) return '';
+    // Only the date: places are not shown anywhere (they are kept from files and saved back).
     const date = this.i18n.dates().fullDate(e.date);
-    const place = e.place ?? '';
-    if (date && place) return this.t(`${prefix}.datePlace` as MessageKey, { date, place });
-    if (date) return this.t(`${prefix}.date` as MessageKey, { date });
-    if (place) return this.t(`${prefix}.place` as MessageKey, { place });
-    return '';
+    return date ? this.t(`${prefix}.date` as MessageKey, { date }) : '';
   }
 }

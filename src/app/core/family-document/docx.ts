@@ -7,6 +7,10 @@ import { zip } from './zip';
 
 export interface DocxRun {
   text: string;
+  /** A field Word fills in (" PAGEREF family-1 \\h "), with `text` shown until it does. */
+  field?: string;
+  /** A tab before the text. */
+  tab?: boolean;
   bold?: boolean;
   italic?: boolean;
   /** In points. */
@@ -18,13 +22,17 @@ export interface DocxRun {
 export interface DocxParagraph {
   kind: 'p';
   runs: DocxRun[];
-  style?: 'Title' | 'Subtitle' | 'Heading1' | 'Note';
+  style?: 'Title' | 'Subtitle' | 'Heading1' | 'Note' | 'Contents';
   /** From the left, in twentieths of a point (twips). */
   indent?: number;
   /** Kept on the page with the next paragraph (a heading with its table). */
   keepNext?: boolean;
   /** Starts a new page. */
   pageBreak?: boolean;
+  /** A tab stop at the right edge of the text, the gap before it filled with dots (a table of contents). */
+  dotsToRight?: boolean;
+  /** A bookmark around the paragraph, for PAGEREF fields to point at. */
+  bookmark?: string;
 }
 
 export interface DocxCell {
@@ -85,6 +93,7 @@ export function docx(blocks: readonly DocxBlock[], options: DocxOptions): Uint8A
           `<Default Extension="xml" ContentType="application/xml"/>` +
           `<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>` +
           `<Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/>` +
+          `<Override PartName="/word/settings.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.settings+xml"/>` +
           `<Override PartName="/word/footer1.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footer+xml"/>` +
           `<Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/>` +
           `<Override PartName="/docProps/app.xml" ContentType="application/vnd.openxmlformats-officedocument.extended-properties+xml"/>` +
@@ -122,9 +131,12 @@ export function docx(blocks: readonly DocxBlock[], options: DocxOptions): Uint8A
           `<Relationships xmlns="${PR}">` +
           `<Relationship Id="rIdStyles" Type="${R}/styles" Target="styles.xml"/>` +
           `<Relationship Id="rIdFooter" Type="${R}/footer" Target="footer1.xml"/>` +
+          `<Relationship Id="rIdSettings" Type="${R}/settings" Target="settings.xml"/>` +
           `</Relationships>`,
       },
       { name: 'word/styles.xml', data: styles(options.language) },
+      // Page numbers in the contents are fields: Word offers to fill them in when the document is opened.
+      { name: 'word/settings.xml', data: xmlHead() + `<w:settings xmlns:w="${W}"><w:updateFields w:val="true"/></w:settings>` },
       {
         name: 'word/footer1.xml',
         data:
@@ -148,8 +160,20 @@ function paragraph(p: DocxParagraph): string {
     (p.style ? `<w:pStyle w:val="${p.style}"/>` : '') +
     (p.keepNext ? '<w:keepNext/>' : '') +
     (p.pageBreak ? '<w:pageBreakBefore/>' : '') +
+    (p.dotsToRight ? `<w:tabs><w:tab w:val="right" w:leader="dot" w:pos="${DOCX_TEXT_WIDTH}"/></w:tabs>` : '') +
     (p.indent ? `<w:ind w:left="${Math.round(p.indent)}"/>` : '');
-  return `<w:p>${props ? `<w:pPr>${props}</w:pPr>` : ''}${p.runs.map(run).join('')}</w:p>`;
+  const runs = p.runs.map(run).join('');
+  const body = p.bookmark
+    ? `<w:bookmarkStart w:id="${bookmarkId(p.bookmark)}" w:name="${esc(p.bookmark)}"/>${runs}<w:bookmarkEnd w:id="${bookmarkId(p.bookmark)}"/>`
+    : runs;
+  return `<w:p>${props ? `<w:pPr>${props}</w:pPr>` : ''}${body}</w:p>`;
+}
+
+const bookmarks = new Map<string, number>();
+/** A number for each bookmark name, as Word wants. */
+function bookmarkId(name: string): number {
+  if (!bookmarks.has(name)) bookmarks.set(name, bookmarks.size + 1);
+  return bookmarks.get(name)!;
 }
 
 function run(r: DocxRun): string {
@@ -158,12 +182,24 @@ function run(r: DocxRun): string {
     (r.italic ? '<w:i/>' : '') +
     (r.color ? `<w:color w:val="${r.color}"/>` : '') +
     (r.size ? `<w:sz w:val="${Math.round(r.size * 2)}"/><w:szCs w:val="${Math.round(r.size * 2)}"/>` : '');
+  const rPr = props ? `<w:rPr>${props}</w:rPr>` : '';
   // Line breaks inside a run become Word's breaks.
-  const text = r.text
-    .split('\n')
-    .map((part) => `<w:t xml:space="preserve">${esc(part)}</w:t>`)
-    .join('<w:br/>');
-  return `<w:r>${props ? `<w:rPr>${props}</w:rPr>` : ''}${text}</w:r>`;
+  const text =
+    (r.tab ? '<w:tab/>' : '') +
+    r.text
+      .split('\n')
+      .map((part) => `<w:t xml:space="preserve">${esc(part)}</w:t>`)
+      .join('<w:br/>');
+  if (!r.field) return `<w:r>${rPr}${text}</w:r>`;
+  const char = (type: string) => `<w:r>${rPr}<w:fldChar w:fldCharType="${type}"/></w:r>`;
+  return (
+    (r.tab ? `<w:r>${rPr}<w:tab/></w:r>` : '') +
+    char('begin') +
+    `<w:r>${rPr}<w:instrText xml:space="preserve">${esc(r.field)}</w:instrText></w:r>` +
+    char('separate') +
+    `<w:r>${rPr}<w:t xml:space="preserve">${esc(r.text)}</w:t></w:r>` +
+    char('end')
+  );
 }
 
 function table(t: DocxTable): string {
@@ -215,6 +251,8 @@ function styles(language: string): string {
     `<w:style w:type="paragraph" w:styleId="Heading1"><w:name w:val="heading 1"/><w:basedOn w:val="Normal"/><w:next w:val="Normal"/><w:qFormat/>` +
     `<w:pPr><w:keepNext/><w:spacing w:before="360" w:after="80"/><w:outlineLvl w:val="0"/></w:pPr>` +
     `<w:rPr><w:b/><w:color w:val="5A3E1B"/><w:sz w:val="32"/><w:szCs w:val="32"/></w:rPr></w:style>` +
+    `<w:style w:type="paragraph" w:styleId="Contents"><w:name w:val="toc 1"/><w:basedOn w:val="Normal"/><w:qFormat/>` +
+    `<w:pPr><w:spacing w:after="60"/></w:pPr><w:rPr><w:sz w:val="22"/><w:szCs w:val="22"/></w:rPr></w:style>` +
     `<w:style w:type="paragraph" w:styleId="Note"><w:name w:val="Note"/><w:basedOn w:val="Normal"/><w:qFormat/>` +
     `<w:rPr><w:color w:val="6B5E4E"/><w:sz w:val="17"/><w:szCs w:val="17"/></w:rPr></w:style>` +
     `</w:styles>`
