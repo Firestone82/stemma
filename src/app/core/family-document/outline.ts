@@ -37,9 +37,9 @@ export interface OutlinePerson {
   name: string;
   /** "née Nováková"; empty when the same as now. */
   bornAs: string;
-  /** "17 May 1923"; empty when not known. */
+  /** "17 May 1923"; "?" when not known. */
   birth: string;
-  /** The date of death; "†" when only known to have died; empty for the living. */
+  /** The date of death; "?" when they died and nobody knows when; empty for the living. */
   death: string;
   sex: Sex;
   /** How they are the child of the parent they are listed under; undefined for the oldest of a branch. */
@@ -153,8 +153,8 @@ export function familyOutline(input: OutlineInput): OutlineFamily[] {
         personId: p.id,
         name: n.name,
         bornAs: n.bornAs,
-        birth: p.birth?.date ? language.fullDate(p.birth.date) : '',
-        death: p.death ? (p.death.date ? language.fullDate(p.death.date) : '') || '†' : '',
+        birth: (p.birth?.date ? language.fullDate(p.birth.date) : '') || '?',
+        death: p.death ? (p.death.date ? language.fullDate(p.death.date) : '') || '?' : '',
         sex: p.sex,
         childRelation,
         partners: [],

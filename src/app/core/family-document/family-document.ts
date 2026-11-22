@@ -1,10 +1,12 @@
 /**
  * The family document: a Word file to print, with a table for each family
  * that sets out its branches (see outline.ts), the youngest indented under
- * their parents, everyone under one number in the whole document.
+ * their parents with how they are their child, their partners under them,
+ * each branch in a colour of its own, everyone under one number in the whole
+ * document.
  */
 import { ChildRelation, Sex } from '../model/types';
-import { DOCX_TEXT_WIDTH, DocxBlock, DocxCell, DocxParagraph, DocxRow, DocxRun, docx } from './docx';
+import { DOCX_TEXT_WIDTH, DocxBlock, DocxCell, DocxParagraph, DocxRow, DocxRun, docx, estimatePages } from './docx';
 import { OutlineFamily, OutlinePartner, OutlinePerson, OutlineRow } from './outline';
 
 /** The words of the document, in its language. */
@@ -15,11 +17,8 @@ export interface FamilyDocumentWords {
   date: string;
   number: string;
   name: string;
-  /** The column saying how someone is the child of the one above: "Relation". */
-  relation: string;
   born: string;
   died: string;
-  partners: string;
   /** "son", "adopted daughter". */
   child(sex: Sex, relation: ChildRelation): string;
   /** "12 people in 4 generations". */
@@ -36,6 +35,15 @@ export interface FamilyDocumentWords {
   see(number: string): string;
   /** The heading of the list of families. */
   contents: string;
+  /** What the shortcuts and symbols mean, at the start. */
+  legend: { heading: string; entries: readonly LegendEntry[] };
+}
+
+/** "s", "son"; with `colours`, the meaning of the branches' colours. */
+export interface LegendEntry {
+  symbol: string;
+  meaning: string;
+  colours?: boolean;
 }
 
 export interface FamilyDocumentInput {
@@ -50,13 +58,22 @@ export interface FamilyDocumentInput {
 const INK = '3B2F23';
 const MUTED = '6B5E4E';
 const HEAD_FILL = 'EDE4D3';
-const ROOT_FILL = 'F7F2EA';
-/** No., name, relation, born, died, partners. */
-const WIDTHS = [650, 2750, 1150, 1350, 1350, DOCX_TEXT_WIDTH - 650 - 2750 - 1150 - 1350 - 1350];
+/**
+ * The branches under the oldest of a family, each in a colour of its own, in turn: the shades from the
+ * children down to the great-grandchildren and further, lighter the further down.
+ */
+const BANDS: readonly (readonly string[])[] = [
+  ['EADCC3', 'F3EADA', 'F9F4EC'],
+  ['D6E6DA', 'E5EFE7', 'F1F7F2'],
+  ['D8E2EF', 'E6EDF5', 'F2F5FA'],
+  ['ECD9D9', 'F4E7E7', 'F9F2F2'],
+];
+/** No., name (with how they are a child, and their partners under it), born, died. */
+const WIDTHS = [650, DOCX_TEXT_WIDTH - 650 - 1500 - 1500, 1500, 1500];
 /** Families of no more rows than this share pages. */
 const SMALL = 4;
 /** Each generation further in, in twips. */
-const STEP = 240;
+const STEP = 280;
 
 /** The document's bytes (.docx). */
 export function familyDocument(input: FamilyDocumentInput): Uint8Array<ArrayBuffer> {
@@ -66,6 +83,8 @@ export function familyDocument(input: FamilyDocumentInput): Uint8Array<ArrayBuff
     { kind: 'p', style: 'Subtitle', runs: [{ text: `${words.heading} · ${words.date}` }] },
   ];
   if (input.description?.trim()) blocks.push({ kind: 'p', runs: [{ text: input.description.trim() }] }, { kind: 'p', runs: [] });
+
+  blocks.push({ kind: 'p', style: 'Heading1', runs: [{ text: words.legend.heading }] }, legendTable(words.legend.entries));
 
   const several = input.families.length > 1;
   const mark = (i: number) => `family-${i + 1}`;
@@ -93,63 +112,90 @@ export function familyDocument(input: FamilyDocumentInput): Uint8Array<ArrayBuff
       { kind: 'p', style: 'Heading1', runs: [{ text: f.label }], bookmark: mark(i), pageBreak: several && (i === 0 || f.rows.length > SMALL) },
       { kind: 'p', style: 'Note', keepNext: true, runs: [{ text: words.summary(f.people, f.generations) }] },
       { kind: 'p', keepNext: true, runs: [] },
-      { kind: 'table', widths: WIDTHS, rows: [headRow(words), ...f.rows.map((r) => row(r, words))] },
+      { kind: 'table', widths: WIDTHS, rows: [headRow(words), ...rows(f.rows, words)] },
     );
   });
 
+  // The pages in the contents as they will come out; Word puts in its own when it opens the document.
+  const pages = estimatePages(blocks);
+  for (const b of blocks) {
+    if (b.kind !== 'p') continue;
+    for (const r of b.runs) {
+      const at = r.field && /PAGEREF (\S+)/.exec(r.field);
+      if (at) r.text = String(pages.get(at[1]) ?? '');
+    }
+  }
   return docx(blocks, { title: input.title, language: input.language, footer: input.title, now: input.now });
+}
+
+function legendTable(entries: readonly LegendEntry[]): DocxBlock {
+  return {
+    kind: 'table',
+    widths: [1300, DOCX_TEXT_WIDTH - 1300],
+    rows: entries.map((e) => ({
+      cells: [
+        // The colours stand for themselves: the first branch's.
+        { shade: e.colours ? BANDS[0][0] : undefined, paragraphs: [para([{ text: e.symbol, bold: !e.colours || undefined, color: e.colours ? MUTED : INK }])] },
+        { paragraphs: [para([{ text: e.meaning }])] },
+      ],
+    })),
+  };
 }
 
 function headRow(words: FamilyDocumentWords): DocxRow {
   return {
     header: true,
-    cells: [words.number, words.name, words.relation, words.born, words.died, words.partners].map((text) => ({
+    cells: [words.number, words.name, words.born, words.died].map((text) => ({
       shade: HEAD_FILL,
       paragraphs: [para([{ text, bold: true, color: INK }])],
     })),
   };
 }
 
-function row(r: OutlineRow, words: FamilyDocumentWords): DocxRow {
+/** The table's rows: each branch under the oldest in its own colour, the deeper the lighter. */
+function rows(outline: readonly OutlineRow[], words: FamilyDocumentWords): DocxRow[] {
+  let band = -1;
+  return outline.map((r) => {
+    if (r.level === 0) band = -1;
+    else if (r.level === 1 && r.kind === 'person') band++;
+    const shade = r.level > 0 && band >= 0 ? BANDS[band % BANDS.length][Math.min(r.level, 3) - 1] : undefined;
+    return row(r, words, shade);
+  });
+}
+
+function row(r: OutlineRow, words: FamilyDocumentWords, shade: string | undefined): DocxRow {
   if (r.kind === 'union') {
     const runs: DocxRun[] = r.partner
       ? [{ text: words.with(r.partner.name), italic: true, color: MUTED }, ...numberRun(r.partner.number, words)]
       : [{ text: words.withUnknown, italic: true, color: MUTED }];
-    return { cells: [{ span: WIDTHS.length, paragraphs: [para(runs, WIDTHS[0] + r.level * STEP)] }] };
+    return { cells: [{ span: WIDTHS.length, shade, paragraphs: [para(runs, WIDTHS[0] + r.level * STEP)] }] };
   }
-  const shade = r.level === 0 ? ROOT_FILL : undefined;
   const cell = (paragraphs: DocxParagraph[]): DocxCell => ({ paragraphs, shade });
-  // Someone set out elsewhere: their partners are given there.
-  const elsewhere = !!r.continuesIn || !!r.repeated;
   return {
-    cells: [
-      cell([para([{ text: r.number, color: MUTED }])]),
-      cell(nameCell(r, words)),
-      cell([para([{ text: r.childRelation ? words.child(r.sex, r.childRelation) : '', color: MUTED }])]),
-      cell([para([{ text: r.birth }])]),
-      cell([para([{ text: r.death }])]),
-      cell(elsewhere ? [] : r.partners.map((p) => partnerPara(p, words))),
-    ],
+    cells: [cell([para([{ text: r.number, color: MUTED }])]), cell(nameCell(r, words)), cell([para([{ text: r.birth }])]), cell([para([{ text: r.death }])])],
   };
 }
 
+/** "son  Petr Novák", the notes on him, and under them his partners. */
 function nameCell(r: OutlinePerson, words: FamilyDocumentWords): DocxParagraph[] {
   const indent = r.level * STEP;
-  const lead: DocxRun[] = r.level ? [{ text: '– ', color: MUTED }] : [];
-  const out = [para([...lead, { text: r.name, bold: r.level === 0 || undefined }], indent)];
-  // Born into another family, their name at birth is that family's: the family says it.
-  const notes = [r.continuesIn ? '' : r.bornAs, r.bornWith, r.continuesIn ? words.continuesIn(r.continuesIn) : '', r.repeated ? words.listedAbove : ''].filter(
-    Boolean,
-  );
-  if (notes.length) out.push(para([{ text: notes.join(', '), italic: true, color: MUTED, size: 8.5 }], indent + (r.level ? STEP : 0)));
+  const lead: DocxRun[] = r.childRelation ? [{ text: `${words.child(r.sex, r.childRelation)}  `, italic: true, color: MUTED, size: 8.5 }] : [];
+  // The name at birth beside the name ("Claire Ferri née Ashworth"); born into another family, it is that family's, which the family says.
+  const born: DocxRun[] = r.bornAs && !r.continuesIn ? [{ text: `  ${r.bornAs}`, italic: true, color: MUTED, size: 8.5 }] : [];
+  const out = [para([...lead, { text: r.name, bold: r.level === 0 || undefined }, ...born], indent)];
+  const notes = [r.bornWith, r.continuesIn ? words.continuesIn(r.continuesIn) : '', r.repeated ? words.listedAbove : ''].filter(Boolean);
+  if (notes.length) out.push(para([{ text: notes.join(', '), italic: true, color: MUTED, size: 8.5 }], indent));
+  // Someone set out elsewhere has their partners given there.
+  if (!r.continuesIn && !r.repeated) for (const p of r.partners) out.push(partnerPara(p, words, indent));
   return out;
 }
 
-function partnerPara(p: OutlinePartner, words: FamilyDocumentWords): DocxParagraph {
-  const runs: DocxRun[] = [{ text: p.name }, ...numberRun(p.number, words)];
+/** "∞ Jana Nová (No. 23)  1920 – 1990, married". */
+function partnerPara(p: OutlinePartner, words: FamilyDocumentWords, indent: number): DocxParagraph {
+  const runs: DocxRun[] = [{ text: '∞ ', color: MUTED }, { text: p.name }, ...numberRun(p.number, words)];
   const more = [p.lifespan, p.union].filter(Boolean).join(', ');
-  if (more) runs.push({ text: `\n${more}`, color: MUTED, size: 8.5 });
-  return para(runs);
+  if (more) runs.push({ text: `  ${more}`, color: MUTED, size: 8.5 });
+  return para(runs, indent);
 }
 
 /** " (No. 23)" after the name of someone set out in the document. */

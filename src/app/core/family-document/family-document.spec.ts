@@ -36,7 +36,7 @@ function tree() {
   b.person('marie', 'Marie', 'Mikulová', 'female', '1927');
   b.person('karel', 'Karel', 'Novák', 'male', '1935');
   b.person('josef', 'Josef', 'Mikula', 'male', '1924');
-  b.person('anna', 'Anna', 'Mikulová', 'female', '1950');
+  b.person('anna', 'Anna', 'Mikulová', 'female');
   b.person('tomas', 'Tomáš', 'Novák', 'male', '1955');
   b.person('lida', 'Lída', 'Nováková', 'female', '1930');
   b.family('f1', ['jan', 'eva'], ['petr', 'marie'], { start: { date: { value: '1924-06-01' } } });
@@ -49,6 +49,7 @@ function tree() {
   doc.people.find((p) => p.id === 'hana')!.name.birthSurname = 'Malá';
   doc.people.find((p) => p.id === 'lida')!.name.birthSurname = 'Černá';
   doc.people.find((p) => p.id === 'karel')!.hiddenFromPrint = true;
+  doc.people.find((p) => p.id === 'anna')!.death = {};
   const born: Record<string, string> = {
     jan: 'novak',
     petr: 'novak',
@@ -101,6 +102,10 @@ describe('family document', () => {
     // No wedding dates, no places.
     expect(jan.partners[0].union).toBe('married');
     expect(jan.birth).toBe('1900');
+    // Not known: a question mark; died, but nobody knows when: one too.
+    expect(people.find((r) => r.personId === 'marie')!.death).toBe('');
+    const anna = people.find((r) => r.personId === 'anna')!;
+    expect([anna.birth, anna.death]).toEqual(['?', '?']);
     // Karel, Hana's only child, is left out of prints: no heading over nobody.
     expect(novak.rows.filter((r) => r.kind === 'union')).toHaveLength(0);
   });
@@ -137,15 +142,20 @@ describe('family document', () => {
           name: 'Name',
           born: 'Born',
           died: 'Died',
-          partners: 'Partners',
-          relation: 'Relation',
-          child: (sex) => (sex === 'male' ? 'son' : sex === 'female' ? 'daughter' : 'child'),
+          child: (sex) => (sex === 'male' ? 's' : sex === 'female' ? 'd' : 'c'),
           listedAbove: 'listed above',
           summary: (p, g) => `${p} people, ${g} generations`,
           with: (n) => `Children with ${n}`,
           withUnknown: 'Children with an unknown partner',
           continuesIn: (f) => `continues in the ${f} family`,
           see: (n) => `No. ${n}`,
+          legend: {
+            heading: 'Legend',
+            entries: [
+              { symbol: 's', meaning: 'son' },
+              { symbol: '?', meaning: 'not known' },
+            ],
+          },
         },
       }),
     );
@@ -164,11 +174,17 @@ describe('family document', () => {
     expect(body).toContain('>Tomáš Novák<');
     expect(body).toContain('continues in the Mikula family');
     expect(body).toContain('<w:tblHeader/>');
-    expect(body).toContain('>daughter<');
+    // How a child is a child, in front of the name.
+    expect(body).toContain('>d  <');
+    expect(body).toContain('>Legend<');
     // The contents: dots up to the page number, which points at the family's heading.
     expect(body).toContain('w:leader="dot"');
     expect(body).toContain('PAGEREF family-5');
     expect(body).toContain('w:name="family-5"');
+    // With the page it is on worked out already, for programs that do not fill fields in.
+    const pages = [...body.matchAll(/PAGEREF family-\d+ \\h <\/w:instrText>.*?<w:t xml:space="preserve">([^<]*)</g)].map((m) => m[1]);
+    expect(pages).toHaveLength(5);
+    for (const page of pages) expect(page).toMatch(/^\d+$/);
     expect(body).not.toContain('Karel');
     // Well-formed XML.
     for (const [name, xml] of files) {

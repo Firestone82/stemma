@@ -5,7 +5,8 @@ import { sampleDocument } from '../core/model/sample';
 import { ChildRelation, emptyDocument } from '../core/model/types';
 import { Autosave } from './autosave';
 import { ChartModel } from './chart-model';
-import { familyDocument } from '../core/family-document/family-document';
+import { LegendEntry, familyDocument } from '../core/family-document/family-document';
+import { ChartLanguage } from '../core/lang/language';
 import { familyOutline } from '../core/family-document/outline';
 import { FileIo, datedFilename } from '../core/services/file-io';
 import { ToastService } from '../core/services/toast';
@@ -222,8 +223,6 @@ export class DocumentActions {
         name: t('familyDocument.name'),
         born: t('familyDocument.born'),
         died: t('familyDocument.died'),
-        partners: t('familyDocument.partners'),
-        relation: t('familyDocument.relation'),
         child: (sex, relation) => t(CHILD_WORDS[relation][sex === 'male' ? 0 : sex === 'female' ? 1 : 2]),
         listedAbove: t('familyDocument.listedAbove'),
         summary: (people, generations) => t('overview.generations', { count: generations, people: t('overview.people', { count: people }) }),
@@ -231,6 +230,7 @@ export class DocumentActions {
         withUnknown: t('familyDocument.withUnknown'),
         continuesIn: (family) => t('familyDocument.continuesIn', { family }),
         see: (number) => t('familyDocument.see', { number }),
+        legend: { heading: t('familyDocument.legend'), entries: this.legend(language) },
       },
     });
     const blob = new Blob([bytes], { type: DOCX_MIME });
@@ -238,6 +238,37 @@ export class DocumentActions {
     if (outcome === 'saved') this.toast.show(t('file.familyDocumentSaved', { name: filename }));
     else if (outcome === 'unsupported') this.toast.error(t('file.familyDocumentUnavailable'));
     else if (outcome === 'failed') this.toast.error(t('file.saveFailed'));
+  }
+
+  /** What the family document's shortcuts and symbols mean, in the app's language. */
+  private legend(language: ChartLanguage): LegendEntry[] {
+    const t = this.i18n.t;
+    // "s (a)" says "adopted" with "(a)".
+    const mark = (key: MessageKey) => /\(.*\)/.exec(t(key))?.[0] ?? t(key);
+    // "b. 1955" and "† 1971" on the partners' lines: the marks as the language writes them.
+    const born = language
+      .lifespan({ birth: { date: { value: '1955' } } })
+      .replace('1955', '')
+      .trim();
+    const died = language
+      .lifespan({ death: { date: { value: '1971' } } })
+      .replace('1971', '')
+      .trim();
+    return [
+      { symbol: t('familyDocument.son'), meaning: t('familyDocument.legend.son') },
+      { symbol: t('familyDocument.daughter'), meaning: t('familyDocument.legend.daughter') },
+      { symbol: t('familyDocument.child'), meaning: t('familyDocument.legend.child') },
+      { symbol: mark('familyDocument.adoptedSon'), meaning: t('familyDocument.legend.adopted') },
+      { symbol: mark('familyDocument.stepSon'), meaning: t('familyDocument.legend.step') },
+      { symbol: mark('familyDocument.fosterSon'), meaning: t('familyDocument.legend.foster') },
+      { symbol: '∞', meaning: t('familyDocument.legend.partner') },
+      { symbol: language.bornAs('', 'female').trim(), meaning: t('familyDocument.legend.bornAs') },
+      { symbol: t('familyDocument.see', { number: 12 }), meaning: t('familyDocument.legend.number') },
+      { symbol: born, meaning: t('familyDocument.legend.born') },
+      { symbol: died, meaning: t('familyDocument.legend.died') },
+      { symbol: '?', meaning: t('familyDocument.legend.unknown') },
+      { symbol: t('familyDocument.legend.colourSample'), meaning: t('familyDocument.legend.colours'), colours: true },
+    ];
   }
 
   /** True when an .xml download can be offered directly. */
