@@ -146,11 +146,10 @@ function row(r: OutlineRow, words: FamilyDocumentWords, shade: string | undefine
 function nameCell(r: OutlinePerson, words: FamilyDocumentWords): DocxParagraph[] {
   const indent = r.level * STEP;
   const lead: DocxRun[] = r.childRelation ? [{ text: `${words.child(r.sex, r.childRelation)}  `, italic: true, color: MUTED, size: 8.5 }] : [];
-  const out = [para([...lead, { text: r.name, bold: r.level === 0 || undefined }], indent)];
-  // Born into another family, their name at birth is that family's: the family says it.
-  const notes = [r.continuesIn ? '' : r.bornAs, r.bornWith, r.continuesIn ? words.continuesIn(r.continuesIn) : '', r.repeated ? words.listedAbove : ''].filter(
-    Boolean,
-  );
+  // The name at birth beside the name ("Claire Ferri née Ashworth"); born into another family, it is that family's, which the family says.
+  const born: DocxRun[] = r.bornAs && !r.continuesIn ? [{ text: `  ${r.bornAs}`, italic: true, color: MUTED, size: 8.5 }] : [];
+  const out = [para([...lead, { text: r.name, bold: r.level === 0 || undefined }, ...born], indent)];
+  const notes = [r.bornWith, r.continuesIn ? words.continuesIn(r.continuesIn) : '', r.repeated ? words.listedAbove : ''].filter(Boolean);
   if (notes.length) out.push(para([{ text: notes.join(', '), italic: true, color: MUTED, size: 8.5 }], indent));
   // Someone set out elsewhere has their partners given there.
   if (!r.continuesIn && !r.repeated) for (const p of r.partners) out.push(partnerPara(p, words, indent));
