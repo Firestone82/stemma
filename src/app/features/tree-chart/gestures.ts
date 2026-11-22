@@ -30,6 +30,8 @@ export class ChartGestures {
   private live: View | null = null;
   private frameId: number | null = null;
   private wheelEnd: ReturnType<typeof setTimeout> | null = null;
+  /** Where the frame stands on the page, measured once a move: measuring it at every event would make the browser work the page out again after each frame. */
+  private frameRect: DOMRect | null = null;
 
   constructor(
     private readonly viewport: ChartViewport,
@@ -60,6 +62,7 @@ export class ChartGestures {
   down(e: PointerEvent): void {
     if (e.pointerType === 'mouse' && e.button !== 0) return;
     this.viewport.stop();
+    this.stopWheeling();
     const p = this.local(e);
     this.pointers.set(e.pointerId, p);
     const v = this.current();
@@ -108,13 +111,14 @@ export class ChartGestures {
     if (this.pointers.size === 1 && g?.kind === 'pinch') {
       // Lifting one finger of a pinch carries on as a drag with the other.
       const [id, p] = [...this.pointers.entries()][0];
-      const rect = this.frame().getBoundingClientRect();
+      const rect = this.rect();
       const v: View = this.current();
       this.gesture = { kind: 'pan', id, sx: p.x + rect.left, sy: p.y + rect.top, vx: v.x, vy: v.y, moved: true };
       return;
     }
     if (!this.pointers.size) {
       this.gesture = null;
+      this.frameRect = null;
       this.settle();
       this.panning.set(false);
     }
@@ -141,12 +145,17 @@ export class ChartGestures {
     } else next = { ...v, x: v.x - dx, y: v.y - dy };
     this.preview(next);
     if (this.wheelEnd) clearTimeout(this.wheelEnd);
-    this.wheelEnd = setTimeout(() => {
-      this.wheelEnd = null;
-      if (this.gesture) return;
-      this.settle();
-      this.wheeling.set(false);
-    }, WHEEL_END);
+    this.wheelEnd = setTimeout(() => this.stopWheeling(), WHEEL_END);
+  }
+
+  /** A scroll or zoom with the wheel or touchpad is over: by the clock, or because the pointer moved or pressed. */
+  stopWheeling(): void {
+    if (this.wheelEnd) clearTimeout(this.wheelEnd);
+    this.wheelEnd = null;
+    if (!this.wheeling() || this.gesture) return;
+    this.frameRect = null;
+    this.settle();
+    this.wheeling.set(false);
   }
 
   /** Shows the chart at `view`, once a frame however many events come in it. */
@@ -173,8 +182,12 @@ export class ChartGestures {
     this.onUserMove();
   }
 
+  private rect(): DOMRect {
+    return (this.frameRect ??= this.frame().getBoundingClientRect());
+  }
+
   private local(e: { clientX: number; clientY: number }): { x: number; y: number } {
-    const rect = this.frame().getBoundingClientRect();
+    const rect = this.rect();
     return { x: e.clientX - rect.left, y: e.clientY - rect.top };
   }
 

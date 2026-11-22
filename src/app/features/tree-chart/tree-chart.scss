@@ -29,6 +29,24 @@
   cursor: grabbing;
 }
 
+// While the chart is moved a clear pane lies over it: the browser finds the pane under the pointer at every step
+// instead of looking among all the cards, and no card lights up as it passes under the pointer.
+.glass {
+  position: absolute;
+  inset: 0;
+  cursor: grab;
+  // Let through when the chart stands still; laid down by a change of this alone, which the browser need not lay out or draw.
+  pointer-events: none;
+}
+
+:host(.is-moving) .glass {
+  pointer-events: auto;
+}
+
+:host(.is-panning) .glass {
+  cursor: grabbing;
+}
+
 .backdrop {
   fill: url(#stemma-dots);
 }

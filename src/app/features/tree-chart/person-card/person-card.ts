@@ -4,6 +4,7 @@ import { Tincture } from '../../../core/colors/tinctures';
 import { LayoutCard } from '../../../core/layout/types';
 import { I18n } from '../../../i18n/i18n';
 import { CardLabel } from '../../../state/chart-model';
+import { shiftPath } from '../svg-path';
 
 /**
  * One person on the chart, drawn as SVG inside the chart's <svg>: the same card as on prints (see
@@ -68,6 +69,19 @@ export class PersonCard {
   protected readonly ribbon = computed(() => ribbonPath(this.design(), this.card().w));
   /** Whether the card shows the ribbon: the mark for someone kept off prints then stands clear of it. */
   protected readonly mourning = computed(() => this.ribbons() && this.label().deceased);
+  /**
+   * The shield and the badge, drawn where they stand on the card rather than moved there by a transform: every
+   * transform splits the chart into more pieces for the browser to put together at each frame of a drag or zoom.
+   */
+  protected readonly marks = computed(() => {
+    const d = this.design();
+    return { shield: d.shield ? shiftPath(d.shield.path, d.shield.x, d.shield.y) : '', badge: shiftPath(d.badge.mark, d.badge.x, d.badge.y) };
+  });
+  /** The crossed out printer of someone kept off prints, clear of the ribbon. */
+  protected readonly noPrintMark = computed(() => {
+    const d = this.design();
+    return shiftPath(NO_PRINT_MARK, this.card().w - (this.mourning() ? 30 + d.ribbonBand.to : 30), 4);
+  });
   protected readonly flag = computed<'problem' | 'missing' | null>(() => {
     const l = this.label();
     if (this.card().ghost) return null;
@@ -79,6 +93,9 @@ export class PersonCard {
     this.pick.emit(event);
   }
 }
+
+const NO_PRINT_MARK =
+  'M4.2 5.1V2.4h6v2.7M4.2 10.2H3a.9.9 0 0 1-.9-.9V6a.9.9 0 0 1 .9-.9h8.4a.9.9 0 0 1 .9.9v3.3a.9.9 0 0 1-.9.9h-1.2M4.2 8.4h6V12h-6zM2.1 2.1l10.2 10.2';
 
 function round(n: number): number {
   return Math.round(n * 10) / 10;

@@ -8,9 +8,16 @@
   <svg:path class="accent" [attr.d]="accentPath()" />
 }
 @if (d.shield; as s) {
-  <svg:g class="shield" [attr.transform]="'translate(' + s.x + ',' + s.y + ')'">
-    <svg:path class="shield-field" [attr.d]="s.path" />
-    <svg:text class="shield-initials" [attr.font-size]="s.font.size" [attr.x]="s.w / 2" [attr.y]="s.h * 0.46" text-anchor="middle" dominant-baseline="central">
+  <svg:g class="shield">
+    <svg:path class="shield-field" [attr.d]="marks().shield" />
+    <svg:text
+      class="shield-initials"
+      [attr.font-size]="s.font.size"
+      [attr.x]="s.x + s.w / 2"
+      [attr.y]="s.y + s.h * 0.46"
+      text-anchor="middle"
+      dominant-baseline="central"
+    >
       {{ l.initials }}
     </svg:text>
   </svg:g>
@@ -34,18 +41,16 @@
   </svg:path>
 }
 @if (l.hiddenFromPrint && !c.ghost) {
-  <svg:g class="no-print-mark" [attr.transform]="'translate(' + (c.w - (mourning() ? 30 + d.ribbonBand.to : 30)) + ',4)'">
+  <svg:g class="no-print-mark">
     <svg:title>{{ t('person.hiddenFromPrint') }}</svg:title>
-    <svg:path
-      d="M4.2 5.1V2.4h6v2.7M4.2 10.2H3a.9.9 0 0 1-.9-.9V6a.9.9 0 0 1 .9-.9h8.4a.9.9 0 0 1 .9.9v3.3a.9.9 0 0 1-.9.9h-1.2M4.2 8.4h6V12h-6zM2.1 2.1l10.2 10.2"
-    />
+    <svg:path [attr.d]="noPrintMark()" />
   </svg:g>
 }
 @if (flag(); as f) {
-  <svg:g class="badge" [class.problem]="f === 'problem'" [attr.transform]="'translate(' + d.badge.x + ',' + d.badge.y + ')'">
+  <svg:g class="badge" [class.problem]="f === 'problem'">
     <svg:title>{{ l.problem ? l.problem + (l.missing ? '\n' + l.missing : '') : l.missing }}</svg:title>
-    <svg:circle [attr.r]="d.badge.r" />
-    <svg:path [attr.d]="d.badge.mark" />
+    <svg:circle [attr.cx]="d.badge.x" [attr.cy]="d.badge.y" [attr.r]="d.badge.r" />
+    <svg:path [attr.d]="marks().badge" />
   </svg:g>
 }
 <svg:title>{{ c.ghost ? t('card.standIn', { name: l.title }) : l.title }}</svg:title>

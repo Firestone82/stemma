@@ -56,6 +56,7 @@ import { ZoomControls } from './zoom-controls/zoom-controls';
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: {
     '[class.is-panning]': 'gestures.panning()',
+    '[class.is-moving]': 'gestures.moving()',
     '(keydown)': 'onKey($event)',
   },
 })
@@ -371,14 +372,33 @@ export class TreeChart {
     const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(measure) : null;
     ro?.observe(host);
     if (!ro) measure();
-    const wheel = (e: WheelEvent) => this.gestures.wheel(e);
-    svg.addEventListener('wheel', wheel, { passive: false });
+    // While the chart moves a pane lies over it (.glass), so what reaches the pane is meant for the chart: the wheel
+    // (listened to on the host), a second finger for a pinch, and a pointer moving again after a scroll.
+    const glass = host.querySelector<HTMLElement>('.glass')!;
+    const wheel = (e: WheelEvent) => {
+      if (e.target === glass || svg.contains(e.target as Node)) this.gestures.wheel(e);
+    };
+    host.addEventListener('wheel', wheel, { passive: false });
+    const glassDown = (e: PointerEvent) => this.gestures.down(e);
+    const glassUp = (e: PointerEvent) => this.gestures.up(e);
+    const glassMove = (e: PointerEvent) => {
+      // A hand resting on the mouse while it scrolls nudges it; only a real move ends the scroll.
+      if (Math.abs(e.movementX) + Math.abs(e.movementY) > 2) this.gestures.stopWheeling();
+    };
+    glass.addEventListener('pointerdown', glassDown);
+    glass.addEventListener('pointerup', glassUp);
+    glass.addEventListener('pointercancel', glassUp);
+    glass.addEventListener('pointermove', glassMove);
     // Listened to here, not in the template: a drag then runs no change detection at every move.
     const pointerMove = (e: PointerEvent) => this.gestures.move(e);
     svg.addEventListener('pointermove', pointerMove);
     destroyRef.onDestroy(() => {
       ro?.disconnect();
-      svg.removeEventListener('wheel', wheel);
+      host.removeEventListener('wheel', wheel);
+      glass.removeEventListener('pointerdown', glassDown);
+      glass.removeEventListener('pointerup', glassUp);
+      glass.removeEventListener('pointercancel', glassUp);
+      glass.removeEventListener('pointermove', glassMove);
       svg.removeEventListener('pointermove', pointerMove);
       this.viewport.stop();
       this.motion.stop();
