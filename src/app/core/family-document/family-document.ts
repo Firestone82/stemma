@@ -2,7 +2,7 @@
  * The family document: a Word file to print, with a table for each family
  * that sets out its branches (see outline.ts), the youngest indented under
  * their parents with how they are their child, their partners under them,
- * each branch in a colour of its own, everyone under one number in the whole
+ * each generation in a colour of its own, everyone under one number in the whole
  * document.
  */
 import { ChildRelation, Sex } from '../model/types';
@@ -59,15 +59,10 @@ const INK = '3B2F23';
 const MUTED = '6B5E4E';
 const HEAD_FILL = 'EDE4D3';
 /**
- * The branches under the oldest of a family, each in a colour of its own, in turn: the shades from the
- * children down to the great-grandchildren and further, lighter the further down.
+ * The generations under the oldest of a family, each in a colour of its own: children, grandchildren,
+ * great-grandchildren and on, the colours coming round again. A family of parents and children only has none.
  */
-const BANDS: readonly (readonly string[])[] = [
-  ['EADCC3', 'F3EADA', 'F9F4EC'],
-  ['D6E6DA', 'E5EFE7', 'F1F7F2'],
-  ['D8E2EF', 'E6EDF5', 'F2F5FA'],
-  ['ECD9D9', 'F4E7E7', 'F9F2F2'],
-];
+const GENERATIONS: readonly string[] = ['EADCC3', 'D6E6DA', 'D8E2EF', 'ECD9D9', 'E4DDF0'];
 /** No., name (with how they are a child, and their partners under it), born, died. */
 const WIDTHS = [650, DOCX_TEXT_WIDTH - 650 - 1500 - 1500, 1500, 1500];
 /** Families of no more rows than this share pages. */
@@ -135,7 +130,10 @@ function legendTable(entries: readonly LegendEntry[]): DocxBlock {
     rows: entries.map((e) => ({
       cells: [
         // The colours stand for themselves: the first branch's.
-        { shade: e.colours ? BANDS[0][0] : undefined, paragraphs: [para([{ text: e.symbol, bold: !e.colours || undefined, color: e.colours ? MUTED : INK }])] },
+        {
+          shade: e.colours ? GENERATIONS[0] : undefined,
+          paragraphs: [para([{ text: e.symbol, bold: !e.colours || undefined, color: e.colours ? MUTED : INK }])],
+        },
         { paragraphs: [para([{ text: e.meaning }])] },
       ],
     })),
@@ -152,15 +150,10 @@ function headRow(words: FamilyDocumentWords): DocxRow {
   };
 }
 
-/** The table's rows: each branch under the oldest in its own colour, the deeper the lighter. */
+/** The table's rows: where it goes down more than one generation, each generation in its own colour. */
 function rows(outline: readonly OutlineRow[], words: FamilyDocumentWords): DocxRow[] {
-  let band = -1;
-  return outline.map((r) => {
-    if (r.level === 0) band = -1;
-    else if (r.level === 1 && r.kind === 'person') band++;
-    const shade = r.level > 0 && band >= 0 ? BANDS[band % BANDS.length][Math.min(r.level, 3) - 1] : undefined;
-    return row(r, words, shade);
-  });
+  const nested = outline.some((r) => r.level > 1);
+  return outline.map((r) => row(r, words, nested && r.level > 0 ? GENERATIONS[(r.level - 1) % GENERATIONS.length] : undefined));
 }
 
 function row(r: OutlineRow, words: FamilyDocumentWords, shade: string | undefined): DocxRow {
@@ -172,7 +165,12 @@ function row(r: OutlineRow, words: FamilyDocumentWords, shade: string | undefine
   }
   const cell = (paragraphs: DocxParagraph[]): DocxCell => ({ paragraphs, shade });
   return {
-    cells: [cell([para([{ text: r.number, color: MUTED }])]), cell(nameCell(r, words)), cell([para([{ text: r.birth }])]), cell([para([{ text: r.death }])])],
+    cells: [
+      cell([para([{ text: r.number, color: MUTED }])]),
+      cell(nameCell(r, words)),
+      cell([para([{ text: yearBelow(r.birth) }])]),
+      cell([para([{ text: yearBelow(r.death) }])]),
+    ],
   };
 }
 
@@ -201,6 +199,11 @@ function partnerPara(p: OutlinePartner, words: FamilyDocumentWords, indent: numb
 /** " (No. 23)" after the name of someone set out in the document. */
 function numberRun(number: string, words: FamilyDocumentWords): DocxRun[] {
   return number ? [{ text: ` (${words.see(number)})`, color: MUTED, size: 8.5 }] : [];
+}
+
+/** "5. července" over "1954": the year on a line of its own. */
+function yearBelow(date: string): string {
+  return date.replace(/\s+(\S*\d{3,4}\S*)$/, '\n$1');
 }
 
 function para(runs: DocxRun[], indent = 0): DocxParagraph {
