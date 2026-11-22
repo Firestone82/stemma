@@ -29,6 +29,19 @@
         <span>{{ t('bar.printShort') }}</span>
       }
     </button>
+    <button
+      type="button"
+      class="btn ghost"
+      [class.icon]="ui.narrow()"
+      (click)="documents.exportFamilyDocument()"
+      [attr.aria-label]="t('bar.export')"
+      [title]="t('bar.export')"
+    >
+      <stemma-icon name="download" />
+      @if (!ui.narrow()) {
+        <span>{{ t('bar.exportShort') }}</span>
+      }
+    </button>
     <stemma-appearance-menu [iconOnly]="ui.narrow()" />
     <stemma-file-menu />
   </nav>
