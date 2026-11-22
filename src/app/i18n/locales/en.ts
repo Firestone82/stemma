@@ -244,6 +244,7 @@ export const en = {
   'overview.tip.print': 'Print and export fills the sheet with cards as big as the paper allows. Choose the paper and how far the tree reaches.',
   'overview.tip.move': 'Drag to move around. Scroll or pinch to zoom. Press F to see everyone.',
   'overview.tip.keys': 'With someone selected, the arrow keys move to their parents, children and neighbours.',
+  'overview.tip.find': 'Press Ctrl+F (Cmd+F on a Mac) to search the list of people.',
   'overview.tip.save': 'Everything is kept in this browser as you work. Use File, then Save as XML, to keep a copy you can open in any version of Stemma.',
   'legend.familyTitle': 'Family colours',
   'legend.others': 'Others',
