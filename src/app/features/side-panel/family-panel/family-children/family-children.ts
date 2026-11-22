@@ -1,4 +1,5 @@
 import { ChangeDetectionStrategy, Component, computed, inject, input } from '@angular/core';
+import { birthColor } from '../../../../core/model/births';
 import { ChildRelation, Family, Person } from '../../../../core/model/types';
 import { TreeStore } from '../../../../core/store/tree-store';
 import { I18n } from '../../../../i18n/i18n';
@@ -50,6 +51,8 @@ export class FamilyChildren {
         withNext,
         /** "Twins", "Triplets": shown on the link to the next child. */
         together: withNext ? bornTogetherLabel(this.t, size(c.group)) : '',
+        /** The colour of the group (1, 2…), so that two pairs of twins can be told apart. */
+        color: withNext ? birthColor(this.family(), c.group!) : undefined,
       };
     });
   });

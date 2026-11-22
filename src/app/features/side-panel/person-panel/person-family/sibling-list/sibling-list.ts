@@ -1,10 +1,10 @@
 import { ChangeDetectionStrategy, Component, computed, inject, input } from '@angular/core';
-import { birthGroupOf } from '../../../../../core/model/births';
+import { birthColor, birthGroupOf } from '../../../../../core/model/births';
 import { FamilyActions } from '../../../../../state/family-actions';
 import { Person } from '../../../../../core/model/types';
 import { TreeStore } from '../../../../../core/store/tree-store';
 import { I18n } from '../../../../../i18n/i18n';
-import { bornTogetherLabel, bornTogetherTag } from '../../../../../i18n/labels';
+import { bornTogetherLabel } from '../../../../../i18n/labels';
 import { Icon } from '../../../../../shared/icon/icon';
 import { PersonRow } from '../../../../../shared/person-row/person-row';
 import { PersonActions } from '../../../../../state/person-actions';
@@ -31,26 +31,36 @@ export class SiblingList {
 
   readonly person = input.required<Person>();
 
+  /** The person's own birth group, when they were born together with someone. */
+  protected readonly myGroup = computed(() => birthGroupOf(this.store.doc(), this.person().id));
+
+  /**
+   * Each brother or sister, with the group they were born together in, if any:
+   * "Twins", "Triplets"…, in the colour of that group in their family, so that
+   * two pairs of twins can be told apart.
+   */
   protected readonly siblings = computed(() => {
     const id = this.person().id;
     const index = this.store.index();
-    const group = birthGroupOf(this.store.doc(), id);
-    const tag = group ? bornTogetherTag(this.t, group.memberIds.length) : '';
-    return index.siblings(id).map((p) => ({
-      ...this.rows.row(p),
-      tag: group?.memberIds.includes(p.id) ? tag : '',
+    const mine = this.myGroup();
+    return index.siblings(id).map((p) => {
       // The family both are children of, where twins are marked.
-      familyId: index.parentFamilies(id).find((f) => f.children.some((c) => c.personId === p.id))?.id,
-    }));
+      const family = index.parentFamilies(id).find((f) => f.children.some((c) => c.personId === p.id));
+      const key = family?.children.find((c) => c.personId === p.id)?.birthGroup;
+      const size = key ? family!.children.filter((c) => c.birthGroup === key).length : 0;
+      return {
+        ...this.rows.row(p),
+        familyId: family?.id,
+        withMe: !!mine?.memberIds.includes(p.id),
+        group: family && key && size > 1 ? { label: bornTogetherLabel(this.t, size), color: birthColor(family, key) } : undefined,
+      };
+    });
   });
 
-  /** "Twins", "Triplets"…: the person's own birth group, on the link of each sibling in it. */
-  protected readonly together = computed(() => bornTogetherLabel(this.t, birthGroupOf(this.store.doc(), this.person().id)?.memberIds.length ?? 2));
-
   /** Marks the sibling as born together with the person, or not after all. */
-  protected toggleTwin(s: { id: string; familyId?: string; tag: string }): void {
+  protected toggleTwin(s: { id: string; familyId?: string; withMe: boolean }): void {
     if (!s.familyId) return;
-    if (s.tag) this.families.unlinkBirth(s.familyId, s.id);
+    if (s.withMe) this.families.unlinkBirth(s.familyId, s.id);
     else this.families.linkBirth(s.familyId, [this.person().id, s.id]);
   }
   protected readonly halfSiblings = computed(() =>

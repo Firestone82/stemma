@@ -27,6 +27,18 @@ export function birthGroupOf(doc: TreeDocument, personId: string): BirthGroup | 
   return undefined;
 }
 
+/** The number of birth colours (--birth-1…): groups past that reuse them. */
+export const BIRTH_COLORS = 6;
+
+/**
+ * Which colour (1 to BIRTH_COLORS) a family's birth group is marked with: the
+ * groups take them in the order they stand among the children.
+ */
+export function birthColor(family: Family, key: string): number {
+  const keys = [...new Set(family.children.map((c) => c.birthGroup).filter((k): k is string => !!k))];
+  return (Math.max(0, keys.indexOf(key)) % BIRTH_COLORS) + 1;
+}
+
 /** Twins, triplets…: how many were born together with someone (1 when nobody). */
 export function birthCount(doc: TreeDocument, personId: string): number {
   return birthGroupOf(doc, personId)?.memberIds.length ?? 1;

@@ -16,6 +16,8 @@
 }
 
 .twin {
+  display: inline-flex;
+  align-items: center;
   flex: 0 0 auto;
   gap: 4px;
   padding: 2px 6px;
@@ -36,5 +38,31 @@
     color: var(--ink);
     font-weight: 500;
     opacity: 1;
+  }
+
+  /* A group of children born together, in its own colour (see --birth-1…). */
+  &[data-birth] {
+    --birth: var(--birth-1);
+    background: color-mix(in srgb, var(--birth) 14%, transparent);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--birth) 45%, transparent);
+
+    stemma-icon {
+      color: var(--birth);
+    }
+  }
+  &[data-birth='2'] {
+    --birth: var(--birth-2);
+  }
+  &[data-birth='3'] {
+    --birth: var(--birth-3);
+  }
+  &[data-birth='4'] {
+    --birth: var(--birth-4);
+  }
+  &[data-birth='5'] {
+    --birth: var(--birth-5);
+  }
+  &[data-birth='6'] {
+    --birth: var(--birth-6);
   }
 }

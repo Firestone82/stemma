@@ -3,7 +3,7 @@ import { Layouter, WIDE } from '../layout/engine';
 import { LAYOUT } from '../layout/types';
 import { TreeIndex } from './tree-index';
 import { DocBuilder } from '../testing/fixtures';
-import { MAX_BORN_TOGETHER, addBornTogether, birthCount, birthGroupOf, leaveBirth, linkBirth, shareBirth, splitBirth } from './births';
+import { BIRTH_COLORS, MAX_BORN_TOGETHER, addBornTogether, birthColor, birthCount, birthGroupOf, leaveBirth, linkBirth, shareBirth, splitBirth } from './births';
 import { updatePerson } from './operations';
 
 function family() {
@@ -59,6 +59,16 @@ describe('adding siblings born together', () => {
 });
 
 describe('children born together', () => {
+  it('gives each group in a family its own colour, in the order they stand', () => {
+    const doc = linkBirth(linkBirth(family(), 'F1', ['C', 'D']), 'F1', ['A', 'B']);
+    const f = doc.families[0];
+    const key = (id: string) => f.children.find((c) => c.personId === id)!.birthGroup!;
+    expect(f.children.map((c) => c.personId)).toEqual(['A', 'B', 'C', 'D']);
+    expect(birthColor(f, key('A'))).toBe(1);
+    expect(birthColor(f, key('C'))).toBe(2);
+    expect(BIRTH_COLORS).toBe(6);
+  });
+
   it('links twins, puts them side by side and gives them one birth', () => {
     const doc = linkBirth(family(), 'F1', ['A', 'C']);
     const f = doc.families[0];

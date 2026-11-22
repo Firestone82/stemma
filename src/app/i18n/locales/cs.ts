@@ -410,6 +410,7 @@ export const cs: Catalogue = {
   'births.one.many': 'narozeni společně',
   'births.link': 'Narozeni společně: dvojčata mají stejné datum a místo narození',
   'births.linkShort': 'Dvojčata?',
+  'births.others': 'Narozeni společně s jinými sourozenci',
   'births.unlink': 'Nenarodili se společně',
   'add.twin': 'Narozen(a) společně s osobou {name}: stejné datum a místo narození',
   'add.bornTogetherSize': 'Kolik dětí se narodilo společně',

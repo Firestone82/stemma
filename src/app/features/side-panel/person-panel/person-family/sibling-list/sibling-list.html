@@ -2,18 +2,26 @@
   <span class="group-label">{{ t('siblings.title') }}</span>
   @for (s of siblings(); track s.id) {
     <div class="sibling">
-      <button type="button" stemmaPersonRow [name]="s.name" [dates]="s.dates" [tincture]="s.tincture" [tag]="s.tag" (click)="people.select(s.id)"></button>
+      <button type="button" stemmaPersonRow [name]="s.name" [dates]="s.dates" [tincture]="s.tincture" (click)="people.select(s.id)"></button>
       @if (s.familyId) {
-        <button
-          type="button"
-          class="link-btn twin"
-          [class.linked]="!!s.tag"
-          [attr.aria-pressed]="!!s.tag"
-          [title]="s.tag ? t('births.unlink') : t('births.link')"
-          (click)="toggleTwin(s)"
-        >
-          <stemma-icon [name]="s.tag ? 'link' : 'plus'" [size]="12" />{{ s.tag ? together() : t('births.linkShort') }}
-        </button>
+        @if (s.group && !s.withMe && myGroup()) {
+          <!-- Born together with others, not with the person: shown, not switched from here. -->
+          <span class="twin linked" [attr.data-birth]="s.group.color" [title]="t('births.others')">
+            <stemma-icon name="link" [size]="12" />{{ s.group.label }}
+          </span>
+        } @else {
+          <button
+            type="button"
+            class="link-btn twin"
+            [class.linked]="!!s.group"
+            [attr.data-birth]="s.group?.color"
+            [attr.aria-pressed]="s.withMe"
+            [title]="s.withMe ? t('births.unlink') : t('births.link')"
+            (click)="toggleTwin(s)"
+          >
+            <stemma-icon [name]="s.group ? 'link' : 'plus'" [size]="12" />{{ s.group ? s.group.label : t('births.linkShort') }}
+          </button>
+        }
       }
     </div>
   }

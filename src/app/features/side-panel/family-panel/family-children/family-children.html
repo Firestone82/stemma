@@ -51,6 +51,7 @@
       <button
         type="button"
         class="link-btn"
+        [attr.data-birth]="c.color"
         [attr.aria-pressed]="c.withNext"
         [title]="c.withNext ? t('births.unlink') : t('births.link')"
         (click)="toggleBirth(c.id, c.nextId, c.withNext)"

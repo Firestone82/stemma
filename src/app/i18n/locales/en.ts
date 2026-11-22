@@ -410,6 +410,7 @@ export const en = {
   'births.one.many': 'born together',
   'births.link': 'Born together: twins share the date and place of birth',
   'births.linkShort': 'Twins?',
+  'births.others': 'Born together with other brothers or sisters',
   'births.unlink': 'Not born together',
   'add.twin': 'Born together with {name}: same date and place of birth',
   'add.bornTogetherSize': 'How many were born together',
