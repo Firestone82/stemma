@@ -137,8 +137,6 @@ describe('family document', () => {
           name: 'Name',
           born: 'Born',
           died: 'Died',
-          partners: 'Partners',
-          relation: 'Relation',
           child: (sex) => (sex === 'male' ? 'son' : sex === 'female' ? 'daughter' : 'child'),
           listedAbove: 'listed above',
           summary: (p, g) => `${p} people, ${g} generations`,
@@ -164,7 +162,8 @@ describe('family document', () => {
     expect(body).toContain('>Tomáš Novák<');
     expect(body).toContain('continues in the Mikula family');
     expect(body).toContain('<w:tblHeader/>');
-    expect(body).toContain('>daughter<');
+    // How a child is a child, in front of the name.
+    expect(body).toContain('>daughter  <');
     // The contents: dots up to the page number, which points at the family's heading.
     expect(body).toContain('w:leader="dot"');
     expect(body).toContain('PAGEREF family-5');
