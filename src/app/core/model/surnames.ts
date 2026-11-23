@@ -28,10 +28,26 @@ export function birthFather(index: TreeIndex, personId: string): Person | undefi
   return undefined;
 }
 
-/** A person's surname taken from their father, in the form for their sex; empty when no father is recorded. */
+/**
+ * A man's surname as the male line gives it: as recorded, or else the one he was born with, or else his
+ * father's when nobody typed his in either, and so on up. Empty when nobody up the line has one.
+ */
+export function lineSurname(index: TreeIndex, man: Person, seen = new Set<string>()): string {
+  const own = man.name.surname.trim() || man.name.birthSurname?.trim();
+  if (own) return own;
+  if (seen.has(man.id)) return '';
+  seen.add(man.id);
+  const father = birthFather(index, man.id);
+  return father ? lineSurname(index, father, seen) : '';
+}
+
+/**
+ * A person's surname taken from their father, in the form for their sex; empty when no father is recorded.
+ * A father whose own surname nobody typed in passes on the one he has from his father.
+ */
 export function surnameFromFather(index: TreeIndex, person: Person, form: SurnameForm, sex: Sex = person.sex): string {
   const father = birthFather(index, person.id);
-  const base = father ? father.name.surname.trim() || father.name.birthSurname?.trim() || '' : '';
+  const base = father ? lineSurname(index, father) : '';
   return base ? form(base, sex, [base]) : '';
 }
 
@@ -60,11 +76,16 @@ export function birthSurnameUnknown(index: TreeIndex, person: Person): boolean {
   const own = person.name.surname.trim();
   if (!own) return false;
   const father = birthFather(index, person.id);
-  if (father && (father.name.surname.trim() || father.name.birthSurname?.trim())) return false;
+  if (father && lineSurname(index, father)) return false;
   const key = surnameKey(own, true);
-  return index
-    .partnerFamilies(person.id)
-    .some((f) => f.kind === 'marriage' && f.partners.some((id) => id !== person.id && surnameKey(index.person(id)?.name.surname, true) === key));
+  return index.partnerFamilies(person.id).some((f) => {
+    if (f.kind !== 'marriage') return false;
+    return f.partners.some((id) => {
+      const partner = id !== person.id ? index.person(id) : undefined;
+      // A husband whose surname nobody typed in has his father's, and so does she.
+      return !!partner && surnameKey(partner.sex === 'male' ? lineSurname(index, partner) : partner.name.surname, true) === key;
+    });
+  });
 }
 
 /** Surnames of the men in the tree, most common first. */

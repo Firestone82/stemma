@@ -4,7 +4,7 @@
  * linked without making the tree loop.
  */
 import { chartLanguage } from '../../../core/lang/language';
-import { birthSurname, maleSurnames, surnameFromFather } from '../../../core/model/surnames';
+import { birthSurname, lineSurname, maleSurnames, surnameFromFather } from '../../../core/model/surnames';
 import { TreeIndex } from '../../../core/model/tree-index';
 import { ChildRelation, Person, Sex } from '../../../core/model/types';
 import { AddRequest } from '../../../state/ui-state';
@@ -41,8 +41,9 @@ export function defaultSurname(index: TreeIndex, req: AddRequest, sex: Sex, othe
     case 'child': {
       const other = index.person(otherParentId ?? undefined);
       const father = me.sex === 'male' ? me : other?.sex === 'male' ? other : undefined;
-      // With no father recorded, the child has the mother's surname.
-      return adapt((father ?? me).name.surname.trim());
+      // The father's, also when nobody typed his in and he has it from his father; with no father recorded,
+      // the child has the mother's surname.
+      return adapt(father ? lineSurname(index, father) : me.name.surname.trim());
     }
     case 'partner':
       return '';

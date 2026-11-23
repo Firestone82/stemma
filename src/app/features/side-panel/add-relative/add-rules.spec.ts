@@ -39,6 +39,20 @@ describe('adding a relative', () => {
     expect(defaultSurname(new TreeIndex(doc), { relation: 'child', personId: 'J' }, 'female', 'P')).toBe('Mikula');
   });
 
+  it('gives a child the surname its father has from his father when nobody typed his in', () => {
+    const b = new DocBuilder();
+    b.person('G', 'Josef', 'Mikula', 'male');
+    b.person('P', 'Pavel', '', 'male');
+    b.person('J', 'Jana', 'Mikulová', 'female');
+    b.family('F1', ['G'], ['P']);
+    b.family('F2', ['P', 'J']);
+    const doc = b.build();
+    const index = new TreeIndex({ ...doc, view: { ...doc.view, language: 'cs' } });
+    expect(defaultSurname(index, { relation: 'child', personId: 'J' }, 'female', 'P')).toBe('Mikulová');
+    expect(defaultSurname(index, { relation: 'child', personId: 'P' }, 'male', 'J')).toBe('Mikula');
+    expect(defaultSurname(index, { relation: 'child', personId: 'P' }, 'male', null)).toBe('Mikula');
+  });
+
   it('offers partners as the other parent and shares new parents with siblings', () => {
     const index = new TreeIndex(threeSpouses());
     expect(partnerOptions(index, 'P').map((p) => p.id)).toEqual(['S1', 'S2', 'S3']);

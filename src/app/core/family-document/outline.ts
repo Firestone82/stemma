@@ -5,11 +5,13 @@
  * number in the whole document, given in the order the families list them, and
  * keeps it wherever else they appear: among the partners, or as a child born
  * into another family (a daughter's children, who bear their father's name),
- * listed under their mother with the family they carry on in.
+ * listed under their mother with the family they carry on in. A wife whose
+ * surname at birth nobody knows is only written beside her husband.
  */
 import { ChartLanguage, surnameLinesIn } from '../lang/language';
 import { dateSortKey } from '../model/dates';
 import { relationshipStatus } from '../model/relationship';
+import { birthSurnameUnknown } from '../model/surnames';
 import { TreeIndex } from '../model/tree-index';
 import { ChildRelation, Family, Person, Sex, TreeDocument } from '../model/types';
 
@@ -100,9 +102,14 @@ export function familyOutline(input: OutlineInput): OutlineFamily[] {
   };
   const keyFor = (id: string) => keyOf.get(id) ?? '';
 
+  // A wife known only by her husband's name was not born into his family: she is written beside him, not
+  // listed among those born into it.
+  const marriedIn = (p: Person) =>
+    birthSurnameUnknown(index, p) && index.partnerFamilies(p.id).some((f) => f.kind === 'marriage' && f.partners.some((id) => id !== p.id && shown(id)));
+
   const members = new Map<string, Person[]>();
   for (const p of doc.people) {
-    if (p.hiddenFromPrint) continue;
+    if (p.hiddenFromPrint || marriedIn(p)) continue;
     const k = keyFor(p.id);
     const list = members.get(k) ?? [];
     list.push(p);
