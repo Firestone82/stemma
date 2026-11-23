@@ -91,3 +91,40 @@ describe('print settings saved for a couple in the studio', () => {
     expect(store.doc().savedPrints).toBeUndefined();
   });
 });
+
+describe('print settings saved with the title and the families names placed by hand', () => {
+  it('keeps what still waits to be applied, and brings it back', () => {
+    const store = TestBed.inject(TreeStore);
+    const model = TestBed.inject(PrintModel);
+    store.load(sampleDocument());
+    model.chooseMiddle('I3');
+    model.set({ title: 'For Anna', subtitle: 'Her family' });
+    const box = { x: 0.6, y: 0.7, w: 0.3, h: 0.2 };
+    model.stage({ legendBox: box, legendAlign: 'top', legendSize: 0.8, titleSize: 2.4, titleAnchor: 'top-left', legendGap: 1 });
+    expect(model.savedDiffers()).toBe(false);
+    model.saveForMiddle();
+    const kept = model.saved()!;
+    expect([kept.title, kept.subtitle, kept.legendBox, kept.legendAlign, kept.legendSize, kept.titleSize, kept.titleAnchor, kept.legendGap]).toEqual([
+      'For Anna',
+      'Her family',
+      box,
+      'top',
+      0.8,
+      2.4,
+      'top-left',
+      1,
+    ]);
+    expect(model.waiting()).toBe(false);
+
+    // Moved again without applying: that is a change from what is kept.
+    model.stage({ legendBox: { x: 0, y: 0, w: 0.2, h: 0.2 } });
+    expect(model.savedDiffers()).toBe(true);
+
+    model.chooseMiddle('I5');
+    model.set({ title: undefined, legendSize: undefined, titleSize: undefined, legendBox: undefined });
+    model.chooseMiddle('I3');
+    const print = store.doc().print!;
+    expect([print.title, print.legendBox, print.legendSize, print.titleSize]).toEqual(['For Anna', box, 0.8, 2.4]);
+    expect(model.waiting()).toBe(false);
+  });
+});
