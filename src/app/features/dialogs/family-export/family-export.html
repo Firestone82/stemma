@@ -1,0 +1,47 @@
+<div class="dialog-body">
+  <h2>{{ t('dialog.familyExport.title') }}</h2>
+  <p>{{ t('dialog.familyExport.text') }}</p>
+  <div class="quick">
+    <button type="button" class="btn small" (click)="all()">{{ t('dialog.familyExport.all') }}</button>
+    <button type="button" class="btn small" (click)="none()">{{ t('dialog.familyExport.none') }}</button>
+    <span class="summary">{{ summary() }}</span>
+  </div>
+  <ul class="tree" [attr.aria-label]="t('dialog.familyExport.title')">
+    @for (row of rows(); track row.path) {
+      @let s = state(row.item.key);
+      <li [style.--depth]="row.depth">
+        @if (row.opens) {
+          <button
+            type="button"
+            class="twisty"
+            [class.open]="row.open"
+            [attr.aria-expanded]="row.open"
+            (click)="toggleOpen(row.path)"
+            [attr.aria-label]="t('dialog.familyExport.links', { family: row.item.label })"
+          >
+            <stemma-icon name="chevronRight" [size]="14" />
+          </button>
+        } @else {
+          <span class="twisty" aria-hidden="true"></span>
+        }
+        <label class="check" [class.partial]="s === 'partial'">
+          <input
+            type="checkbox"
+            [checked]="s === 'full'"
+            [indeterminate]="s === 'partial'"
+            [attr.aria-checked]="s === 'partial' ? 'mixed' : s === 'full'"
+            (change)="toggle(row.item.key)"
+          />
+          <span class="name">{{ row.item.label }}</span>
+          <span class="count">{{ row.item.count }}</span>
+        </label>
+      </li>
+    }
+  </ul>
+</div>
+<div class="dialog-actions">
+  <button type="button" class="btn" (click)="done.emit()">{{ t('common.cancel') }}</button>
+  <button type="button" class="btn primary" [disabled]="!chosen().size" (click)="export()">
+    <stemma-icon name="download" [size]="16" />{{ t('dialog.familyExport.export') }}
+  </button>
+</div>

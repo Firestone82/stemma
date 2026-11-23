@@ -18,6 +18,9 @@
       @case ('xml') {
         <stemma-xml-export [xml]="r.xml" [filename]="r.filename" (done)="close()" />
       }
+      @case ('family-export') {
+        <stemma-family-export (done)="close()" />
+      }
       @case ('about') {
         <stemma-about-format (done)="close()" />
       }

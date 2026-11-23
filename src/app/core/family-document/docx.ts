@@ -54,6 +54,8 @@ export interface DocxTable {
   /** Column widths in twips; together the width of the text on the page. */
   widths: number[];
   rows: DocxRow[];
+  /** Kept on one page: it goes over to the next page whole rather than split. */
+  keepTogether?: boolean;
 }
 
 export type DocxBlock = DocxParagraph | DocxTable;
@@ -214,7 +216,9 @@ function table(t: DocxTable): string {
     `</w:tblPr>`;
   const grid = `<w:tblGrid>${t.widths.map((w) => `<w:gridCol w:w="${w}"/>`).join('')}</w:tblGrid>`;
   const rows = t.rows
-    .map((row) => {
+    .map((row, at) => {
+      // Kept together: every row is kept with the one after it.
+      const keep = t.keepTogether && at < t.rows.length - 1;
       let col = 0;
       const cells = row.cells
         .map((c) => {
@@ -227,7 +231,7 @@ function table(t: DocxTable): string {
             (c.shade ? `<w:shd w:val="clear" w:color="auto" w:fill="${c.shade}"/>` : '');
           // A cell must end with a paragraph, even an empty one.
           const paras = c.paragraphs.length ? c.paragraphs : [{ kind: 'p', runs: [] } as DocxParagraph];
-          return `<w:tc><w:tcPr>${cp}</w:tcPr>${paras.map(paragraph).join('')}</w:tc>`;
+          return `<w:tc><w:tcPr>${cp}</w:tcPr>${paras.map((p) => paragraph(keep ? { ...p, keepNext: true } : p)).join('')}</w:tc>`;
         })
         .join('');
       // Rows are not split over two pages; the heading row comes again on each page.
@@ -283,7 +287,8 @@ const LINE = 1.17 * 1.05;
 /** The average letter, as a part of the type's size. */
 const LETTER = 0.48;
 /** The height of the text on a page, in twips: A4 less the margins. */
-const PAGE_HEIGHT = 16838 - 2 * 1021;
+export const DOCX_PAGE_HEIGHT = 16838 - 2 * 1021;
+const PAGE_HEIGHT = DOCX_PAGE_HEIGHT;
 
 const STYLE_SIZE: Record<NonNullable<DocxParagraph['style']> | 'Normal', number> = {
   Normal: 10,
@@ -343,7 +348,7 @@ export function estimatePages(blocks: readonly DocxBlock[]): Map<string, number>
       const next = blocks[j + 1];
       if (!next) break;
       if (next.kind === 'table') {
-        keepWith += next.rows.slice(0, 2).reduce((s, r) => s + rowHeight(r, next.widths), 0);
+        keepWith += next.rows.slice(0, next.keepTogether ? undefined : 2).reduce((s, r) => s + rowHeight(r, next.widths), 0);
         break;
       }
       keepWith += paragraphHeight(next, DOCX_TEXT_WIDTH);
@@ -352,6 +357,11 @@ export function estimatePages(blocks: readonly DocxBlock[]): Map<string, number>
     if (b.bookmark) pages.set(b.bookmark, page);
   }
   return pages;
+}
+
+/** How tall the blocks are together, in twips, as if on one endless page. */
+export function blocksHeight(blocks: readonly DocxBlock[]): number {
+  return blocks.reduce((sum, b) => sum + (b.kind === 'p' ? paragraphHeight(b, DOCX_TEXT_WIDTH) : b.rows.reduce((s, r) => s + rowHeight(r, b.widths), 0)), 0);
 }
 
 function rowHeight(row: DocxRow, widths: readonly number[]): number {
