@@ -6,7 +6,7 @@
 import { LayoutBounds, LayoutCard, LayoutResult, Pt } from '../../core/layout/types';
 import { TreeIndex } from '../../core/model/tree-index';
 import { currentPartner } from '../../state/chart-model';
-import { MIN_ZOOM, View } from './viewport';
+import { MIN_ZOOM, View, clampZoom } from './viewport';
 
 export interface Screen {
   w: number;
@@ -31,6 +31,25 @@ export function coupleCentre(layout: LayoutResult, index: TreeIndex, personId: s
   const family = partnerId ? index.familyBetween(personId, partnerId) : undefined;
   const union = family ? layout.unions.find((u) => u.familyId === family.id) : undefined;
   return union ? { x: union.x, y: union.y } : { x: c.x + c.w / 2, y: c.y + c.h / 2 };
+}
+
+/**
+ * The view with a family in the middle: its partners and children, zoomed out as far as it takes to show them
+ * all (never below a readable zoom), otherwise at the zoom `k` of now. Null when none of them is on the chart.
+ */
+export function familyFrame(layout: LayoutResult, personIds: readonly string[], k: number, screen: Screen): View | null {
+  const ids = new Set(personIds);
+  const cards = layout.cards.filter((c) => ids.has(c.personId) && !c.ghost);
+  if (!cards.length) return null;
+  const left = Math.min(...cards.map((c) => c.x));
+  const right = Math.max(...cards.map((c) => c.x + c.w));
+  // Room above the top cards for the quick-add buttons.
+  const top = Math.min(...cards.map((c) => c.y)) - 56;
+  const bottom = Math.max(...cards.map((c) => c.y + c.h));
+  const pad = 48;
+  const fit = Math.min((screen.w - pad * 2) / Math.max(1, right - left), (screen.h - pad * 2) / Math.max(1, bottom - top));
+  const zoom = clampZoom(Math.min(Math.max(k, 0.6), 1.1, Math.max(fit, 0.35)));
+  return { x: screen.w / 2 - ((left + right) / 2) * zoom, y: screen.h / 2 - ((top + bottom) / 2) * zoom, k: zoom };
 }
 
 /**

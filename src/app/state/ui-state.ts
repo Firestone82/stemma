@@ -146,6 +146,8 @@ export class UiState {
   readonly focusRequest = signal<{ personId: string; seq: number } | null>(null);
   /** Bring a person and their partner to the middle of the chart. */
   readonly centreRequest = signal<{ personId: string; seq: number } | null>(null);
+  /** Bring a family (its partners and children) to the middle of the chart. */
+  readonly familyRequest = signal<{ familyId: string; seq: number } | null>(null);
   readonly fitRequest = signal(0);
   /** A person to briefly highlight after they were added. */
   readonly flash = signal<{ personId: string; seq: number } | null>(null);
@@ -186,6 +188,10 @@ export class UiState {
 
   centre(personId: string): void {
     this.centreRequest.set({ personId, seq: ++this.seq });
+  }
+
+  centreFamily(familyId: string): void {
+    this.familyRequest.set({ familyId, seq: ++this.seq });
   }
 
   /** Whether the last fit asked for glides there; a big tree jumps, as gliding would redraw it every frame. */

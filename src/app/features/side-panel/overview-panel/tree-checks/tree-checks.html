@@ -1,15 +1,17 @@
 @if (review.total() > 0) {
   <section class="panel-section review">
-    <h3>{{ t('review.title') }}</h3>
-    <p class="all-good">{{ t('review.confirmedCount', { n: review.confirmed(), of: review.total() }) }}</p>
-    <p class="unknown-dates">
+    <div class="section-head review-head">
+      <h3>{{ t('review.title') }}</h3>
       @if (review.remaining() > 0) {
         <button type="button" class="btn small primary" (click)="review.start()">{{ review.confirmed() ? t('review.continue') : t('review.start') }}</button>
       }
-      @if (review.confirmed() > 0) {
+    </div>
+    <p class="all-good">{{ t('review.confirmedCount', { n: review.confirmed(), of: review.total() }) }}</p>
+    @if (review.confirmed() > 0) {
+      <p class="unknown-dates">
         <button type="button" class="link" (click)="review.start(true)">{{ t('review.again') }}</button>
-      }
-    </p>
+      </p>
+    }
   </section>
 }
 @if (allGood()) {

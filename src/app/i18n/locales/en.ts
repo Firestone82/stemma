@@ -261,23 +261,11 @@ export const en = {
   'overview.tip.keys': 'With someone selected, the arrow keys move to their parents, children and neighbours.',
   'overview.tip.find': 'Press Ctrl+F (Cmd+F on a Mac) to search the list of people.',
   'overview.tip.save': 'Everything is kept in this browser as you work. Use File, then Save as XML, to keep a copy you can open in any version of Stemma.',
-  'legend.familyTitle': 'Family colours',
-  'legend.others': 'Others',
   'display.relationships': 'Relationship names',
   'display.relationshipsHint':
     'How everyone is related to the person in the middle (Aunt, Cousin), at the top of their card. Centring on someone else changes these and leaves the chart as it is.',
   'display.familyBackgrounds': 'Family backgrounds',
   'display.familyBackgroundsHint': 'A soft patch in each family’s colour behind its cards, so the families stand out. Only on the chart, never in prints.',
-  'legend.spellings': 'One family, other spellings',
-  'legend.spellingsHint': 'Letters with and without their marks are always one family: Novák and Novak, Müller and Muller.',
-  'legend.uniteForeign': 'German and Czech spellings are one family',
-  'legend.uniteForeignHint':
-    'Schmidt and Šmíd, Schwarz and Švarc, Müller and Mueller, Weiss and Vajs: a name written the German way and the Czech way counts as one family.',
-  'legend.unite': 'Polish and Czech spellings are one family',
-  'legend.uniteHint':
-    'Nowak and Novák, Szturc and Šturc, Heczko and Hečko: a name written the Polish way and the Czech way counts as one family, with one colour.',
-  'legend.familyHint':
-    'Each family name gets its own colour on the name shields. Women and men of one family share it (Novák and Nováková count as one name), and people take the colour of the surname they were born with.',
 
   'person.thisPerson': 'this person',
   'person.nee': 'née {name}',

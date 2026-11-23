@@ -138,10 +138,12 @@ export class FamilyReview {
     this.show();
   }
 
-  /** The family under review selected on the chart. */
+  /** The family under review selected on the chart, and brought to its middle. */
   private show(): void {
     const id = this.currentId();
-    if (id) this.people.openFamily(id);
+    if (!id) return;
+    this.people.openFamily(id);
+    this.ui.centreFamily(id);
   }
 
   /** Opens a person of the family in the panel, to correct them. */
