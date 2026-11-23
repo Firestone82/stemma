@@ -1,17 +1,26 @@
 import { Injectable, signal } from '@angular/core';
 import { RECENT_STORE, idbRun } from './browser-db';
-import { DriveFile } from './google-drive';
 
 /**
  * A tree opened or saved lately: a file on the computer, kept with the browser's handle to it where the browser gives
- * one (Chrome, Edge), or a file in Google Drive. Only what is needed to find the file again is kept, never the tree.
+ * one (Chrome, Edge). Only what is needed to find the file again is kept, never the tree.
  */
-export type RecentFile =
-  | { kind: 'local'; key: string; name: string; title: string; at: number; handle?: FileSystemFileHandle }
-  | { kind: 'drive'; key: string; name: string; title: string; at: number; file: DriveFile };
+export interface RecentFile {
+  kind: 'local';
+  key: string;
+  name: string;
+  title: string;
+  at: number;
+  handle?: FileSystemFileHandle;
+}
 
 /** What to remember about a file just opened or saved; the key and the time are filled in. */
-export type RecentFileInput = { kind: 'local'; name: string; title: string; handle?: FileSystemFileHandle } | { kind: 'drive'; title: string; file: DriveFile };
+export interface RecentFileInput {
+  kind: 'local';
+  name: string;
+  title: string;
+  handle?: FileSystemFileHandle;
+}
 
 /** How many files the list keeps. */
 export const RECENT_LIMIT = 8;
@@ -29,7 +38,7 @@ const indexedDbStorage: RecentStorage = {
 };
 
 /**
- * The files opened and saved lately, newest first, for the start page and the File menu. Kept in IndexedDB, because
+ * The files opened and saved lately, newest first, for the start page. Kept in IndexedDB, because
  * the browser's file handles can be kept there (not in localStorage). Opening one of them again reads the file afresh.
  */
 @Injectable({ providedIn: 'root' })
@@ -96,16 +105,6 @@ export class RecentFiles {
 
   /** The entry for a file, with the key of an older entry for the same file so it replaces that one. */
   private async entry(input: RecentFileInput, list: readonly RecentFile[], at: number): Promise<RecentFile> {
-    if (input.kind === 'drive') {
-      return {
-        kind: 'drive',
-        key: `drive:${input.file.id}`,
-        name: input.file.name,
-        title: input.title,
-        at,
-        file: { id: input.file.id, name: input.file.name },
-      };
-    }
     const same = await sameLocalFile(input, list);
     const key = same?.key ?? `local:${input.handle ? crypto.randomUUID() : input.name}`;
     return { kind: 'local', key, name: input.name, title: input.title, at, ...(input.handle ? { handle: input.handle } : {}) };
@@ -113,9 +112,8 @@ export class RecentFiles {
 }
 
 /** An entry for the same file on the computer: the browser tells by the handles; without handles, by the name. */
-async function sameLocalFile(input: Extract<RecentFileInput, { kind: 'local' }>, list: readonly RecentFile[]): Promise<RecentFile | undefined> {
+async function sameLocalFile(input: RecentFileInput, list: readonly RecentFile[]): Promise<RecentFile | undefined> {
   for (const e of list) {
-    if (e.kind !== 'local') continue;
     if (input.handle && e.handle) {
       try {
         if (await input.handle.isSameEntry(e.handle)) return e;
@@ -129,7 +127,7 @@ async function sameLocalFile(input: Extract<RecentFileInput, { kind: 'local' }>,
   return undefined;
 }
 
-/** Drops entries a different version of the app might have left that this one cannot open. */
+/** Drops entries a different version of the app might have left that this one cannot open (such as Google Drive files). */
 function sanitize(list: unknown): RecentFile[] {
   if (!Array.isArray(list)) return [];
   return list.filter(
@@ -138,6 +136,6 @@ function sanitize(list: unknown): RecentFile[] {
       typeof e === 'object' &&
       typeof (e as RecentFile).key === 'string' &&
       typeof (e as RecentFile).name === 'string' &&
-      ((e as RecentFile).kind === 'local' || ((e as RecentFile).kind === 'drive' && typeof (e as { file?: DriveFile }).file?.id === 'string')),
+      (e as RecentFile).kind === 'local',
   );
 }

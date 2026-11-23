@@ -7,13 +7,12 @@ import { FamilyExport } from './family-export/family-export';
 import { ImportReport } from './import-report/import-report';
 import { NewerVersion } from './newer-version/newer-version';
 import { XmlExport } from './xml-export/xml-export';
-import { DriveSetup } from './drive-setup/drive-setup';
 import { UnsavedChanges } from './unsaved-changes/unsaved-changes';
 
 /** The one modal dialog of the app; what it shows comes from UiState.dialog. */
 @Component({
   selector: 'stemma-dialogs',
-  imports: [ConfirmDelete, ConfirmNew, FamilyExport, ImportReport, NewerVersion, XmlExport, AboutFormat, UnsavedChanges, DriveSetup],
+  imports: [ConfirmDelete, ConfirmNew, FamilyExport, ImportReport, NewerVersion, XmlExport, AboutFormat, UnsavedChanges],
   templateUrl: './dialogs.html',
   styleUrl: './dialogs.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -23,7 +22,7 @@ export class Dialogs {
   private readonly dialog = viewChild.required<ElementRef<HTMLDialogElement>>('dialog');
 
   protected readonly request = this.ui.dialog;
-  protected readonly wide = computed(() => this.request()?.kind === 'xml' || this.request()?.kind === 'about' || this.request()?.kind === 'drive-setup');
+  protected readonly wide = computed(() => this.request()?.kind === 'xml' || this.request()?.kind === 'about');
 
   constructor() {
     effect(() => {
