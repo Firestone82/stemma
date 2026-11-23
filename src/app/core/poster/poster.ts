@@ -10,6 +10,7 @@ import { Layouter } from '../layout/engine';
 import { Fitted, Room, fitLayoutSteps, fitShapesSteps, place } from '../layout/fit';
 import { Steps, finish } from '../layout/steps';
 import { RELATION_DASH, roundedPath, sharedPaths } from '../layout/lines';
+import { spreadGaps } from '../layout/gaps';
 import { applyBends, applyMoves } from '../layout/moves';
 import { LAYOUT, LayoutCard, LayoutOptions, LayoutResult, TIGHT_LAYOUT } from '../layout/types';
 import { unionMark } from '../layout/union-marks';
@@ -361,6 +362,10 @@ export function* posterSteps(input: PosterInput): Steps<PosterResult> {
     halo: { ids: [centerId, partnerId].filter((id): id is string => !!id), pad: COUPLE_PAD + 2 },
   };
   const layouter = layouterFor(index, options, centerId, partnerId);
+  // Gaps widened by hand (PrintSettings.gaps): the arrangement found for the page stays, with those gaps wider,
+  // and is then fitted to the room again (smaller, for the room the gaps take).
+  const gaps = settings.gaps && Object.keys(settings.gaps).length ? settings.gaps : undefined;
+  const widened = (f: Fitted, room: Room): Fitted => (gaps ? { ...place(spreadGaps(f.layout, gaps), room), shape: f.shape } : f);
   const title = settings.title?.trim() || input.doc.meta.title || 'Family tree';
   const defs = new Map<string, string>();
   const ctx: PosterContext = {
@@ -573,7 +578,7 @@ export function* posterSteps(input: PosterInput): Steps<PosterResult> {
       }
     }
     const room = roomWith(legend);
-    let fitted = shape ? { ...place(layouter.run(shape), room), shape } : yield* fitLayoutSteps(layouter, options, room, effort, fitting);
+    let fitted = widened(shape ? { ...place(layouter.run(shape), room), shape } : yield* fitLayoutSteps(layouter, options, room, effort, fitting), room);
     if (!settings.legendBlocks && settings.showLegend && !settings.legendBox && !settings.legendAnchor && legend) {
       // Names that stand on no card stay; otherwise the first place in a corner (or at the foot) that is free,
       // and where there is none the room is kept for them, as it is where they are asked to block.
@@ -600,9 +605,8 @@ export function* posterSteps(input: PosterInput): Steps<PosterResult> {
           ctx.legendAt = 'free';
           footer = heritage.footer(ctx);
         } else {
-          fitted = shape
-            ? { ...place(layouter.run(shape), roomWith(legend, true)), shape }
-            : yield* fitLayoutSteps(layouter, options, roomWith(legend, true), effort, fitting);
+          const kept = roomWith(legend, true);
+          fitted = widened(shape ? { ...place(layouter.run(shape), kept), shape } : yield* fitLayoutSteps(layouter, options, kept, effort, fitting), kept);
         }
       }
     }
@@ -644,7 +648,7 @@ export function* posterSteps(input: PosterInput): Steps<PosterResult> {
       const best = placed.fitted;
       const alts: Fitted[] = [best];
       for (const shape of yield* fitShapesSteps(layouter, options, placed.room, given, LAYOUTS_LOOKED)) {
-        const f: Fitted = { ...place(layouter.run(shape), placed.room), shape };
+        const f: Fitted = widened({ ...place(layouter.run(shape), placed.room), shape }, placed.room);
         if (f.scale >= best.scale * LAYOUT_SPREAD && !alts.some((a) => Math.abs(a.scale - f.scale) < best.scale * 0.004)) alts.push(f);
         yield;
       }
@@ -659,7 +663,7 @@ export function* posterSteps(input: PosterInput): Steps<PosterResult> {
     }
   } else {
     // A page the size of the tree: the tree as it suits a screen, then the page around it.
-    const fitted = yield* fitLayoutSteps(layouter, options, { ...FIT_ROOM, centred: 0 }, input.effort ?? 'full', given);
+    const fitted = widened(yield* fitLayoutSteps(layouter, options, { ...FIT_ROOM, centred: 0 }, input.effort ?? 'full', given), { ...FIT_ROOM, centred: 0 });
     const b = fitted.layout.bounds;
     const content = { w: Math.max(b.w, 1), h: Math.max(b.h, 1) };
     const base = clamp(Math.max(content.w, content.h) / 110, 8, 22);
@@ -1001,7 +1005,17 @@ function drawCard(c: Drawing, at: LayoutCard): string {
   out += line(t.dates, d.dates, y.dates, palette.muted);
   // A black ribbon across the top right corner for someone who has died; a white one for a child who died at birth.
   if (c.settings.showRibbons && person.death) out += ribbon(d, w, diedAtBirth(person));
-  return el('g', { class: 'card', 'data-person': at.personId, transform: `translate(${n(at.x)},${n(at.y)})`, opacity: ghost ? 0.62 : undefined }, out);
+  return el(
+    'g',
+    {
+      class: 'card',
+      'data-person': at.personId,
+      transform: `translate(${n(at.x)},${n(at.y)})`,
+      opacity: ghost ? 0.62 : undefined,
+      'data-ghost': ghost ? '1' : undefined,
+    },
+    out,
+  );
 }
 
 /**

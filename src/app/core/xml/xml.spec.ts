@@ -47,6 +47,15 @@ describe('XML format', () => {
     expect(back.print?.lineBends).toEqual(lineBends);
   });
 
+  it('keeps the gaps between cards widened by hand, and drops ones that make no sense', () => {
+    const doc = sampleDocument(new Date('2026-01-01T00:00:00Z'));
+    const gaps = { 'I3|I4': 24, 'I9|I12': 10.5 };
+    expect(roundTrip({ ...doc, print: { ...DEFAULT_PRINT, ...doc.print, gaps } }).print?.gaps).toEqual(gaps);
+    const xml = serializeTree({ ...doc, print: { ...DEFAULT_PRINT, ...doc.print, gaps } }).replace('gaps="', 'gaps="I1|:5 I2|I3:-4 I5|I6:x ');
+    expect(parseTree(xml).doc.print?.gaps).toEqual(gaps);
+    expect(serializeTree(doc)).not.toContain('gaps=');
+  });
+
   it('keeps cards moved alone apart from cards moved with what hangs under them', () => {
     const doc = sampleDocument(new Date('2026-01-01T00:00:00Z'));
     const moves = { I3: { x: 10, y: -4.5 }, I9: { x: 0, y: 0, sx: 30, sy: 12 } };

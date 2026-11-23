@@ -1,5 +1,6 @@
 import { isValidDateValue } from '../model/dates';
 import { ID_PATTERN, newId } from '../model/ids';
+import { GAP_WIDEST, gapPeople } from '../layout/gaps';
 import {
   CHILD_RELATION_VALUES,
   DATE_STYLE_VALUES,
@@ -185,6 +186,7 @@ const KNOWN = {
       'titleAt',
       'moves',
       'lineBends',
+      'gaps',
       'added',
       'flipped',
       'ancestors',
@@ -468,6 +470,14 @@ class Reader {
       if (points.length >= 2) bends[part.slice(0, cut)] = points;
     }
     if (Object.keys(bends).length) print.lineBends = bends;
+    // "I12|I13:24 I3|I9:40": gaps between two cards made wider by hand, and by how much.
+    const gaps: Record<string, number> = {};
+    for (const part of (el.getAttribute('gaps') ?? '').split(/\s+/)) {
+      const cut = part.lastIndexOf(':');
+      const by = Number(part.slice(cut + 1));
+      if (cut > 0 && gapPeople(part.slice(0, cut)) && Number.isFinite(by) && by > 0) gaps[part.slice(0, cut)] = Math.min(by, GAP_WIDEST);
+    }
+    if (Object.keys(gaps).length) print.gaps = gaps;
     // "I12 I13 I40": people brought onto the print by hand.
     const added = [...new Set((el.getAttribute('added') ?? '').split(/\s+/).filter(Boolean))];
     if (added.length) print.added = added;

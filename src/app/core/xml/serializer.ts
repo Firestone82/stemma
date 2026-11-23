@@ -213,6 +213,14 @@ function writePrint(w: XmlWriter, p: PrintSettings): void {
             .join(' ')
         : undefined,
     ],
+    [
+      'gaps',
+      p.gaps && Object.keys(p.gaps).length
+        ? Object.entries(p.gaps)
+            .map(([key, by]) => `${key}:${Number(by.toFixed(1))}`)
+            .join(' ')
+        : undefined,
+    ],
     ['added', p.added?.length ? p.added.join(' ') : undefined],
     ['flipped', p.flipped?.length ? p.flipped.join(' ') : undefined],
     ['tiles', p.tiles || undefined],
