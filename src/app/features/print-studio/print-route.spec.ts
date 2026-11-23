@@ -1,5 +1,6 @@
 import { TestBed } from '@angular/core/testing';
 import { sampleDocument } from '../../core/model/sample';
+import { emptyDocument } from '../../core/model/types';
 import { updatePrint } from '../../core/model/operations';
 import { TreeStore } from '../../core/store/tree-store';
 import { UiState } from '../../state/ui-state';
@@ -105,6 +106,21 @@ describe('the print studio in the address', () => {
     TestBed.tick();
     expect(store.doc().print?.paper).toBe('A0');
     expect(location.hash).toBe('#/print?person=I11&paper=A0');
+  });
+
+  it('goes to the start page, not the studio, when reloaded with no tree open, and opening a file goes to the editor', () => {
+    history.replaceState({ printBack: 2 }, '', '#/print?person=I3&paper=A2');
+    TestBed.inject(PrintRoute);
+    store.load(emptyDocument());
+    TestBed.tick();
+    expect(ui.printOpen()).toBe(false);
+    expect(location.hash).toBe('');
+    // A file opened from the start page: the editor, and the print as the tree has it.
+    store.load(sampleDocument());
+    TestBed.tick();
+    expect(ui.printOpen()).toBe(false);
+    expect(store.doc().print?.paper).toBeUndefined();
+    expect(location.hash).toBe('');
   });
 
   it('tells which parameters two addresses differ in', () => {

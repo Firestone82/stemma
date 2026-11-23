@@ -56,19 +56,31 @@ export class PrintRoute {
         lastLoad = load;
         const wanted = this.pending();
         if (!wanted) return;
-        if (this.ui.printOpen()) this.restore(wanted);
         this.pending.set(null);
+        if (!this.store.doc().people.length) {
+          this.leaveForStart();
+          return;
+        }
+        if (this.ui.printOpen()) this.restore(wanted);
       });
     });
     const onPopState = () => {
       this.last = undefined;
       const open = isPrintHash(location.hash);
+      const wanted = open ? readPrintAddress(location.hash, this.defaults()) : null;
+      // The tree is still being read: the address waits for it, as at a reload.
+      if (wanted && this.ui.restoring()) {
+        this.pending.set(wanted);
+        this.ui.printOpen.set(true);
+        return;
+      }
+      this.pending.set(null);
+      if (wanted && !this.store.doc().people.length) {
+        this.leaveForStart();
+        return;
+      }
       this.ui.printOpen.set(open);
-      if (!open) return;
-      const wanted = readPrintAddress(location.hash, this.defaults());
-      if (!wanted) return;
-      if (this.store.doc().people.length) this.restore(wanted);
-      else this.pending.set(wanted);
+      if (wanted) this.restore(wanted);
     };
     window.addEventListener('popstate', onPopState);
     // Without this a destroyed app (each test's injector) would still hear the history moving.
@@ -79,6 +91,17 @@ export class PrintRoute {
       if (this.pending()) return;
       untracked(() => this.write(open, want));
     });
+  }
+
+  /**
+   * The studio's address with no tree to print (a reload once the file is no longer open, Back into a print of
+   * a tree closed since): the start page instead, to open a file, and the address of the app without the
+   * studio's, so opening a file goes to the editor and a reload stays on the start page.
+   */
+  private leaveForStart(): void {
+    this.ui.printOpen.set(false);
+    history.replaceState(null, '', location.pathname + location.search);
+    this.last = undefined;
   }
 
   /**
