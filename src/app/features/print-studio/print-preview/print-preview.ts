@@ -3,6 +3,7 @@ import { Anchor, LegendBox, PrintSettings } from '../../../core/model/types';
 import { NamesStyle, PosterResult } from '../../../core/poster/poster';
 import { CardGap, GAP_WIDEST, gapAt, gapBetween, gapKey } from '../../../core/layout/gaps';
 import { roundedPath } from '../../../core/layout/lines';
+import { addBend, removeBend } from '../../../core/layout/moves';
 import { I18n } from '../../../i18n/i18n';
 import { Icon } from '../../../shared/icon/icon';
 
@@ -60,6 +61,10 @@ export class PrintPreview {
   readonly bent = input(0);
   /** All of them led by the layout again. */
   readonly unbend = output<void>();
+  /** The keys of the lines led by hand: their bends are marked on the page, to be taken off with a right click. */
+  readonly bentKeys = input<readonly string[]>([]);
+  /** One line led by the layout again (its last bend taken off). */
+  readonly lineUnbend = output<string>();
   /** A line led by hand: its key and its points, start to end, in the layout's units. */
   readonly lineBend = output<{ key: string; points: { x: number; y: number }[] }>();
   /** A card dragged to a new place: how far, in the layout's units. */
@@ -216,6 +221,8 @@ export class PrintPreview {
    */
   private lineDrag: {
     id: number;
+    /** The points the line had (its bends among them), as against those put in for the drag: only these may stay in the middle of a straight run. */
+    kept: Set<{ x: number; y: number }>;
     key: string;
     family: string;
     child: string;
@@ -453,6 +460,14 @@ export class PrintPreview {
       const q = stub(points[n - 1], points[n - 2]);
       points.splice(n - 1, 0, { ...q }, { ...q });
     }
+    // A bend put on the line by hand at either end of the stretch: the stretch beyond it stays, and a step joins the two.
+    const runsOn = (u: { x: number; y: number }, v: { x: number; y: number }) =>
+      (Math.abs(u.x - v.x) > 0.01 || Math.abs(u.y - v.y) > 0.01) && (level ? Math.abs(u.y - v.y) < 0.01 : Math.abs(u.x - v.x) < 0.01);
+    if (seg > 0 && runsOn(points[seg - 1], points[seg])) {
+      points.splice(seg, 0, { ...points[seg] });
+      seg++;
+    }
+    if (seg + 2 < points.length && runsOn(points[seg + 1], points[seg + 2])) points.splice(seg + 2, 0, { ...points[seg + 1] });
     // What the stretch can line up with: the same stretches of other lines, the edges and middles of the cards
     // (kept clear of by the layout's margin), the line's own two ends.
     const snaps: number[] = [];
@@ -497,6 +512,7 @@ export class PrintPreview {
     (event.currentTarget as Element).setPointerCapture(event.pointerId);
     this.lineDrag = {
       id: event.pointerId,
+      kept: new Set(points.filter((q) => hit!.line.points.some((o) => o.x === q.x && o.y === q.y))),
       key: hit.line.key ?? `${hit.line.familyId}|${hit.line.childId}`,
       family: hit.line.familyId,
       child: hit.line.childId,
@@ -569,7 +585,7 @@ export class PrintPreview {
     d.guide.remove();
     if (!d.moved) return;
     this.draggedAt = performance.now();
-    this.lineBend.emit({ key: d.key, points: d.points });
+    this.lineBend.emit({ key: d.key, points: tidied(d.points, d.kept) });
   }
 
   /**
@@ -968,8 +984,8 @@ export class PrintPreview {
       this.lineCut.emit(hits.map((h) => ({ familyId: h.familyId, childId: h.childId })));
       return;
     }
-    // The empty room between two cards: that gap is picked, to be made wider. Anywhere else: let go of.
-    if (!this.pickGap(event.clientX, event.clientY)) this.closeGap();
+    // Anywhere else: the gap picked (with a right click) is let go of.
+    this.closeGap();
   }
 
   /** The menu of the card the pointer is on. */
@@ -982,9 +998,71 @@ export class PrintPreview {
     }
     const card = (event.target as Element | null)?.closest<SVGGElement>('[data-person]');
     const id = card?.dataset['person'];
-    if (!id) return;
-    event.preventDefault();
-    this.cardMenu.emit({ personId: id, x: event.clientX, y: event.clientY });
+    if (id) {
+      event.preventDefault();
+      this.cardMenu.emit({ personId: id, x: event.clientX, y: event.clientY });
+      return;
+    }
+    if ((event.target as Element | null)?.closest('.page-box, .gap-bar')) return;
+    // A bend put on a line by hand: taken off. A line: a bend put on it there. The room between two cards: that gap picked.
+    if (this.bendAt(event.clientX, event.clientY) || this.pickGap(event.clientX, event.clientY)) event.preventDefault();
+  }
+
+  /**
+   * A right click on a line: the bend of a line led by hand under the pointer taken off, or else a bend put on the
+   * line under the pointer, for it to be led on either side of it. False when there is no line there.
+   */
+  private bendAt(clientX: number, clientY: number): boolean {
+    const ctm = this.sheet()?.nativeElement.querySelector<SVGPathElement>('path[data-child]')?.getScreenCTM();
+    if (!ctm) return false;
+    const p = new DOMPoint(clientX, clientY).matrixTransform(ctm.inverse());
+    const reach = 7 / Math.hypot(ctm.a, ctm.b);
+    const bent = new Set(this.bentKeys());
+    const keyOf = (l: ChildLine) => l.key ?? `${l.familyId}|${l.childId}`;
+    // A bend of a line led by hand, the nearest within reach.
+    let near: { line: ChildLine; i: number; d: number } | null = null;
+    for (const line of this.lines()) {
+      if (!bent.has(keyOf(line))) continue;
+      for (let i = 1; i < line.points.length - 1; i++) {
+        const d = Math.hypot(line.points[i].x - p.x, line.points[i].y - p.y);
+        if (d < reach * 1.2 && (!near || d < near.d)) near = { line, i, d };
+      }
+    }
+    if (near) {
+      const left = removeBend(near.line.points, near.i);
+      if (left && left.length > 2) this.lineBend.emit({ key: keyOf(near.line), points: left });
+      else this.lineUnbend.emit(keyOf(near.line));
+      return true;
+    }
+    const hits = this.linesAt(clientX, clientY);
+    if (!hits.length) return false;
+    // Of the lines that share the stretch, the one led by hand already, or the first.
+    const line = hits.find((l) => bent.has(keyOf(l))) ?? hits[0];
+    const put = addBend(line.points, p);
+    if (put) this.lineBend.emit({ key: keyOf(line), points: put.points });
+    return true;
+  }
+
+  /** The bends of the lines led by hand marked on the page (only in the preview): dots a right click takes off. */
+  private drawBends(): void {
+    const page = this.sheet()?.nativeElement;
+    page?.querySelector('g.bend-dots')?.remove();
+    const path = page?.querySelector<SVGPathElement>('path[data-child]');
+    const parent = path?.parentNode;
+    const bent = new Set(this.bentKeys());
+    if (!page || !(parent instanceof SVGGElement) || !bent.size) return;
+    const ns = 'http://www.w3.org/2000/svg';
+    const g = document.createElementNS(ns, 'g');
+    g.setAttribute('class', 'bend-dots');
+    for (const line of this.lines()) {
+      if (!bent.has(line.key ?? `${line.familyId}|${line.childId}`)) continue;
+      for (const q of line.points.slice(1, -1)) {
+        const c = document.createElementNS(ns, 'circle');
+        for (const [k, v] of Object.entries({ cx: q.x, cy: q.y, r: 3.2 })) c.setAttribute(k, String(v));
+        g.appendChild(c);
+      }
+    }
+    parent.appendChild(g);
   }
 
   private readonly sheet = viewChild<ElementRef<HTMLDivElement>>('sheet');
@@ -1013,6 +1091,11 @@ export class PrintPreview {
     effect(() => {
       this.svg();
       this.drawGap();
+    });
+    effect(() => {
+      this.svg();
+      this.lines();
+      this.drawBends();
     });
     // Another paper or orientation is another page: back to the whole of it.
     effect(() => {
@@ -1205,4 +1288,23 @@ function snapToGap(box: LegendBox, other: LegendBox, gap: { x: number; y: number
     else if (Math.abs(box.x - left) < GAP_SNAP) x = left;
   }
   return { ...box, x, y };
+}
+
+/**
+ * A line as it was dragged, without what the drag put in that is left over: points twice over, and points in the
+ * middle of a straight run that the line did not have before (a bend put there by hand, in `kept`, stays).
+ */
+export function tidied<T extends { x: number; y: number }>(points: readonly T[], kept: ReadonlySet<T>): T[] {
+  const out: T[] = [];
+  for (const p of points) {
+    const last = out[out.length - 1];
+    if (last && Math.abs(last.x - p.x) < 0.01 && Math.abs(last.y - p.y) < 0.01) continue;
+    out.push(p);
+  }
+  return out.filter((p, i) => {
+    if (i === 0 || i === out.length - 1 || kept.has(p)) return true;
+    const a = out[i - 1];
+    const b = out[i + 1];
+    return !(Math.abs(a.x - p.x) < 0.01 && Math.abs(p.x - b.x) < 0.01) && !(Math.abs(a.y - p.y) < 0.01 && Math.abs(p.y - b.y) < 0.01);
+  });
 }

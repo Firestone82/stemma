@@ -640,7 +640,7 @@ export const en = {
   'print.ungapAll': 'Make them as they were',
   'print.sp.gaps': 'Gaps widened',
   'print.gap.label': 'Gap between two cards',
-  'print.gap.hint': 'Click the empty space between two cards to pick the gap, then drag it or use + and −.',
+  'print.gap.hint': 'Right-click the empty space between two cards to pick the gap, then drag it or use + and −.',
   'print.gap.by': '+{mm} mm',
   'print.gap.as': 'As laid out',
   'print.gap.wider': 'Wider',
@@ -696,7 +696,7 @@ export const en = {
   'print.addedPeople': { one: '{count} person added by hand', other: '{count} people added by hand' },
   'print.unaddAll': 'Remove them',
   'print.clickToHide':
-    'Drag a card to move it: its lines and everyone hanging under it follow, and it snaps into line with other cards and to the usual gap beside them (hold Alt to place it freely, Ctrl to move the card alone, without its partner and children). Drag a line to lead it yourself. Click a card to add their parents, brothers and sisters or whole family, swap partner sides, leave that person out or put the card back; click a line to take away everyone who hangs on it. Ctrl+Z and Ctrl+Y undo and redo.',
+    'Drag a card to move it: its lines and everyone hanging under it follow, and it snaps into line with other cards and to the usual gap beside them (hold Alt to place it freely, Ctrl to move the card alone, without its partner and children). Drag a line to lead it yourself; right-click a line to put a bend on it, and right-click a bend to take it off. Right-click the space between two cards to widen that gap. Click a card to add their parents, brothers and sisters or whole family, swap partner sides, leave that person out or put the card back; click a line to take away everyone who hangs on it. Ctrl+Z and Ctrl+Y undo and redo.',
   'print.showHidden': 'Print hidden people too',
   'print.zoom.label': 'Zoom the preview',
   'print.legendBox.hint': 'Family names: drag to move, drag a corner to resize',

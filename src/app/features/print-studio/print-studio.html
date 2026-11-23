@@ -57,6 +57,8 @@
         (lineCut)="model.omitBranch($event)"
         [bent]="model.bentCount()"
         (unbend)="model.unbend()"
+        [bentKeys]="model.bentKeys()"
+        (lineUnbend)="model.unbend($event)"
         (lineBend)="model.bendLine($event.key, $event.points)"
         (cardMove)="model.moveCard($event.personId, $event.dx, $event.dy, $event.alone)"
         [gaps]="model.settings().gaps ?? {}"

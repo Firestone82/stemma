@@ -1,6 +1,6 @@
 import { TestBed } from '@angular/core/testing';
 import { NamesStyle } from '../../../core/poster/poster';
-import { BoxesPlaced, PrintPreview, alignBox, anchorOf, distanceTo, movedBox, placedSettings } from './print-preview';
+import { BoxesPlaced, PrintPreview, alignBox, anchorOf, distanceTo, movedBox, placedSettings, tidied } from './print-preview';
 
 describe('movedBox', () => {
   const start = { x: 0.1, y: 0.7, w: 0.3, h: 0.2 };
@@ -255,5 +255,17 @@ describe('anchorOf', () => {
   it('names none for a box anywhere else', () => {
     expect(anchorOf({ x: 0.2, y: 0.05, w: 0.2, h: 0.1 }, inner)).toBeUndefined();
     expect(anchorOf({ x: 0.05, y: 0.3, w: 0.2, h: 0.1 }, inner)).toBeUndefined();
+  });
+});
+
+describe('tidied', () => {
+  it('drops what a drag put in and left over, and keeps the bends the line had', () => {
+    const a = { x: 0, y: 0 };
+    const bend = { x: 0, y: 20 };
+    const c = { x: 0, y: 40 };
+    const stub = { x: 0, y: 30 };
+    const twice = { x: 0, y: 40 };
+    const d = { x: 80, y: 40 };
+    expect(tidied([a, bend, stub, c, twice, d], new Set([bend, c]))).toEqual([a, bend, c, d]);
   });
 });

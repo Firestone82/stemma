@@ -658,7 +658,7 @@ export const cs: Catalogue = {
   'print.ungapAll': 'Vrátit je, jak byly',
   'print.sp.gaps': 'Rozšířené mezery',
   'print.gap.label': 'Mezera mezi dvěma kartami',
-  'print.gap.hint': 'Klepněte do prázdného místa mezi dvěma kartami, pak mezeru táhněte nebo použijte + a −.',
+  'print.gap.hint': 'Klepněte pravým tlačítkem do prázdného místa mezi dvěma kartami, pak mezeru táhněte nebo použijte + a −.',
   'print.gap.by': '+{mm} mm',
   'print.gap.as': 'Jak ji dal rozvrh',
   'print.gap.wider': 'Širší',
@@ -718,7 +718,7 @@ export const cs: Catalogue = {
   'print.addedPeople': { one: '{count} osoba přidaná ručně', few: '{count} osoby přidané ručně', other: '{count} osob přidaných ručně' },
   'print.unaddAll': 'Odebrat je',
   'print.clickToHide':
-    'Tažením kartu přesunete: čáry i vše, co pod ní visí, jdou za ní a karta se zarovná s ostatními i na obvyklou mezeru vedle nich (s klávesou Alt ji položíte volně, s Ctrl přesunete jen kartu, bez partnera a dětí). Tažením čáry ji povedete sami. Kliknutím na kartu přidáte rodiče, sourozence nebo celou rodinu, prohodíte strany partnerů, osobu vynecháte nebo kartu vrátíte na místo; kliknutím na čáru odeberete všechny, kdo na ní visí. Ctrl+Z a Ctrl+Y vracejí a opakují.',
+    'Tažením kartu přesunete: čáry i vše, co pod ní visí, jdou za ní a karta se zarovná s ostatními i na obvyklou mezeru vedle nich (s klávesou Alt ji položíte volně, s Ctrl přesunete jen kartu, bez partnera a dětí). Tažením čáry ji povedete sami; pravým kliknutím na čáru na ni přidáte ohyb a pravým kliknutím na ohyb jej odeberete. Pravým kliknutím do mezery mezi dvěma kartami ji rozšíříte. Kliknutím na kartu přidáte rodiče, sourozence nebo celou rodinu, prohodíte strany partnerů, osobu vynecháte nebo kartu vrátíte na místo; kliknutím na čáru odeberete všechny, kdo na ní visí. Ctrl+Z a Ctrl+Y vracejí a opakují.',
   'print.showHidden': 'Tisknout i skryté osoby',
   'print.zoom.label': 'Přiblížení náhledu',
   'print.legendBox.hint': 'Jména rodů: tažením přesunete, za roh změníte velikost',

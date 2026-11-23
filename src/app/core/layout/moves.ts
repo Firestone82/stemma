@@ -296,34 +296,117 @@ export function applyBends(layout: LayoutResult, bends: ReadonlyMap<string, read
   return changed ? { ...layout, lines } : layout;
 }
 
-/** A line led by hand, its ends put where `start` and `end` now are. */
+/**
+ * A line led by hand, its ends put where `start` and `end` now are. The stretch out of each end stays upright or
+ * level, as it was led: it is drawn out or in to meet the end, with any bends put on it (see addBend).
+ */
 export function bent(kept: readonly Pt[], start: Pt, end: Pt): Pt[] {
   const points = kept.map((p) => ({ ...p }));
   const n = points.length;
   if (n === 2) return simplifyLine([start, { x: start.x, y: (start.y + end.y) / 2 }, { x: end.x, y: (start.y + end.y) / 2 }, end]);
-  // The stretch out of each end stays upright or level, as it was led.
-  const fit = (end: Pt, next: Pt, was: Pt) => {
-    if (Math.abs(was.x - next.x) < 0.01) next.x = end.x;
-    else next.y = end.y;
+  // The stretch out of an end, up to its first corner, goes across or down with the end.
+  const fit = (to: Pt, from: number, step: 1 | -1) => {
+    const upright = Math.abs(kept[from].x - kept[from + step].x) < 0.01;
+    for (let k = from + step; k > 0 && k < n - 1; k += step) {
+      const on = upright ? Math.abs(kept[k].x - kept[from].x) < 0.01 : Math.abs(kept[k].y - kept[from].y) < 0.01;
+      if (!on) break;
+      if (upright) points[k].x = to.x;
+      else points[k].y = to.y;
+    }
   };
-  fit(start, points[1], kept[0]);
-  fit(end, points[n - 2], kept[n - 1]);
+  fit(start, 0, 1);
+  fit(end, n - 1, -1);
   points[0] = { ...start };
   points[n - 1] = { ...end };
   return simplifyLine(points);
 }
 
-/** The points without doubles and without those in the middle of a straight run. */
+/**
+ * The points without doubles, and without points in the middle of a straight run whose two stretches turn back on
+ * each other. A point in the middle of a straight run is kept: it is a bend put there by hand (see addBend), for
+ * the line to be led on either side of it.
+ */
 function simplifyLine(points: readonly Pt[]): Pt[] {
   const out: Pt[] = [];
   for (const p of points) {
     const last = out[out.length - 1];
     if (!last || Math.abs(last.x - p.x) > 0.01 || Math.abs(last.y - p.y) > 0.01) out.push(p);
   }
-  return out.filter((p, i) => {
-    if (i === 0 || i === out.length - 1) return true;
-    const a = out[i - 1];
-    const b = out[i + 1];
-    return !(Math.abs(a.x - p.x) < 0.01 && Math.abs(p.x - b.x) < 0.01) && !(Math.abs(a.y - p.y) < 0.01 && Math.abs(p.y - b.y) < 0.01);
-  });
+  return out;
+}
+
+const close = (a: number, b: number) => Math.abs(a - b) < 0.01;
+const isLevel = (a: Pt, b: Pt) => close(a.y, b.y);
+const isUpright = (a: Pt, b: Pt) => close(a.x, b.x);
+
+/**
+ * A bend put on a line by hand where `p` is (on it or just beside it): a point on the stretch nearest to it, so the
+ * line can be led differently on either side of it. Undefined when that is a corner or an end already.
+ */
+export function addBend(points: readonly Pt[], p: Pt): { points: Pt[]; at: number } | undefined {
+  let best: { i: number; q: Pt; d: number } | undefined;
+  for (let i = 1; i < points.length; i++) {
+    const a = points[i - 1];
+    const b = points[i];
+    const len = (b.x - a.x) ** 2 + (b.y - a.y) ** 2;
+    const t = len ? Math.max(0, Math.min(1, ((p.x - a.x) * (b.x - a.x) + (p.y - a.y) * (b.y - a.y)) / len)) : 0;
+    const q = { x: a.x + t * (b.x - a.x), y: a.y + t * (b.y - a.y) };
+    const d = Math.hypot(p.x - q.x, p.y - q.y);
+    if (!best || d < best.d) best = { i, q, d };
+  }
+  if (!best) return undefined;
+  const q = { x: Math.round(best.q.x * 10) / 10, y: Math.round(best.q.y * 10) / 10 };
+  const a = points[best.i - 1];
+  const b = points[best.i];
+  if (Math.hypot(q.x - a.x, q.y - a.y) < 2 || Math.hypot(q.x - b.x, q.y - b.y) < 2) return undefined;
+  // Exactly on the stretch, so it stays straight.
+  if (isLevel(a, b)) q.y = a.y;
+  else if (isUpright(a, b)) q.x = a.x;
+  const out = points.map((x) => ({ ...x }));
+  out.splice(best.i, 0, q);
+  return { points: out, at: best.i };
+}
+
+/**
+ * The bend at point `i` (not an end) taken off a line led by hand. A bend in the middle of a straight run simply
+ * goes. A corner goes with the step it is part of: the stretch across (or down) beyond the step is put in line
+ * with the one before it, or, where that one ends on the card or the marker, the one before it in line with the
+ * one beyond; the step is then gone. Null where neither can be done (the line has only its ends and the corner):
+ * the line is then led by the layout again.
+ */
+export function removeBend(points: readonly Pt[], i: number): Pt[] | null {
+  const n = points.length;
+  if (i <= 0 || i >= n - 1) return points.map((p) => ({ ...p }));
+  const u = points[i - 1];
+  const v = points[i];
+  const w = points[i + 1];
+  const straightOn = (isLevel(u, v) && isLevel(v, w)) || (isUpright(u, v) && isUpright(v, w));
+  if (straightOn) return points.filter((_, k) => k !== i).map((p) => ({ ...p }));
+  // The step: the stretch `j`–`j+1` between two that run alike, one of them from this corner.
+  for (const j of [i, i - 1]) {
+    if (j < 1 || j + 2 > n - 1) continue;
+    const before = [points[j - 1], points[j]] as const;
+    const after = [points[j + 1], points[j + 2]] as const;
+    const level = isLevel(...before) && isLevel(...after);
+    const upright = isUpright(...before) && isUpright(...after);
+    if (!level && !upright) continue;
+    const out = points.map((p) => ({ ...p }));
+    const on = (a: Pt, b: Pt) => (level ? close(a.y, b.y) : close(a.x, b.x));
+    /** The straight run from `from` on (bends put on it by hand too), up to its corner: moved in line with `to`. Not when it ends on an end of the line. */
+    const shift = (from: number, step: 1 | -1, to: Pt): boolean => {
+      let k = from;
+      while (k + step >= 0 && k + step <= n - 1 && on(points[k + step], points[from])) k += step;
+      if (k === 0 || k === n - 1) return false;
+      for (let m = from; m !== k + step; m += step) {
+        if (level) out[m].y = to.y;
+        else out[m].x = to.x;
+      }
+      return true;
+    };
+    // The stretch beyond goes in line with the one before; or the one before in line with the one beyond.
+    if (!shift(j + 1, 1, points[j]) && !shift(j, -1, points[j + 1])) continue;
+    out.splice(j, 2);
+    return simplifyLine(out);
+  }
+  return null;
 }
