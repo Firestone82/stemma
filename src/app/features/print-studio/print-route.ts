@@ -1,4 +1,4 @@
-import { Injectable, Injector, computed, effect, inject, signal, untracked } from '@angular/core';
+import { DestroyRef, Injectable, Injector, computed, effect, inject, signal, untracked } from '@angular/core';
 import { DEFAULT_PRINT, PrintSettings, effectivePrint, printDefaults } from '../../core/model/types';
 import { TreeStore } from '../../core/store/tree-store';
 import { UiState } from '../../state/ui-state';
@@ -60,7 +60,7 @@ export class PrintRoute {
         this.pending.set(null);
       });
     });
-    window.addEventListener('popstate', () => {
+    const onPopState = () => {
       this.last = undefined;
       const open = isPrintHash(location.hash);
       this.ui.printOpen.set(open);
@@ -69,7 +69,10 @@ export class PrintRoute {
       if (!wanted) return;
       if (this.store.doc().people.length) this.restore(wanted);
       else this.pending.set(wanted);
-    });
+    };
+    window.addEventListener('popstate', onPopState);
+    // Without this a destroyed app (each test's injector) would still hear the history moving.
+    inject(DestroyRef).onDestroy(() => window.removeEventListener('popstate', onPopState));
     effect(() => {
       const open = this.ui.printOpen();
       const want = this.address();
