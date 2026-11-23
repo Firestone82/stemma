@@ -26,7 +26,8 @@ export class Shortcuts {
       this.redo();
     } else if (mod && key === 's') {
       e.preventDefault();
-      void this.documents.saveXml();
+      if (e.shiftKey) void this.documents.saveXmlAs();
+      else void this.documents.saveXml();
     } else if (mod && key === 'n' && !e.shiftKey) {
       // A new tree, after a warning when the tree has anyone in it (DocumentActions.newTree). Not from the print
       // studio, nor over a dialog. (A browser tab may keep Ctrl+N for a new window; the installed app has it.)

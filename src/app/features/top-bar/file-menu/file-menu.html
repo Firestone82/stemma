@@ -1,4 +1,4 @@
-<button type="button" class="btn" (click)="ui.toggleMenu('file')" aria-haspopup="menu" [attr.aria-expanded]="open()">
+<button type="button" class="btn" (click)="toggle()" aria-haspopup="menu" [attr.aria-expanded]="open()">
   {{ t('file.menu') }} <stemma-icon name="chevronDown" [size]="14" />
 </button>
 @if (open()) {
@@ -9,9 +9,20 @@
     <button type="button" class="menu-item" role="menuitem" (click)="documents.openFile()">
       <stemma-icon name="folder" />{{ t('file.open') }}<span class="shortcut">Ctrl O</span>
     </button>
-    <button type="button" class="menu-item" role="menuitem" (click)="documents.saveXml()">
+    <button type="button" class="menu-item" role="menuitem" [attr.title]="sourceName()" (click)="documents.saveXml()">
       <stemma-icon name="download" />{{ saveLabel() }}<span class="shortcut">Ctrl S</span>
     </button>
+    @if (documents.source()) {
+      <button type="button" class="menu-item" role="menuitem" (click)="documents.saveXmlAs()">
+        <stemma-icon name="copy" />{{ t('file.saveAs') }}<span class="shortcut">Ctrl Shift S</span>
+      </button>
+    }
+    @if (documents.canUseDrive()) {
+      <div class="menu-sep" role="separator"></div>
+      <button type="button" class="menu-item" role="menuitem" (click)="documents.openFromDrive()"><stemma-icon name="cloud" />{{ t('file.openDrive') }}</button>
+      <button type="button" class="menu-item" role="menuitem" (click)="documents.saveToDrive()"><stemma-icon name="cloudUp" />{{ t('file.saveDrive') }}</button>
+    }
+    <div class="menu-sep" role="separator"></div>
     <button type="button" class="menu-item" role="menuitem" (click)="documents.exportGedcom()"><stemma-icon name="upload" />{{ t('file.gedcom') }}</button>
     <button type="button" class="menu-item" role="menuitem" (click)="documents.exportFamilyDocument()">
       <stemma-icon name="tree" />{{ t('file.familyDocument') }}
