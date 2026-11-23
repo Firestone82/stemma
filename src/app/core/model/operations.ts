@@ -550,6 +550,30 @@ export function updatePrint(doc: TreeDocument, patch: Partial<PrintSettings>): T
   return { ...doc, print };
 }
 
+/** The print settings kept for a person (their centerId), in place of any kept for them before. */
+export function savePrintFor(doc: TreeDocument, settings: PrintSettings): TreeDocument {
+  const id = settings.centerId;
+  if (!id) return doc;
+  const rest = (doc.savedPrints ?? []).filter((s) => s.centerId !== id);
+  return { ...doc, savedPrints: [...rest, { ...settings }] };
+}
+
+/** The print settings kept for a person forgotten. */
+export function forgetPrintFor(doc: TreeDocument, personId: string): TreeDocument {
+  const all = doc.savedPrints ?? [];
+  if (!all.some((s) => s.centerId === personId)) return doc;
+  const rest = all.filter((s) => s.centerId !== personId);
+  const next: TreeDocument = { ...doc, savedPrints: rest };
+  if (!rest.length) delete next.savedPrints;
+  return next;
+}
+
+/** The print settings kept for a person, made the print's settings. */
+export function useSavedPrint(doc: TreeDocument, personId: string): TreeDocument {
+  const saved = doc.savedPrints?.find((s) => s.centerId === personId);
+  return saved ? { ...doc, print: { ...saved } } : doc;
+}
+
 /**
  * Removes the given families when an edit left them recording nothing: one
  * partner and no children, or no partners and at most one child.

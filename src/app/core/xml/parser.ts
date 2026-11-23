@@ -137,7 +137,8 @@ const RETIRED_PRINT = [
 
 const KNOWN = {
   // <background> and <arrangement> (formats 1.3 and 1.4) are no longer read or written.
-  root: { attrs: ['formatVersion', 'generator'], elements: ['meta', 'view', 'people', 'families', 'print', 'background', 'arrangement'] },
+  root: { attrs: ['formatVersion', 'generator'], elements: ['meta', 'view', 'people', 'families', 'print', 'savedPrints', 'background', 'arrangement'] },
+  savedPrints: { attrs: [], elements: ['print'] },
   meta: { attrs: [], elements: ['title', 'description', 'created', 'modified', 'homePerson'] },
   view: {
     attrs: [
@@ -320,6 +321,17 @@ class Reader {
     const doc: TreeDocument = { meta, view, people, families };
     const printEl = first(root, 'print');
     if (printEl) doc.print = this.readPrint(printEl);
+    // Print settings kept for particular people: one for each, for someone in the tree.
+    const savedEl = first(root, 'savedPrints');
+    if (savedEl) {
+      const ids = new Set(people.map((p) => p.id));
+      const byPerson = new Map<string, PrintSettings>();
+      for (const el of elements(savedEl, 'print')) {
+        const print = this.readPrint(el);
+        if (print.centerId && ids.has(print.centerId)) byPerson.set(print.centerId, print);
+      }
+      if (byPerson.size) doc.savedPrints = [...byPerson.values()];
+    }
     setExt(doc, captureExt(root, KNOWN.root, ['xmlns']));
     const sectionExt: TreeDocument['sectionExt'] = {};
     const pe = peopleEl ? captureExt(peopleEl, KNOWN.people) : undefined;

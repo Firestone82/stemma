@@ -610,6 +610,13 @@ export const en = {
   'print.with': 'With',
   'print.nobody': 'Nobody',
   'print.swap': 'Swap the two',
+  'print.saveFor': 'Save for {name}',
+  'print.saveHint': 'Keep these settings with {name}: choosing them for the middle again brings them back.',
+  'print.savedFor': 'These are the settings saved for {name}.',
+  'print.savedChanged': 'Changed since the settings saved for {name}.',
+  'print.saveUpdate': 'Save the changes',
+  'print.saveUse': 'Back to the saved',
+  'print.saveForget': 'Forget the saved',
   'print.tight': 'Pack the families tightly',
   'print.tightHint':
     'The least room between cards, families and lines, and a longer search for the best arrangement: bigger cards on a busier page. No line ever runs over a card.',

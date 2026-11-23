@@ -629,6 +629,13 @@ export const cs: Catalogue = {
   'print.with': 'Spolu s',
   'print.nobody': 'Nikdo',
   'print.swap': 'Prohodit je',
+  'print.saveFor': 'Uložit pro: {name}',
+  'print.saveHint': 'Uložte si toto nastavení k osobě {name}: až ji znovu vyberete doprostřed, nastavení se vrátí.',
+  'print.savedFor': 'Toto je nastavení uložené pro osobu {name}.',
+  'print.savedChanged': 'Změněno oproti nastavení uloženému pro osobu {name}.',
+  'print.saveUpdate': 'Uložit změny',
+  'print.saveUse': 'Vrátit uložené',
+  'print.saveForget': 'Zapomenout uložené',
   'print.tight': 'Rodiny natěsno',
   'print.tightHint':
     'Co nejméně místa mezi kartami, rodinami a čarami a delší hledání nejlepšího uspořádání: větší karty na plnější stránce. Žádná čára nikdy nevede přes kartu.',

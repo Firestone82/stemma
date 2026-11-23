@@ -25,6 +25,25 @@
     />
   </div>
 </div>
+<div class="saved" role="group" aria-labelledby="print-saved-note">
+  @if (model.saved()) {
+    <span id="print-saved-note" class="hint">{{ t(model.savedDiffers() ? 'print.savedChanged' : 'print.savedFor', { name: middleName() }) }}</span>
+    <div class="saved-actions">
+      @if (model.savedDiffers()) {
+        <button type="button" class="btn small" (click)="model.saveForMiddle()">{{ t('print.saveUpdate') }}</button>
+        <button type="button" class="btn small" (click)="model.useSaved()">{{ t('print.saveUse') }}</button>
+      }
+      <button type="button" class="btn small ghost" (click)="model.forgetSaved()">{{ t('print.saveForget') }}</button>
+    </div>
+  } @else {
+    <span id="print-saved-note" class="hint">{{ t('print.saveHint', { name: middleName() }) }}</span>
+    <div class="saved-actions">
+      <button type="button" class="btn small" [disabled]="!model.centerId()" (click)="model.saveForMiddle()">
+        {{ t('print.saveFor', { name: middleName() }) }}
+      </button>
+    </div>
+  }
+</div>
 <div class="studio-part" role="group" aria-labelledby="print-g-arrange">
   <h4 id="print-g-arrange">{{ t('print.arrange') }}</h4>
   @for (o of arrangement(); track o.key) {
