@@ -1,7 +1,7 @@
 import { Injectable, computed, effect, inject, signal, untracked } from '@angular/core';
 import { bloodRelatives } from '../../core/kinship/kinship';
 import { CutLine, cutOff } from '../../core/model/cut-off';
-import { updatePrint } from '../../core/model/operations';
+import { forgetPrintFor, savePrintFor, updatePrint, useSavedPrint } from '../../core/model/operations';
 import { isBrokenUp, relationshipStatus } from '../../core/model/relationship';
 import { Anchor, DEFAULT_PRINT, Reach, LEGEND_GAP_CM, LegendBox, anchorShares, effectivePrint, PrintSettings } from '../../core/model/types';
 import { CARD_WIDTH } from '../../core/card/card-design';
@@ -49,6 +49,13 @@ const RELAYOUT = new Set<keyof PrintSettings>([
 ]);
 
 export type PrintOutput = 'print' | 'pdf' | 'png' | 'svg';
+
+/** Whether two sets of print settings print the same, whatever order their keys are in. */
+export function samePrint(a: PrintSettings, b: PrintSettings): boolean {
+  const x = a as unknown as Record<string, unknown>;
+  const y = b as unknown as Record<string, unknown>;
+  return [...new Set([...Object.keys(x), ...Object.keys(y)])].every((key) => JSON.stringify(x[key]) === JSON.stringify(y[key]));
+}
 
 /**
  * The page is drawn a piece at a time, so many milliseconds of work and then whatever the window has waiting (a
@@ -807,6 +814,51 @@ export class PrintModel {
     const sheet = this.settingsSheet();
     if (!sheet || !this.settings().settingsPage) return undefined;
     return this.exporter.withEmbeddedFonts(settingsPageSvg(sheet), settingsText(sheet));
+  }
+
+  /** The person the print is drawn around as the settings name them (the home person when they name nobody). */
+  private readonly middleId = computed(() => this.settings().centerId ?? this.store.doc().meta.homePersonId ?? '');
+
+  /** The print settings kept for the person in the middle, if any (see TreeDocument.savedPrints). */
+  readonly saved = computed(() => {
+    const id = this.middleId();
+    const kept = this.store.doc().savedPrints?.find((s) => s.centerId === id);
+    return kept ? ({ ...DEFAULT_PRINT, ...kept } as PrintSettings) : undefined;
+  });
+  /** The print as it is now differs from what is kept for the person in the middle. */
+  readonly savedDiffers = computed(() => {
+    const kept = this.saved();
+    return !!kept && !samePrint(kept, { ...this.settings(), centerId: this.middleId() });
+  });
+
+  /** The print as it is now kept for the person in the middle, in place of anything kept for them before. */
+  saveForMiddle(): void {
+    const id = this.middleId();
+    if (!id) return;
+    this.store.update((doc) => savePrintFor(doc, { ...this.settings(), centerId: id }), 'print save');
+  }
+
+  /** What is kept for the person in the middle, forgotten. */
+  forgetSaved(): void {
+    const id = this.middleId();
+    this.store.update((doc) => forgetPrintFor(doc, id), 'print forget');
+  }
+
+  /** The print back as it was kept for the person in the middle. */
+  useSaved(): void {
+    const id = this.middleId();
+    this.store.update((doc) => useSavedPrint(doc, id), 'print use');
+    this.ui.printEdited();
+  }
+
+  /** Someone else in the middle of the page: with the settings kept for them, when there are any. */
+  chooseMiddle(id: string): void {
+    if (this.store.doc().savedPrints?.some((s) => s.centerId === id)) {
+      this.store.update((doc) => useSavedPrint(doc, id), 'print');
+      this.ui.printEdited();
+    } else {
+      this.set({ centerId: id, partnerId: undefined });
+    }
   }
 
   paperLabel(): string {

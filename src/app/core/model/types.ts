@@ -406,6 +406,11 @@ export interface TreeDocument {
   families: Family[];
   /** Print and export settings; defaults apply until someone prints. */
   print?: PrintSettings;
+  /**
+   * Print settings kept for particular people, one each (by their centerId): choosing that person for the middle
+   * of the page in the print studio brings them back.
+   */
+  savedPrints?: PrintSettings[];
   /** Unknown root attributes and top-level sections. */
   ext?: Extensions;
   /** Unknown attributes and elements inside <people> and <families>. */

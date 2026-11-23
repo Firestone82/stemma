@@ -58,6 +58,7 @@ export interface FormatVersion {
  *      on <name>: the marriage whose husband's surname a woman married more than once bears; and
  *      showRelationships on <view> again: how everyone is related to the person in the middle, on the
  *      chart's cards (the chart is drawn the same whoever that is).
+ *      <savedPrints>: print settings kept for particular people, a <print> for each (its center).
  */
 export const CURRENT_FORMAT: FormatVersion = { major: 1, minor: 9 };
 

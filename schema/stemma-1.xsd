@@ -46,6 +46,10 @@
       <xs:selector xpath="t:print"/>
       <xs:field xpath="@center"/>
     </xs:keyref>
+    <xs:keyref name="savedPrintCenterRef" refer="t:personId">
+      <xs:selector xpath="t:savedPrints/t:print"/>
+      <xs:field xpath="@center"/>
+    </xs:keyref>
     <xs:keyref name="printPartnerRef" refer="t:personId">
       <xs:selector xpath="t:print"/>
       <xs:field xpath="@partner"/>
@@ -200,11 +204,19 @@
       <xs:element name="families" type="t:Families"/>
       <!-- 1.1 -->
       <xs:element name="print" type="t:Print" minOccurs="0"/>
+      <!-- 1.9: print settings kept for particular people, one <print> for each, named by its center. -->
+      <xs:element name="savedPrints" type="t:SavedPrints" minOccurs="0"/>
       <xs:group ref="t:Foreign"/>
     </xs:sequence>
     <xs:attribute name="formatVersion" type="t:FormatVersion" use="required"/>
     <xs:attribute name="generator" type="xs:string"/>
     <xs:anyAttribute namespace="##other" processContents="lax"/>
+  </xs:complexType>
+
+  <xs:complexType name="SavedPrints">
+    <xs:sequence>
+      <xs:element name="print" type="t:Print" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
   </xs:complexType>
 
   <xs:complexType name="Meta">

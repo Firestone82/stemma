@@ -85,12 +85,14 @@ export class CentreOptions {
   }
 
   protected setCenter(id: string): void {
-    this.model.set({ centerId: id, partnerId: undefined });
+    this.model.chooseMiddle(id);
   }
 
   protected setPartner(id: string): void {
     this.model.set({ partnerId: id ? id : null });
   }
+
+  protected readonly middleName = computed(() => this.model.nameOf(this.model.centerId()));
 
   /** The partner goes to the middle, and the person in the middle becomes the partner. */
   protected swap(): void {

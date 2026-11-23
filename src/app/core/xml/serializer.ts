@@ -36,6 +36,14 @@ export function serializeTree(doc: TreeDocument, options: SerializeOptions = {})
   // Elements added in a minor version go after the existing ones, where an
   // older app that keeps them as unknown content would write them back.
   if (doc.print) writePrint(w, doc.print);
+  // Later in 1.9: print settings kept for particular people (whoever is still in the tree).
+  const ids = new Set(doc.people.map((p) => p.id));
+  const saved = (doc.savedPrints ?? []).filter((s) => s.centerId && ids.has(s.centerId));
+  if (saved.length) {
+    w.open('savedPrints', []);
+    for (const s of saved) writePrint(w, s);
+    w.close();
+  }
 
   extElements(w, doc.ext);
   w.close();
