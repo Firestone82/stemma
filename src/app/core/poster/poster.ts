@@ -121,8 +121,8 @@ export interface PosterResult {
 export interface NamesStyle {
   /** Where they stand in the box; as the print settings say when not given. */
   align?: Anchor;
-  /** Their line height in centimetres; null: as big as the box lets them be; as the print settings say when not given. */
-  cm?: number | null;
+  /** Their line height in centimetres; as the page sizes them when not given. The box never makes them bigger or smaller. */
+  cm?: number;
 }
 
 /** Round the couple the page is drawn around: how far their frame stands from their cards, in the layout's units. */
@@ -919,7 +919,7 @@ export function* posterSteps(input: PosterInput): Steps<PosterResult> {
     namesIn: (at, style = {}) =>
       namesMarkup(ctx, { x: at.x * W, y: at.y * H, w: at.w * W, h: at.h * H }, undefined, {
         align: style.align,
-        letters: style.cm === undefined ? undefined : style.cm === null ? null : letters(style.cm),
+        letters: letters(style.cm),
       }),
   };
 }
@@ -1163,41 +1163,27 @@ interface NamesFit {
 
 /**
  * The families' names fitted to a box: placed by hand, or by the page as a block (`block` then says how big
- * their letters are and how many columns they stand in).
+ * their letters are and how many columns they stand in). Their letters keep their size whatever the box is
+ * (as asked for, PrintSettings.legendSize, or as the page sizes them); the box only says how they are laid
+ * out: in the fewest columns that let all of them stand within its height, as long as its width allows; in as
+ * many as its width allows, running past its foot, when they are too many for that.
  */
-function namesIn(ctx: PosterContext, box: { w: number; h: number }, block?: { letters: number; columns: number }, letters?: number | null): NamesFit {
+function namesIn(ctx: PosterContext, box: { w: number; h: number }, block?: { letters: number; columns: number }, letters?: number): NamesFit {
   const { entries, widths } = namesEntries(ctx);
-  const ROW = NAMES_ROW;
-  const COL_GAP = NAMES_COLUMN_GAP;
-  let best = { size: 0, columns: 1, colW: [] as number[] };
-  const columnsOf = (columns: number) => namesColumnsOf(widths, columns).colW;
-  const span = (colW: number[]) => colW.reduce((a, b) => a + b, 0) + COL_GAP * (colW.length - 1);
-  // Names as big as asked for (PrintSettings.legendSize): in as many columns as the box is wide enough for,
-  // running past its foot when they are many; otherwise as big as the box lets them be.
-  const fixed =
-    block?.letters ?? (letters !== undefined ? (letters ?? undefined) : ctx.settings.legendSize && ctx.page.lu ? ctx.page.lu * LETTERING.legend : undefined);
-  if (block) {
-    const columns = Math.max(1, Math.min(block.columns, entries.length));
-    best = { size: block.letters, columns, colW: columnsOf(columns) };
-  } else if (fixed) {
-    best = { size: fixed, columns: 1, colW: columnsOf(1) };
-    for (let columns = 2; columns <= entries.length; columns++) {
-      const colW = columnsOf(columns);
-      if (span(colW) * fixed > box.w + 0.5) break;
-      best = { size: fixed, columns, colW };
-    }
-  } else {
-    for (let columns = 1; columns <= entries.length; columns++) {
-      const rows = Math.ceil(entries.length / columns);
-      const colW = columnsOf(columns);
-      const size = Math.min(box.h / (rows * ROW + namesHead(ctx)), box.w / span(colW));
-      if (size > best.size) best = { size, columns, colW };
+  const head = namesHead(ctx);
+  const size = block?.letters ?? letters ?? namesSize(ctx);
+  let columns = 1;
+  if (block) columns = Math.max(1, Math.min(block.columns, entries.length));
+  else {
+    for (let c = 1; c <= entries.length; c++) {
+      const grid = namesColumnsOf(widths, c);
+      if (c > 1 && grid.w * size > box.w + 0.5) break;
+      columns = c;
+      if ((grid.h + head) * size <= box.h + 0.5) break;
     }
   }
-  const size = fixed ?? Math.min(best.size, ctx.page.u * 8);
-  const rows = Math.ceil(entries.length / best.columns);
-  const head = namesHead(ctx);
-  return { entries, size, columns: best.columns, colW: best.colW, rows, head, w: span(best.colW) * size, h: (rows * ROW + head) * size };
+  const grid = namesColumnsOf(widths, columns);
+  return { entries, size, columns, colW: grid.colW, rows: grid.rows, head, w: grid.w * size, h: (grid.h + head) * size };
 }
 
 /**
@@ -1212,14 +1198,9 @@ function drawLegendBox(ctx: PosterContext, box: Rect, block?: { letters: number;
 
 /**
  * The names as drawLegendBox draws them, without the group around them. `as` asks for them otherwise than
- * the print settings say: standing elsewhere in the box, or with letters so big (null: as big as the box lets them be).
+ * the print settings say: standing elsewhere in the box, or with letters so big.
  */
-function namesMarkup(
-  ctx: PosterContext,
-  box: Rect,
-  block?: { letters: number; columns: number },
-  as: { align?: Anchor; letters?: number | null } = {},
-): string {
+function namesMarkup(ctx: PosterContext, box: Rect, block?: { letters: number; columns: number }, as: { align?: Anchor; letters?: number } = {}): string {
   const fit = namesIn(ctx, box, block, as.letters);
   if (!fit.entries.length) return '';
   const style = heritage.legendStyle;

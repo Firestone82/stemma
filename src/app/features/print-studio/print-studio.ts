@@ -123,8 +123,8 @@ export class PrintStudio {
   protected readonly namesStyle = computed(() => {
     const v = this.model.view();
     const p = this.model.poster();
-    // A size typed in is that size; otherwise in a box sized by hand as big as the box lets them be, elsewhere as the page sizes them.
-    return { align: v.legendAlign ?? 'center', cm: v.legendSize ?? (v.legendBox ? null : (p?.lettering.autoLegendCm ?? null)) } as const;
+    // A size typed in is that size, otherwise as the page sizes them: never as big as the box, which only lays them out.
+    return { align: v.legendAlign ?? 'center', cm: v.legendSize ?? p?.lettering.autoLegendCm } as const;
   });
 
   /** Whether the menu's card has been moved by hand. */
