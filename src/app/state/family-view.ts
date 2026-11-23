@@ -2,7 +2,7 @@ import { Injectable, computed, effect, inject, signal, untracked } from '@angula
 import { decodeFamilyKeys, encodeFamilyKeys } from '../core/model/family-view';
 import { unitedKey, unitingOf } from '../core/model/names';
 import { TreeStore } from '../core/store/tree-store';
-import { PRINT_HASH } from '../features/print-studio/print-route';
+import { isPrintHash } from '../features/print-studio/print-address';
 import { ChartBusy } from './chart-busy';
 import { UiState } from './ui-state';
 
@@ -51,7 +51,7 @@ export class FamilyView {
       });
     });
     window.addEventListener('popstate', () => {
-      if (location.hash === PRINT_HASH) return;
+      if (isPrintHash(location.hash)) return;
       const keys = this.fromAddress();
       this.batches.set(new Map());
       this.keys.set(keys.length ? keys : null);
@@ -137,7 +137,7 @@ export class FamilyView {
    */
   private toAddress(keys: readonly string[] | null): void {
     // The print studio is still taking its own entry away.
-    if (location.hash === PRINT_HASH) return;
+    if (isPrintHash(location.hash)) return;
     const want = keys?.length ? FAMILY_HASH + encodeFamilyKeys(keys) : '';
     const at = location.hash.startsWith(FAMILY_HASH);
     if (want) {
