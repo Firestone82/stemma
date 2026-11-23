@@ -1,6 +1,6 @@
 import { TestBed } from '@angular/core/testing';
 import { sampleDocument } from '../../core/model/sample';
-import { forgetPrintFor, savePrintFor, updatePrint } from '../../core/model/operations';
+import { forgetPrintFor, savePrintFor, savedPrintOf, updatePrint } from '../../core/model/operations';
 import { DEFAULT_PRINT, PrintSettings } from '../../core/model/types';
 import { TreeStore } from '../../core/store/tree-store';
 import { parseTree } from '../../core/xml/parser';
@@ -20,6 +20,16 @@ describe('print settings saved for a person', () => {
     ]);
     doc = forgetPrintFor(forgetPrintFor(doc, 'I3'), 'I5');
     expect(doc.savedPrints).toBeUndefined();
+  });
+
+  it('belong to the couple: either partner finds them, and saving for one replaces what was kept for the other', () => {
+    let doc = savePrintFor(sampleDocument(), settings({ centerId: 'I3', partnerId: 'I4', paper: 'A1' }));
+    expect(savedPrintOf(doc, 'I4')?.paper).toBe('A1');
+    expect(savedPrintOf(doc, 'I3')?.paper).toBe('A1');
+    doc = savePrintFor(doc, settings({ centerId: 'I4', partnerId: 'I3', paper: 'A2' }));
+    expect(doc.savedPrints).toHaveLength(1);
+    expect(savedPrintOf(doc, 'I3')?.paper).toBe('A2');
+    expect(forgetPrintFor(doc, 'I3').savedPrints).toBeUndefined();
   });
 
   it('are written into the file and read back, for people still in the tree', () => {
@@ -60,5 +70,24 @@ describe('print settings saved for a person', () => {
     expect(store.doc().print?.paper).toBe('A1');
     model.forgetSaved();
     expect(model.saved()).toBeUndefined();
+  });
+});
+
+describe('print settings saved for a couple in the studio', () => {
+  it('come back when the partner is chosen for the middle', () => {
+    const store = TestBed.inject(TreeStore);
+    const model = TestBed.inject(PrintModel);
+    store.load(sampleDocument());
+    model.chooseMiddle('I22');
+    model.set({ partnerId: 'I26', paper: 'A1' });
+    model.saveForMiddle();
+    expect(model.savedNames()).toHaveLength(2);
+    model.chooseMiddle('I3');
+    model.set({ paper: 'A4' });
+    model.chooseMiddle('I26');
+    expect([store.doc().print?.paper, store.doc().print?.centerId, store.doc().print?.partnerId]).toEqual(['A1', 'I22', 'I26']);
+    expect(model.saved()?.paper).toBe('A1');
+    model.forgetSaved();
+    expect(store.doc().savedPrints).toBeUndefined();
   });
 });

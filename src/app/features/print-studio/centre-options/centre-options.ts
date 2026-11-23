@@ -92,7 +92,8 @@ export class CentreOptions {
     this.model.set({ partnerId: id ? id : null });
   }
 
-  protected readonly middleName = computed(() => this.model.nameOf(this.model.centerId()));
+  /** Who the kept settings are for: the person in the middle, with their partner when the page shows one. */
+  protected readonly savedName = computed(() => this.model.savedNames().join(' & '));
 
   /** The partner goes to the middle, and the person in the middle becomes the partner. */
   protected swap(): void {

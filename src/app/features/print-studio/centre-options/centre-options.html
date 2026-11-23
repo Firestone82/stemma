@@ -27,21 +27,27 @@
 </div>
 <div class="saved" role="group" aria-labelledby="print-saved-note">
   @if (model.saved()) {
-    <span id="print-saved-note" class="hint">{{ t(model.savedDiffers() ? 'print.savedChanged' : 'print.savedFor', { name: middleName() }) }}</span>
-    <div class="saved-actions">
-      @if (model.savedDiffers()) {
-        <button type="button" class="btn small" (click)="model.saveForMiddle()">{{ t('print.saveUpdate') }}</button>
-        <button type="button" class="btn small" (click)="model.useSaved()">{{ t('print.saveUse') }}</button>
-      }
-      <button type="button" class="btn small ghost" (click)="model.forgetSaved()">{{ t('print.saveForget') }}</button>
-    </div>
-  } @else {
-    <span id="print-saved-note" class="hint">{{ t('print.saveHint', { name: middleName() }) }}</span>
-    <div class="saved-actions">
-      <button type="button" class="btn small" [disabled]="!model.centerId()" (click)="model.saveForMiddle()">
-        {{ t('print.saveFor', { name: middleName() }) }}
+    <span id="print-saved-note" class="note hint" [class.changed]="model.savedDiffers()">
+      <stemma-icon name="check" [size]="15" />
+      {{ t(model.savedDiffers() ? 'print.savedChanged' : 'print.savedFor', { name: savedName() }) }}
+    </span>
+    @if (model.savedDiffers()) {
+      <button type="button" class="btn small" (click)="model.saveForMiddle()">{{ t('print.saveUpdate') }}</button>
+      <button type="button" class="btn small" (click)="model.useSaved()">
+        <stemma-icon name="reset" [size]="15" />
+        {{ t('print.saveUse') }}
       </button>
-    </div>
+    }
+    <button type="button" class="btn small danger" (click)="model.forgetSaved()">
+      <stemma-icon name="trash" [size]="15" />
+      {{ t('print.saveForget') }}
+    </button>
+  } @else {
+    <span id="print-saved-note" class="note hint">{{ t('print.saveHint') }}</span>
+    <button type="button" class="btn small" [disabled]="!model.centerId()" (click)="model.saveForMiddle()">
+      <stemma-icon name="check" [size]="15" />
+      {{ t('print.saveFor', { name: savedName() }) }}
+    </button>
   }
 </div>
 <div class="studio-part" role="group" aria-labelledby="print-g-arrange">
