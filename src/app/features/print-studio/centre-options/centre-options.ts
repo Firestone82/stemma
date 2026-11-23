@@ -89,7 +89,7 @@ export class CentreOptions {
   }
 
   protected setPartner(id: string): void {
-    this.model.set({ partnerId: id ? id : null });
+    this.model.choosePartner(id ? id : null);
   }
 
   /** Who the kept settings are for: the person in the middle, with their partner when the page shows one. */

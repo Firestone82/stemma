@@ -609,7 +609,7 @@ export const en = {
   'print.cardSmall':
     'Names print at {pt} pt; a card is only {w} × {h} mm, narrower than the {min} mm this paper wants. That would take about {paper}, or fewer generations or relatives.',
   'print.paperBeyond': 'more than A0',
-  'print.nameSizeSmall': 'Names print at {pt} pt (a card is {w} × {h} mm), too small to read. Choose bigger paper, or fewer generations or relatives.',
+  'print.nameSizeSmall': 'Names print at {pt} pt (a card is {w} × {h} mm).',
   'print.middle': 'In the middle',
   'print.person': 'Person',
   'print.with': 'With',
