@@ -7,7 +7,7 @@
  * marriage to take it from was chosen (`surnameFrom`).
  */
 import { isBrokenUp, relationshipStatus } from './relationship';
-import { SurnameForm } from './surnames';
+import { SurnameForm, surnameFromFather } from './surnames';
 import { TreeIndex } from './tree-index';
 import { Family, Person, TreeDocument } from './types';
 
@@ -24,10 +24,18 @@ function marriages(index: TreeIndex, person: Person): Family[] {
   return index.partnerFamilies(person.id).filter((f) => f.kind === 'marriage' && f.partners.length === 2);
 }
 
+/**
+ * A husband's surname: as recorded, or else the one he was born with, which is his father's when nobody typed
+ * his in (so his wife need not have it typed in either).
+ */
+function husbandSurname(index: TreeIndex, husband: Person, form: SurnameForm): string {
+  return husband.name.surname.trim() || husband.name.birthSurname?.trim() || surnameFromFather(index, husband, form);
+}
+
 /** What a woman takes from one of her marriages; undefined when her husband there has no surname. */
 function fromMarriage(index: TreeIndex, person: Person, family: Family, form: SurnameForm): MarriedSurname | undefined {
   const husband = family.partners.map((id) => index.person(id)).find((p) => p && p.id !== person.id && p.sex === 'male');
-  const base = husband?.name.surname.trim() ?? '';
+  const base = husband ? husbandSurname(index, husband, form) : '';
   return husband && base && !husband.name.derived ? { familyId: family.id, husband, surname: form(base, 'female', [base]) } : undefined;
 }
 
@@ -47,7 +55,8 @@ export function marriedSurnames(index: TreeIndex, person: Person, form: SurnameF
 
 /**
  * The surname a woman takes from a husband, in her form: from the marriage chosen for it while it is one of
- * hers, or else from her current husband; empty when she has none, or he has no surname.
+ * hers, or else from her current husband. A divorced woman who has not married again keeps the surname of
+ * her last husband (an annulled marriage gives none). Empty when she was never married, or he has no surname.
  */
 export function surnameFromHusband(index: TreeIndex, person: Person, form: SurnameForm): string {
   if (person.sex !== 'female') return '';
@@ -55,8 +64,10 @@ export function surnameFromHusband(index: TreeIndex, person: Person, form: Surna
   const chosen = all.find((f) => f.id === person.name.surnameFrom);
   const fromChosen = chosen && fromMarriage(index, person, chosen, form);
   if (fromChosen) return fromChosen.surname;
-  const current = [...all].reverse().find((f) => !isBrokenUp(relationshipStatus(f)));
-  return (current && fromMarriage(index, person, current, form)?.surname) ?? '';
+  const latestFirst = [...all].reverse();
+  const current = latestFirst.find((f) => !isBrokenUp(relationshipStatus(f)));
+  const last = current ?? latestFirst.find((f) => relationshipStatus(f) !== 'annulled');
+  return (last && fromMarriage(index, person, last, form)?.surname) ?? '';
 }
 
 /**

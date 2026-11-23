@@ -15,7 +15,7 @@ describe('surnames taken from husbands', () => {
     b.person('EV', 'Eva', 'Nováková', 'female'); // recorded, and just what her husband's gives
     b.person('KN', 'Karel', 'Novák', 'male');
     b.person('LN', 'Lenka', 'Dvořáková', 'female'); // her own, kept
-    b.person('ZD', 'Zuzana', '', 'female'); // divorced: nothing to take
+    b.person('ZD', 'Zuzana', '', 'female'); // divorced: keeps Svobodová
     b.person('OS', 'Ota', 'Svoboda', 'male');
     b.person('BP', 'Bára', '', 'female'); // partners, not married
     b.person('TH', 'Tomáš', 'Horák', 'male');
@@ -39,7 +39,7 @@ describe('surnames taken from husbands', () => {
         doc.people.find((p) => p.id === 'ZD')!,
         czechSurnameFor,
       ),
-    ).toBe('');
+    ).toBe('Svobodová');
     expect(
       surnameFromHusband(
         index,
@@ -62,7 +62,7 @@ describe('surnames taken from husbands', () => {
     expect(name('JA')).toEqual({ given: 'Jana', surname: 'Mikulová', derived: true });
     expect(name('EV')).toEqual({ given: 'Eva', surname: 'Nováková' });
     expect(name('LN').surname).toBe('Dvořáková');
-    expect(name('ZD').surname).toBe('');
+    expect(name('ZD')).toEqual({ given: 'Zuzana', surname: 'Svobodová', derived: true });
     expect(name('BP').surname).toBe('');
     expect(withMarriedSurnames(doc, czechSurnameFor)).toBe(doc);
     const xml = serializeTree(doc);
@@ -84,8 +84,34 @@ describe('surnames taken from husbands', () => {
     expect(doc.people.find((p) => p.id === 'JA')!.name).toEqual({ given: 'Jana', surname: 'Malá' });
     doc = withMarriedSurnames(updatePerson(doc, 'JA', { name: { surname: '' } }), czechSurnameFor);
     expect(doc.people.find((p) => p.id === 'JA')!.name).toEqual({ given: 'Jana', surname: 'Mikulková', derived: true });
-    const ended = { ...doc, families: doc.families.map((f) => (f.id === 'F1' ? { ...f, end: { reason: 'divorce' as const } } : f)) };
-    expect(withMarriedSurnames(ended, czechSurnameFor).people.find((p) => p.id === 'JA')!.name).toEqual({ given: 'Jana', surname: '' });
+    // Divorced, she keeps his surname; an annulled marriage gives her none.
+    const ending = (reason: 'divorce' | 'annulment') => ({ ...doc, families: doc.families.map((f) => (f.id === 'F1' ? { ...f, end: { reason } } : f)) });
+    expect(withMarriedSurnames(ending('divorce'), czechSurnameFor).people.find((p) => p.id === 'JA')!.name).toEqual({
+      given: 'Jana',
+      surname: 'Mikulková',
+      derived: true,
+    });
+    expect(withMarriedSurnames(ending('annulment'), czechSurnameFor).people.find((p) => p.id === 'JA')!.name).toEqual({ given: 'Jana', surname: '' });
+  });
+
+  it('keeps a divorced woman’s surname of her own when one is typed in', () => {
+    let doc = withMarriedSurnames(tree(), czechSurnameFor);
+    doc = withMarriedSurnames(updatePerson(doc, 'ZD', { name: { surname: 'Malá' } }), czechSurnameFor);
+    expect(doc.people.find((p) => p.id === 'ZD')!.name).toEqual({ given: 'Zuzana', surname: 'Malá' });
+  });
+
+  it('takes the surname a husband has from his father when his own is not typed in', () => {
+    const b = new DocBuilder();
+    b.person('GF', 'Josef', 'Mikula', 'male');
+    b.person('H', 'Pavel', '', 'male');
+    b.person('W', 'Jana', '', 'female');
+    b.family('P', ['GF'], ['H']);
+    b.family('M', ['H', 'W']);
+    let doc = withMarriedSurnames(b.build(), czechSurnameFor);
+    expect(doc.people.find((p) => p.id === 'W')!.name).toEqual({ given: 'Jana', surname: 'Mikulová', derived: true });
+    // And follows it when his father's changes.
+    doc = withMarriedSurnames(updatePerson(doc, 'GF', { name: { surname: 'Novák' } }), czechSurnameFor);
+    expect(doc.people.find((p) => p.id === 'W')!.name.surname).toBe('Nováková');
   });
 });
 
