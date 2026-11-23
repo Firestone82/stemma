@@ -1,0 +1,17 @@
+:host {
+  display: block;
+}
+
+.steps {
+  display: grid;
+  gap: 6px;
+  max-width: 62ch;
+  margin: 0;
+  padding-left: 22px;
+  color: var(--ink-2);
+}
+
+.note {
+  color: var(--ink-3);
+  font-size: var(--text-sm);
+}

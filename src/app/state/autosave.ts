@@ -4,12 +4,13 @@ import { ToastService } from '../core/services/toast';
 import { TreeStore } from '../core/store/tree-store';
 import { serializeTree } from '../core/xml/serializer';
 import { I18n } from '../i18n/i18n';
+import { AUTOSAVE_STORE, idbRun } from '../core/services/browser-db';
 
 const TREE_KEY = 'stemma.tree.v1';
 /** Left in localStorage when the tree is too big for it (a large background picture) and went to IndexedDB. */
 const IN_DATABASE = '@indexeddb';
-const DB_NAME = 'stemma';
-const DB_STORE = 'autosave';
+/** Left in localStorage when the last tree came from a file: the file is its copy, so nothing is reopened. */
+const CLOSED = '@file';
 
 /**
  * Keeps a copy of the open tree in this browser, as the same XML the app
@@ -19,6 +20,10 @@ const DB_STORE = 'autosave';
  * The copy goes to localStorage, which is read at once on start. A tree that
  * does not fit there (a background picture can be several megabytes) goes to
  * IndexedDB instead, which holds much more but is read asynchronously.
+ *
+ * A tree opened from or saved to a file (on the computer or in Google Drive) is not kept: that file is its copy, and
+ * reopening a browser copy of it on the next visit could mean editing an older version than the file holds. For such
+ * a tree only a marker is left (`CLOSED`), and the next visit starts on the start page with the recent files.
  */
 @Injectable({ providedIn: 'root' })
 export class Autosave {
@@ -28,6 +33,8 @@ export class Autosave {
   private timer: ReturnType<typeof setTimeout> | undefined;
   private warned = false;
   private enabled = false;
+  /** False while the open tree belongs to a file (see `setFileBacked`). */
+  private keep = true;
 
   constructor() {
     effect(() => {
@@ -43,24 +50,49 @@ export class Autosave {
     this.enabled = true;
   }
 
-  /** The saved tree: at once when it is in localStorage, later when it is in IndexedDB. */
-  read(): string | Promise<string | null> | null {
+  /**
+   * The saved tree: at once when it is in localStorage, later when it is in IndexedDB; `closed` when the last tree
+   * came from a file, so there is nothing to reopen.
+   */
+  read(): string | 'closed' | Promise<string | null> | null {
     let saved: string | null;
     try {
       saved = localStorage.getItem(TREE_KEY);
     } catch {
       return null;
     }
+    if (saved === CLOSED) return 'closed';
     return saved === IN_DATABASE ? idbGet().catch(() => null) : saved;
   }
 
+  /**
+   * Says whether the open tree belongs to a file. While it does, no copy is kept in the browser and the one there is
+   * replaced by the marker; once it does not (a new tree, the example family), copies are kept again.
+   */
+  setFileBacked(fileBacked: boolean): void {
+    if (fileBacked === !this.keep) return;
+    this.keep = !fileBacked;
+    clearTimeout(this.timer);
+    if (fileBacked) {
+      try {
+        localStorage.setItem(TREE_KEY, CLOSED);
+      } catch {
+        // Nothing to do: the next visit then shows whatever was kept before, as it always did.
+      }
+      void idbDelete().catch(() => undefined);
+    } else if (this.enabled) {
+      this.write();
+    }
+  }
+
   flush(): void {
-    if (!this.enabled) return;
+    if (!this.enabled || !this.keep) return;
     clearTimeout(this.timer);
     this.write();
   }
 
   private write(): void {
+    if (!this.keep) return;
     // As DocumentActions.xml(): with the language the chart is in.
     const xml = serializeTree(updateView(this.store.doc(), { language: this.i18n.code() }));
     try {
@@ -89,34 +121,6 @@ export class Autosave {
   }
 }
 
-function openDb(): Promise<IDBDatabase> {
-  return new Promise((resolve, reject) => {
-    if (typeof indexedDB === 'undefined') {
-      reject(new Error('no IndexedDB'));
-      return;
-    }
-    const request = indexedDB.open(DB_NAME, 1);
-    request.onupgradeneeded = () => request.result.createObjectStore(DB_STORE);
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error);
-  });
-}
-
-async function idbRun<T>(mode: IDBTransactionMode, run: (store: IDBObjectStore) => IDBRequest<T>): Promise<T> {
-  const db = await openDb();
-  try {
-    return await new Promise<T>((resolve, reject) => {
-      const tx = db.transaction(DB_STORE, mode);
-      const request = run(tx.objectStore(DB_STORE));
-      tx.oncomplete = () => resolve(request.result);
-      tx.onerror = () => reject(tx.error);
-      tx.onabort = () => reject(tx.error);
-    });
-  } finally {
-    db.close();
-  }
-}
-
-const idbGet = () => idbRun<string | undefined>('readonly', (s) => s.get('tree')).then((v) => v ?? null);
-const idbPut = (xml: string) => idbRun('readwrite', (s) => s.put(xml, 'tree')).then(() => undefined);
-const idbDelete = () => idbRun('readwrite', (s) => s.delete('tree')).then(() => undefined);
+const idbGet = () => idbRun<string | undefined>(AUTOSAVE_STORE, 'readonly', (s) => s.get('tree')).then((v) => v ?? null);
+const idbPut = (xml: string) => idbRun(AUTOSAVE_STORE, 'readwrite', (s) => s.put(xml, 'tree')).then(() => undefined);
+const idbDelete = () => idbRun(AUTOSAVE_STORE, 'readwrite', (s) => s.delete('tree')).then(() => undefined);

@@ -1,5 +1,5 @@
 import { toGedcom } from '../core/gedcom/gedcom';
-import { Injectable, inject, signal } from '@angular/core';
+import { Injectable, computed, inject, signal } from '@angular/core';
 import { updateMeta, updateView } from '../core/model/operations';
 import { sampleDocument } from '../core/model/sample';
 import { ChildRelation, emptyDocument } from '../core/model/types';
@@ -10,6 +10,7 @@ import { ChartLanguage } from '../core/lang/language';
 import { familyOutline, linkedFamilies } from '../core/family-document/outline';
 import { FileIo, PickerType, SaveOutcome, datedFilename } from '../core/services/file-io';
 import { DriveFile, DriveOutcome, GoogleDrive } from '../core/services/google-drive';
+import { RecentFile, RecentFiles } from '../core/services/recent-files';
 import { ToastService } from '../core/services/toast';
 import { TreeStore } from '../core/store/tree-store';
 import { XmlFormatError, parseTree } from '../core/xml/parser';
@@ -39,6 +40,12 @@ const XML_TYPE: PickerType = { description: 'Stemma family tree (XML)', accept: 
  */
 export type TreeSource = { kind: 'local'; handle: FileSystemFileHandle; name: string } | { kind: 'drive'; file: DriveFile };
 
+/** A file being opened: where Save will write (if anywhere) and what the recent files list keeps of it. */
+interface PendingOpen {
+  source: TreeSource | null;
+  recent: { kind: 'local'; name: string; handle?: FileSystemFileHandle } | { kind: 'drive'; file: DriveFile };
+}
+
 /** Whole trees: starting, opening, saving, the example family and the print studio. */
 @Injectable({ providedIn: 'root' })
 export class DocumentActions {
@@ -51,15 +58,36 @@ export class DocumentActions {
   private readonly prefs = inject(Preferences);
   private readonly i18n = inject(I18n);
   private readonly chart = inject(ChartModel);
+  private readonly recent = inject(RecentFiles);
 
   /** Where Save writes the tree (see TreeSource). */
   readonly source = signal<TreeSource | null>(null);
-  /** The source of a file being opened, taken on once it opens (after the newer-version dialog, if that comes first). */
-  private pendingSource: TreeSource | null = null;
+  /**
+   * The tree belongs to a file: it was opened from one or saved to one, on the computer or in Google Drive, even where
+   * the browser cannot write back to it. Such a tree is not kept in the browser for the next visit (see Autosave).
+   */
+  readonly fileBacked = signal(false);
+  /** The tree's revision when it was last opened or saved. */
+  private readonly savedRevision = signal(-1);
+  /** The tree belongs to a file and has changes the file does not have yet: leaving the page asks first. */
+  readonly unsaved = computed(() => this.fileBacked() && this.store.revision() !== this.savedRevision());
+  /** The file being opened, taken on once it opens (after the newer-version dialog, if that comes first). */
+  private pending: PendingOpen | null = null;
 
-  /** Reopens the tree from the last visit, or shows the example family the first time. */
+  /** The files opened and saved lately, newest first. */
+  readonly recentFiles = this.recent.list;
+
+  /**
+   * Reopens the tree from the last visit, or shows the example family the first time. A tree that came from a file is
+   * never reopened from the browser's copy: the start page offers the recent files instead, which read the file afresh.
+   */
   restore(): void {
     const saved = this.autosave.read();
+    if (saved === 'closed') {
+      this.closeQuietly();
+      this.autosave.enable();
+      return;
+    }
     if (saved instanceof Promise) {
       // A big tree kept in IndexedDB: the chart waits for it rather than flashing the empty state.
       this.ui.restoring.set(true);
@@ -70,7 +98,7 @@ export class DocumentActions {
   }
 
   private reopen(saved: string | null): void {
-    this.source.set(null);
+    this.forgetFile();
     if (saved) {
       try {
         this.store.load(parseTree(saved).doc);
@@ -85,6 +113,62 @@ export class DocumentActions {
     this.autosave.enable();
   }
 
+  /** The tree is no longer tied to a file: a new tree, the example family. The browser keeps a copy of it again. */
+  private forgetFile(): void {
+    this.pending = null;
+    this.source.set(null);
+    this.fileBacked.set(false);
+    this.autosave.setFileBacked(false);
+  }
+
+  /** The tree on screen now is the file's content: Save writes there, and the browser keeps no copy of it. */
+  private takeFile(source: TreeSource | null, revision = this.store.revision()): void {
+    this.source.set(source);
+    this.fileBacked.set(true);
+    this.savedRevision.set(revision);
+    this.autosave.setFileBacked(true);
+  }
+
+  /**
+   * Runs `action` at once, or, when the tree has changes its file does not have yet, after the person chose to save
+   * them first or to let them go (the unsaved dialog). The dialog's buttons run it from a click, so pickers still open.
+   */
+  private async whenSaved(action: () => unknown): Promise<void> {
+    if (!this.unsaved()) {
+      await action();
+      return;
+    }
+    this.ui.dialog.set({ kind: 'unsaved', proceed: action });
+  }
+
+  /** Saves the tree (see saveXml) and then runs `action` if nothing is left unsaved. */
+  async saveThen(action: () => unknown): Promise<void> {
+    this.ui.dialog.set(null);
+    await this.saveXml();
+    if (!this.unsaved()) await action();
+  }
+
+  /** Lets the changes go and runs `action`. */
+  async discardThen(action: () => unknown): Promise<void> {
+    this.ui.dialog.set(null);
+    await action();
+  }
+
+  /** Closes the tree and goes back to the start page with the recent files. */
+  closeTree(): void {
+    this.ui.closeMenu();
+    void this.whenSaved(() => this.closeQuietly());
+  }
+
+  /** The start page: an empty tree in the app's language, tied to no file. */
+  private closeQuietly(): void {
+    const doc = emptyDocument(this.i18n.t('tree.newTitle'));
+    this.store.load({ ...doc, view: { ...doc.view, language: this.i18n.code() } });
+    this.forgetFile();
+    this.ui.adding.set(null);
+    this.ui.showSampleNote.set(false);
+  }
+
   newTree(): void {
     this.ui.closeMenu();
     if (!this.store.doc().people.length) {
@@ -96,20 +180,18 @@ export class DocumentActions {
 
   /** An empty tree whose chart speaks the app's language. */
   startEmpty(): void {
-    const doc = emptyDocument(this.i18n.t('tree.newTitle'));
-    this.store.load({ ...doc, view: { ...doc.view, language: this.i18n.code() } });
-    this.source.set(null);
-    this.ui.adding.set(null);
-    this.ui.showSampleNote.set(false);
+    this.closeQuietly();
     this.ui.dialog.set(null);
   }
 
   loadSample(): void {
     this.ui.closeMenu();
-    this.store.load(sampleDocument());
-    this.source.set(null);
-    this.ui.showSampleNote.set(true);
-    this.toast.show(this.i18n.t('file.sampleOpened'));
+    void this.whenSaved(() => {
+      this.store.load(sampleDocument());
+      this.forgetFile();
+      this.ui.showSampleNote.set(true);
+      this.toast.show(this.i18n.t('file.sampleOpened'));
+    });
   }
 
   dismissSampleNote(): void {
@@ -120,6 +202,10 @@ export class DocumentActions {
   /** Opens a tree from the computer. Where the browser allows it, Save then writes back to the same file. */
   async openFile(): Promise<void> {
     this.ui.closeMenu();
+    await this.whenSaved(() => this.pickFile());
+  }
+
+  private async pickFile(): Promise<void> {
     let text: string;
     let name: string;
     let handle: FileSystemFileHandle | undefined;
@@ -133,30 +219,103 @@ export class DocumentActions {
       this.toast.error(this.i18n.t('file.unreadable'));
       return;
     }
-    this.pendingSource = handle ? { kind: 'local', handle, name } : null;
+    this.pending = { source: handle ? { kind: 'local', handle, name } : null, recent: { kind: 'local', name, handle } };
     this.openXml(text, name);
   }
 
-  /** True when trees can be opened from and saved to Google Drive: a Google client is set up and the app is not inside a viewer. */
-  canUseDrive(): boolean {
-    return this.drive.configured && !this.files.hosted;
+  /**
+   * True where the Google Drive items are offered: everywhere but inside a viewer, which runs the page in a frame
+   * where Google's sign-in does not work. Without a Google Cloud project set up they explain what is missing.
+   */
+  offersDrive(): boolean {
+    return !this.files.hosted;
   }
 
-  /** Loads the Google scripts while the File menu is open, so a click on a Drive item opens the sign-in at once. */
+  /** True when a Google Cloud project is set up, so the Drive items open Google's sign-in (see google-config.ts). */
+  driveReady(): boolean {
+    return this.drive.configured;
+  }
+
+  /** Loads the Google scripts ahead of a click on a Drive item, so the click opens the sign-in at once. */
   prepareDrive(): void {
-    if (this.canUseDrive()) this.drive.prepare();
+    if (this.offersDrive() && this.drive.configured) this.drive.prepare();
   }
 
   /** Opens a tree from Google Drive, through the Google Picker. Save then writes back to that file. */
   async openFromDrive(): Promise<void> {
     this.ui.closeMenu();
-    const outcome = await this.drive.open(this.i18n.code());
-    if (outcome.status !== 'done') {
-      this.driveProblem(outcome);
+    if (!this.drive.configured) {
+      this.ui.dialog.set({ kind: 'drive-setup' });
       return;
     }
-    this.pendingSource = { kind: 'drive', file: outcome.value.file };
-    this.openXml(outcome.value.text, outcome.value.file.name);
+    await this.whenSaved(async () => {
+      const outcome = await this.drive.open(this.i18n.code());
+      if (outcome.status !== 'done') {
+        this.driveProblem(outcome);
+        return;
+      }
+      this.openFromText(outcome.value.text, outcome.value.file);
+    });
+  }
+
+  private openFromText(text: string, file: DriveFile): void {
+    this.pending = { source: { kind: 'drive', file }, recent: { kind: 'drive', file } };
+    this.openXml(text, file.name);
+  }
+
+  /**
+   * Opens a file from the recent files, read afresh from where it is: the computer (the browser asks again for
+   * permission to the file) or Google Drive. Where the browser kept no handle, the file is picked again.
+   */
+  async openRecent(entry: RecentFile): Promise<void> {
+    this.ui.closeMenu();
+    if (entry.kind === 'drive' && !this.drive.configured) {
+      this.ui.dialog.set({ kind: 'drive-setup' });
+      return;
+    }
+    await this.whenSaved(() => this.readRecent(entry));
+  }
+
+  private async readRecent(entry: RecentFile): Promise<void> {
+    if (entry.kind === 'drive') {
+      const outcome = await this.drive.read(entry.file);
+      if (outcome.status === 'done') this.openFromText(outcome.value.text, outcome.value.file);
+      else if (outcome.status === 'missing') this.recentMissing(entry);
+      else this.driveProblem(outcome);
+      return;
+    }
+    if (!entry.handle) {
+      await this.pickFile();
+      return;
+    }
+    const outcome = await this.files.readHandle(entry.handle);
+    if (outcome.status === 'missing') {
+      this.recentMissing(entry);
+      return;
+    }
+    if (outcome.status === 'failed') this.toast.error(this.i18n.t('file.unreadable'));
+    if (outcome.status !== 'done') return;
+    let text: string;
+    try {
+      text = await outcome.file.text();
+    } catch {
+      this.toast.error(this.i18n.t('file.unreadable'));
+      return;
+    }
+    const name = outcome.file.name;
+    this.pending = { source: { kind: 'local', handle: entry.handle, name }, recent: { kind: 'local', name, handle: entry.handle } };
+    this.openXml(text, name);
+  }
+
+  /** A recent file that is gone is taken off the list. */
+  private recentMissing(entry: RecentFile): void {
+    void this.recent.forget(entry.key);
+    this.toast.error(this.i18n.t('file.recentMissing', { name: entry.name }));
+  }
+
+  /** Takes a file off the recent files list. The file itself stays where it is. */
+  forgetRecent(entry: RecentFile): void {
+    void this.recent.forget(entry.key);
   }
 
   openXml(xml: string, name?: string, force = false): void {
@@ -164,8 +323,14 @@ export class DocumentActions {
     try {
       const result = parseTree(xml, { force });
       this.store.load(result.doc);
-      this.source.set(this.pendingSource);
-      this.pendingSource = null;
+      const pending = this.pending;
+      this.pending = null;
+      if (pending) {
+        this.takeFile(pending.source);
+        void this.recent.remember({ ...pending.recent, title: this.store.doc().meta.title });
+      } else {
+        this.forgetFile();
+      }
       this.ui.showSampleNote.set(false);
       this.ui.dialog.set(null);
       if (result.warnings.length || result.upgrades.length) {
@@ -178,7 +343,7 @@ export class DocumentActions {
         this.ui.dialog.set({ kind: 'newer-version', notice: e, xml, name: fileName });
         return;
       }
-      this.pendingSource = null;
+      this.pending = null;
       if (e instanceof XmlFormatError) {
         this.toast.error(`${this.i18n.t('file.openFailed', { name: fileName })} ${this.i18n.notice(e, 'file.error.')}`);
       } else {
@@ -196,13 +361,15 @@ export class DocumentActions {
   async saveXml(): Promise<void> {
     this.ui.closeMenu();
     const source = this.source();
+    const revision = this.store.revision();
     if (source?.kind === 'local') {
       const outcome = await this.files.writeTo(source.handle, new Blob([this.xml()], { type: 'application/xml' }));
+      if (outcome === 'saved') this.saved({ kind: 'local', handle: source.handle, name: source.name }, revision);
       this.reportSave(outcome, source.name);
     } else if (source?.kind === 'drive') {
       const outcome = await this.drive.update(source.file, this.xml());
       if (outcome.status === 'done') {
-        this.source.set({ kind: 'drive', file: outcome.value });
+        this.saved({ kind: 'drive', file: outcome.value }, revision);
         this.toast.show(this.i18n.t('file.savedToDrive', { name: outcome.value.name }));
       } else {
         this.driveProblem(outcome);
@@ -224,8 +391,13 @@ export class DocumentActions {
       this.ui.dialog.set({ kind: 'xml', xml, filename });
       return;
     }
+    const revision = this.store.revision();
     const saved = await this.files.saveAs(filename, xml, 'application/xml', XML_TYPE);
-    if (saved.handle) this.source.set({ kind: 'local', handle: saved.handle, name: saved.name });
+    if (saved.outcome === 'saved') {
+      // A download (no handle) belongs to its file too: the next visit offers it in the recent files, to pick again.
+      this.takeFile(saved.handle ? { kind: 'local', handle: saved.handle, name: saved.name } : null, revision);
+      void this.recent.remember({ kind: 'local', name: saved.name, handle: saved.handle, title: this.store.doc().meta.title });
+    }
     if (saved.outcome === 'unsupported') this.ui.dialog.set({ kind: 'xml', xml, filename });
     else this.reportSave(saved.outcome, saved.name);
   }
@@ -233,13 +405,27 @@ export class DocumentActions {
   /** Saves the tree as a new file in Google Drive. Save then writes there. */
   async saveToDrive(): Promise<void> {
     this.ui.closeMenu();
+    if (!this.drive.configured) {
+      this.ui.dialog.set({ kind: 'drive-setup' });
+      return;
+    }
+    const revision = this.store.revision();
     const outcome = await this.drive.create(datedFilename(this.store.doc().meta.title, 'xml'), this.xml());
     if (outcome.status === 'done') {
-      this.source.set({ kind: 'drive', file: outcome.value });
+      this.saved({ kind: 'drive', file: outcome.value }, revision);
       this.toast.show(this.i18n.t('file.savedToDrive', { name: outcome.value.name }));
     } else {
       this.driveProblem(outcome);
     }
+  }
+
+  /** The tree was written to `source` as it stood at `revision`; the recent files put it on top, with its title now. */
+  private saved(source: TreeSource, revision: number): void {
+    this.takeFile(source, revision);
+    const title = this.store.doc().meta.title;
+    void this.recent.remember(
+      source.kind === 'drive' ? { kind: 'drive', file: source.file, title } : { kind: 'local', name: source.name, handle: source.handle, title },
+    );
   }
 
   private reportSave(outcome: SaveOutcome, name: string): void {
@@ -250,6 +436,7 @@ export class DocumentActions {
   /** Nothing to say when the person closed the sign-in or the picker themselves. */
   private driveProblem(outcome: DriveOutcome<unknown>): void {
     if (outcome.status === 'blocked') this.toast.error(this.i18n.t('file.driveBlocked'));
+    else if (outcome.status === 'missing') this.toast.error(this.i18n.t('file.driveMissing'));
     else if (outcome.status === 'failed') this.toast.error(this.i18n.t('file.driveFailed'));
   }
 
@@ -417,5 +604,13 @@ export class DocumentActions {
   /** Keeps the copy in this browser up to date before the page goes away. */
   flush(): void {
     this.autosave.flush();
+  }
+
+  /** Before the page goes away: the browser asks the person to stay when the tree has changes its file does not have. */
+  beforeUnload(event: BeforeUnloadEvent): void {
+    if (!this.unsaved()) return;
+    event.preventDefault();
+    // Older browsers ask only when returnValue is set.
+    event.returnValue = '';
   }
 }

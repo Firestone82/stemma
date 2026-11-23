@@ -41,3 +41,93 @@ p {
   gap: 8px;
   margin-top: 4px;
 }
+
+.recent {
+  display: grid;
+  gap: 6px;
+  width: 100%;
+  margin-top: 14px;
+  text-align: left;
+
+  h2 {
+    margin: 0;
+    color: var(--ink-3);
+    font-family: var(--font-sc);
+    font-size: var(--text-sm);
+    font-weight: 500;
+    letter-spacing: 0.04em;
+    text-transform: lowercase;
+  }
+
+  ul {
+    display: grid;
+    gap: 2px;
+    margin: 0;
+    padding: 4px;
+    border: 1px solid var(--rule);
+    border-radius: var(--radius-md);
+    background: var(--sheet);
+    list-style: none;
+    max-height: 40vh;
+    overflow-y: auto;
+  }
+
+  li {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .open {
+    display: flex;
+    flex: 1;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+    padding: 7px 8px;
+    border: 0;
+    border-radius: var(--radius-sm);
+    background: none;
+    color: var(--ink);
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+
+    &:hover {
+      background: var(--sheet-2);
+    }
+
+    stemma-icon {
+      flex: none;
+      color: var(--ink-3);
+    }
+  }
+
+  .names {
+    display: grid;
+    min-width: 0;
+  }
+
+  .title,
+  .meta {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .meta {
+    color: var(--ink-3);
+    font-size: var(--text-sm);
+  }
+
+  .forget {
+    flex: none;
+    color: var(--ink-3);
+  }
+
+  .hint {
+    max-width: none;
+    color: var(--ink-3);
+    font-size: var(--text-xs);
+  }
+}

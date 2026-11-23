@@ -28,6 +28,7 @@ import { UiState } from './state/ui-state';
     '(document:keydown)': 'shortcuts.handle($event)',
     '(document:pointerdown)': 'shortcuts.pointer($event)',
     '(window:pagehide)': 'documents.flush()',
+    '(window:beforeunload)': 'documents.beforeUnload($event)',
   },
 })
 export class App {
