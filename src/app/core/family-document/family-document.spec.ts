@@ -218,3 +218,29 @@ describe('family document', () => {
     }
   });
 });
+
+describe('family document, a wife known only by her husband’s name', () => {
+  it('writes her beside her husband, not among those born into his family', () => {
+    const b = new DocBuilder();
+    b.person('jiri', 'Jiří', 'Kowala', 'male', '1819');
+    b.person('marie', 'Marie', 'Kowalová', 'female', '1822');
+    b.person('pavel', 'Pavel', 'Kowala', 'male', '1850');
+    b.family('f1', ['jiri', 'marie'], ['pavel']);
+    const doc = b.build('Kowala');
+    const index = new TreeIndex(doc);
+    const families = familyOutline({
+      doc,
+      index,
+      keyOf: new Map(doc.people.map((p) => [p.id, 'kowala'])),
+      labelOf: () => 'Kowala',
+      birthSurnames: new Map(doc.people.map((p) => [p.id, p.name.surname])),
+      language: english,
+      compare: (a, c) => a.localeCompare(c, 'cs'),
+    });
+    expect(families).toHaveLength(1);
+    const rows = families[0].rows.filter((r): r is OutlinePerson => r.kind === 'person');
+    expect(rows.map((r) => r.personId)).toEqual(['jiri', 'pavel']);
+    expect(rows[0].partners.map((p) => p.personId)).toEqual(['marie']);
+    expect(families[0].people).toBe(2);
+  });
+});
