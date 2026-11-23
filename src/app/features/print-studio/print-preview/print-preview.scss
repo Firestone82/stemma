@@ -94,6 +94,18 @@
   }
 
   /* While a card is dragged: the line it is level with another card on. */
+  /* The gap picked between two cards: dragged, it goes wider or narrower. */
+  ::ng-deep .gap-band {
+    fill: rgb(210 69 47 / 0.14);
+    stroke: #d2452f;
+    stroke-dasharray: 4 3;
+    cursor: ew-resize;
+
+    &.down {
+      cursor: ns-resize;
+    }
+  }
+
   ::ng-deep .move-guides line {
     stroke: #d2452f;
     stroke-width: 1.2;
@@ -180,7 +192,8 @@
 }
 
 /* A box was moved: apply it (the page is drawn again) or put it back. */
-.moved-bar {
+.moved-bar,
+.gap-bar {
   position: absolute;
   left: 50%;
   bottom: 14px;
@@ -198,6 +211,17 @@
   font-weight: 500;
   transform: translateX(-50%);
   white-space: nowrap;
+}
+
+.gap-bar {
+  top: 14px;
+  bottom: auto;
+  gap: 8px;
+
+  .gap-by {
+    min-width: 7ch;
+    text-align: center;
+  }
 }
 
 .corner {

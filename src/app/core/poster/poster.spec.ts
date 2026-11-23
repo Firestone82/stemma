@@ -247,6 +247,29 @@ describe('the printed page', () => {
     expect(render(doc, { paper: 'A3', orientation: 'landscape', moves: { nobody: { x: 60, y: 25 } } }).svg).toBe(plain.svg);
   });
 
+  it('widens a gap between two cards by hand: the same arrangement, those two further apart, fitted to the page again', () => {
+    const doc = sampleDocument();
+    const at = (svg: string, id: string) => {
+      const m = new RegExp(`data-person="${id}" transform="translate\\(([^,]+),([^)]+)\\)"`).exec(svg)!;
+      return { x: Number(m[1]), y: Number(m[2]) };
+    };
+    const settings: Partial<PrintSettings> = { paper: 'A3', orientation: 'landscape' };
+    const plain = render(doc, settings);
+    // Two cards side by side in the lowest row there are two.
+    const cards = cardsIn(plain.svg).map((id) => ({ id, ...at(plain.svg, id) }));
+    const y = Math.max(...cards.filter((c) => cards.some((d) => d !== c && d.y === c.y)).map((c) => c.y));
+    const row = cards.filter((c) => c.y === y).sort((a, b) => a.x - b.x);
+    const [a, b] = [row[0], row[1]];
+    const wider = render(doc, { ...settings, gaps: { [`${a.id}|${b.id}`]: 120 } });
+    const gap = (svg: string) => at(svg, b.id).x - at(svg, a.id).x;
+    expect(gap(wider.svg)).toBeCloseTo(gap(plain.svg) + 120, 3);
+    // Everyone is still on it, the cards about as big (the lettering is sized to them again) or smaller.
+    expect(cardsIn(wider.svg).sort()).toEqual(cardsIn(plain.svg).sort());
+    expect(wider.cardMm.w).toBeLessThanOrEqual(plain.cardMm.w * 1.01);
+    // A gap between two who do not stand next to each other changes nothing.
+    expect(render(doc, { ...settings, gaps: { 'nobody|else': 120 } }).svg).toBe(plain.svg);
+  });
+
   it('draws the direct lines of the two in the middle in their own colours, and every other line plain', () => {
     const doc = sampleDocument();
     const r = render(doc, { paper: 'A3', orientation: 'landscape' });

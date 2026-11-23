@@ -351,6 +351,8 @@
     <xs:attribute name="moves" type="xs:string"/>
     <!-- 1.9: lines led by hand, "family|child:x,y;x,y;…" with a space between lines, in the layout's units. -->
     <xs:attribute name="lineBends" type="xs:string"/>
+    <!-- 1.9: gaps between two cards made wider by hand, "left|right:by" (or "upper|lower:by") with a space between gaps, in the layout's units. -->
+    <xs:attribute name="gaps" type="xs:string"/>
     <!-- 1.9: people brought onto the print by hand, whatever the reach leaves out: "I12 I13 I40", their ids. -->
     <xs:attribute name="added" type="xs:string"/>
     <!-- 1.9: people whose partners stand on the other side of them: "I11 I40", their ids. -->

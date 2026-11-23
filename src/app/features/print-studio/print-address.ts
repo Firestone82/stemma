@@ -62,6 +62,7 @@ const IN_ADDRESS: { readonly [K in keyof PrintSettings]-?: boolean } = {
   titleAnchor: true,
   moves: false,
   lineBends: false,
+  gaps: true,
   added: true,
   flipped: true,
   unionText: true,

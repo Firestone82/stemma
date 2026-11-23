@@ -1,6 +1,7 @@
 import { Injectable, computed, effect, inject, signal, untracked } from '@angular/core';
 import { bloodRelatives } from '../../core/kinship/kinship';
 import { CutLine, cutOff } from '../../core/model/cut-off';
+import { GAP_WIDEST } from '../../core/layout/gaps';
 import { forgetPrintFor, savePrintFor, updatePrint, useSavedPrint } from '../../core/model/operations';
 import { isBrokenUp, relationshipStatus } from '../../core/model/relationship';
 import { Anchor, DEFAULT_PRINT, Reach, LEGEND_GAP_CM, LegendBox, anchorShares, effectivePrint, PrintSettings } from '../../core/model/types';
@@ -563,6 +564,25 @@ export class PrintModel {
 
   readonly bentCount = computed(() => Object.keys(this.settings().lineBends ?? {}).length);
 
+  /**
+   * Makes the gap between two cards (see gapKey) so much wider than the layout has it, in the layout's units, or
+   * (0 or less) leaves it as the layout has it again. Each change is a step of its own to undo.
+   */
+  setGap(key: string, by: number): void {
+    const gaps = { ...(this.settings().gaps ?? {}) };
+    const wider = Math.min(GAP_WIDEST, Math.round(by));
+    if (wider > 0) gaps[key] = wider;
+    else delete gaps[key];
+    this.set({ gaps: Object.keys(gaps).length ? gaps : undefined }, `print gap ${++this.stepCount}`);
+  }
+
+  /** Every gap made wider by hand as the layout has it again. */
+  ungap(): void {
+    this.set({ gaps: undefined }, `print gap ${++this.stepCount}`);
+  }
+
+  readonly gappedCount = computed(() => Object.keys(this.settings().gaps ?? {}).length);
+
   /** Counts what is done by hand on the page (moves, additions), so each is a step of its own to undo. */
   private stepCount = 0;
 
@@ -799,6 +819,7 @@ export class PrintModel {
           rows: [
             row('print.sp.bent', String(Object.keys(s.lineBends ?? {}).length)),
             row('print.sp.moved', String(Object.keys(s.moves ?? {}).length)),
+            row('print.sp.gaps', String(Object.keys(s.gaps ?? {}).length)),
             row('print.sp.added', String(s.added?.length ?? 0)),
             row('print.sp.flipped', String(s.flipped?.length ?? 0)),
             row('print.sp.omitted', String(this.ui.printOmitted().length)),

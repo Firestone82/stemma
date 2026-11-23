@@ -352,6 +352,13 @@ export interface PrintSettings extends CardSettings {
    */
   lineBends?: Readonly<Record<string, readonly { x: number; y: number }[]>>;
   /**
+   * Gaps between two cards made wider by hand, by the two people (`left|right`, or `upper|lower`; see gapKey):
+   * how much wider, in the layout's units. The arrangement stays; the cards beyond the gap (and what hangs under
+   * them) stand further off, and the tree is fitted to the page again. A gap whose two cards no longer stand
+   * next to each other is left as the layout has it.
+   */
+  gaps?: Readonly<Record<string, number>>;
+  /**
    * People brought onto the print by hand, by id, from a card's menu (its parents, brothers and sisters, whole
    * family), whatever the reach above leaves out: the parents of a former partner, say.
    */

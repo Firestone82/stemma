@@ -88,6 +88,29 @@
         }
       </div>
     </div>
+    @if (gap()) {
+      <div class="gap-bar" role="group" [attr.aria-label]="t('print.gap.label')" [title]="t('print.gap.hint')">
+        <span>{{ t('print.gap.label') }}</span>
+        <button
+          type="button"
+          class="zoom-btn"
+          [attr.aria-label]="t('print.gap.narrower')"
+          [title]="t('print.gap.narrower')"
+          [disabled]="gapBy() <= 0"
+          (click)="setGap(gapBy() - gapStep)"
+        >
+          <stemma-icon name="minus" [size]="15" />
+        </button>
+        <span class="gap-by" aria-live="polite">{{ gapBy() > 0 ? t('print.gap.by', { mm: gapMm() }) : t('print.gap.as') }}</span>
+        <button type="button" class="zoom-btn" [attr.aria-label]="t('print.gap.wider')" [title]="t('print.gap.wider')" (click)="setGap(gapBy() + gapStep)">
+          <stemma-icon name="plus" [size]="15" />
+        </button>
+        @if (gapBy() > 0) {
+          <button type="button" class="btn small" (click)="setGap(0)">{{ t('print.gap.reset') }}</button>
+        }
+        <button type="button" class="btn small" (click)="closeGap()">{{ t('print.gap.close') }}</button>
+      </div>
+    }
     @if (waiting()) {
       <div class="moved-bar" role="group" [attr.aria-label]="t('print.boxMoved')">
         <span>{{ t('print.boxMoved') }}</span>
@@ -146,6 +169,12 @@
     <span class="omitted">
       {{ t('print.bentLines', { count }) }}
       <button type="button" class="link" (click)="unbend.emit()">{{ t('print.unbendAll') }}</button>
+    </span>
+  }
+  @if (gapped(); as count) {
+    <span class="omitted">
+      {{ t('print.widenedGaps', { count }) }}
+      <button type="button" class="link" (click)="ungap.emit()">{{ t('print.ungapAll') }}</button>
     </span>
   }
   @if (moved(); as count) {

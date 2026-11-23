@@ -1,6 +1,7 @@
 import { ChangeDetectionStrategy, Component, ElementRef, computed, effect, inject, input, output, signal, untracked, viewChild } from '@angular/core';
 import { LegendBox, PrintSettings } from '../../../core/model/types';
 import { NamesStyle, PosterResult } from '../../../core/poster/poster';
+import { CardGap, GAP_WIDEST, gapAt, gapBetween, gapKey } from '../../../core/layout/gaps';
 import { roundedPath } from '../../../core/layout/lines';
 import { I18n } from '../../../i18n/i18n';
 import { Icon } from '../../../shared/icon/icon';
@@ -70,6 +71,16 @@ export class PrintPreview {
    * in the layout's units: a card dragged next to another snaps to it.
    */
   readonly gapFor = input<((a: string, b: string) => number) | null>(null);
+  /** Gaps between two cards made wider by hand (PrintSettings.gaps): by gapKey, how much wider, in the layout's units. */
+  readonly gaps = input<Readonly<Record<string, number>>>({});
+  /** A gap made so much wider than the layout has it (0: as the layout has it). */
+  readonly gapChange = output<{ key: string; by: number }>();
+  /** Every gap as the layout has it again. */
+  readonly ungap = output<void>();
+  /** How many millimetres on paper one unit of the layout is: a gap's width is shown in millimetres. */
+  readonly unitMm = input(0);
+  /** How many gaps have been made wider by hand. */
+  readonly gapped = input(0);
   /** People left out of this print by clicking, if any, with how to bring them back. */
   readonly omitted = input(0);
   /** The page is being drawn again: a note over the one shown before (see PrintModel.drawing). */
@@ -221,7 +232,150 @@ export class PrintPreview {
     moved: boolean;
   } | null = null;
 
+  /**
+   * The gap picked by a click in the empty room between two cards (see gapAt): its two people and, on the page
+   * as it is drawn, where it is (in the layout's units). Kept while the page is drawn again, found there anew.
+   */
+  protected readonly gap = signal<CardGap | null>(null);
+  /** How much wider than the layout has it the picked gap is now (while it is dragged: as far as it is dragged). */
+  protected readonly gapBy = computed(() => {
+    const g = this.gap();
+    const draft = this.gapDraft();
+    if (!g) return 0;
+    return draft ?? this.gaps()[gapKey(g.a, g.b)] ?? 0;
+  });
+  /** How wide the picked gap is being dragged to, before it is let go of. */
+  private readonly gapDraft = signal<number | null>(null);
+  /** The picked gap being dragged wider or narrower: where the pointer started, and how far one unit of the layout is on screen. */
+  private gapDrag: { id: number; from: DOMPoint; inverse: DOMMatrix; was: number; moved: boolean } | null = null;
+  /** How much wider the picked gap is, in millimetres on paper as the page is drawn now. */
+  protected readonly gapMm = computed(() => Math.max(1, Math.round(this.gapBy() * this.unitMm())));
+  /** How much wider the picked gap was when the page shown was drawn: the band is drawn out or in from there until the next page comes. */
+  private readonly gapDrawnBy = signal(0);
+  /** How much one press of + or − widens or narrows a gap, in the layout's units. */
+  protected readonly gapStep = 10;
+
+  /** The cards on the page as drawn, in the layout's units, and the group they are drawn in. */
+  private pageCards(): { group: SVGGraphicsElement; cards: { personId: string; ghost: boolean; x: number; y: number; w: number; h: number }[] } | null {
+    const first = this.sheet()?.nativeElement.querySelector<SVGGElement>('g[data-person]');
+    const group = first?.parentNode;
+    if (!(group instanceof SVGGraphicsElement)) return null;
+    const cards = [...group.querySelectorAll<SVGGElement>(':scope > g[data-person]')].map((g) => {
+      const m = /translate\(([-\d.]+)[ ,]+([-\d.]+)\)/.exec(g.getAttribute('transform') ?? '');
+      const rect = g.querySelector('rect');
+      return {
+        personId: g.dataset['person'] ?? '',
+        ghost: g.dataset['ghost'] === '1',
+        x: Number(m?.[1] ?? 0),
+        y: Number(m?.[2] ?? 0),
+        w: Number(rect?.getAttribute('width')) || 0,
+        h: Number(rect?.getAttribute('height')) || 0,
+      };
+    });
+    return { group, cards };
+  }
+
+  /** Picks the gap between the two cards either side of a point on the screen; false when there is none there. */
+  private pickGap(clientX: number, clientY: number): boolean {
+    const page = this.pageCards();
+    const inverse = page?.group.getScreenCTM()?.inverse();
+    if (!page || !inverse) return false;
+    const p = new DOMPoint(clientX, clientY).matrixTransform(inverse);
+    // No wider than a few cards: a click far out in the margin picks nothing.
+    const widest = (this.cardUnits()?.w ?? 188) * 3;
+    const found = gapAt(page.cards, p, widest + GAP_WIDEST);
+    if (!found) return false;
+    const by = this.gaps()[gapKey(found.a, found.b)] ?? 0;
+    if (found.to - found.from - by > widest) return false;
+    this.gap.set(found);
+    this.gapDrawnBy.set(by);
+    return true;
+  }
+
+  /** Lets go of the picked gap. */
+  protected closeGap(): void {
+    this.gap.set(null);
+    this.gapDraft.set(null);
+  }
+
+  /** The picked gap made `by` wider than the layout has it (never narrower). */
+  protected setGap(by: number): void {
+    const g = this.gap();
+    if (!g) return;
+    this.gapChange.emit({ key: gapKey(g.a, g.b), by: Math.max(0, Math.min(GAP_WIDEST, Math.round(by))) });
+  }
+
+  /** The picked gap found again on the page drawn now (its cards may have moved), or let go of when its two cards no longer stand next to each other. */
+  private findGap(): void {
+    const g = untracked(() => this.gap());
+    if (!g) return;
+    const page = this.pageCards();
+    const a = page?.cards.find((c) => c.personId === g.a && !c.ghost);
+    const b = page?.cards.find((c) => c.personId === g.b && !c.ghost);
+    const now = a && b ? gapBetween(a, b) : undefined;
+    this.gap.set(now && now.a === g.a && now.axis === g.axis ? now : null);
+    this.gapDrawnBy.set(this.gaps()[gapKey(g.a, g.b)] ?? 0);
+  }
+
+  /** The picked gap marked on the page: a band across it, as wide as it is dragged to. Drawn in the cards' group, so it zooms with them. */
+  private drawGap(): void {
+    const page = this.sheet()?.nativeElement;
+    page?.querySelector('g.gap-pick')?.remove();
+    const g = this.gap();
+    const group = page?.querySelector('g[data-person]')?.parentNode;
+    if (!g || !(group instanceof SVGGraphicsElement)) return;
+    const to = g.to + this.gapBy() - this.gapDrawnBy();
+    const ns = 'http://www.w3.org/2000/svg';
+    const mark = document.createElementNS(ns, 'g');
+    mark.setAttribute('class', 'gap-pick');
+    const band = document.createElementNS(ns, 'rect');
+    band.setAttribute('class', g.axis === 'y' ? 'gap-band down' : 'gap-band');
+    const span = Math.max(to - g.from, 2);
+    const [x, y, w, h] = g.axis === 'x' ? [g.from, g.lo, span, g.hi - g.lo] : [g.lo, g.from, g.hi - g.lo, span];
+    for (const [k, v] of Object.entries({ x, y, width: w, height: h, rx: 3 })) band.setAttribute(k, String(v));
+    mark.appendChild(band);
+    group.appendChild(mark);
+  }
+
+  /** The picked gap's band taken hold of: dragged, the gap goes wider or narrower. */
+  private startGapDrag(event: PointerEvent): boolean {
+    const g = this.gap();
+    const inverse = (this.sheet()?.nativeElement.querySelector('g[data-person]')?.parentNode as SVGGraphicsElement | null)?.getScreenCTM()?.inverse();
+    if (!g || !inverse) return false;
+    event.preventDefault();
+    (event.currentTarget as Element).setPointerCapture(event.pointerId);
+    this.gapDrag = { id: event.pointerId, from: new DOMPoint(event.clientX, event.clientY).matrixTransform(inverse), inverse, was: this.gapBy(), moved: false };
+    return true;
+  }
+
+  private dragGap(event: PointerEvent): void {
+    const d = this.gapDrag!;
+    const g = this.gap();
+    if (!g) return;
+    const p = new DOMPoint(event.clientX, event.clientY).matrixTransform(d.inverse);
+    const delta = g.axis === 'x' ? p.x - d.from.x : p.y - d.from.y;
+    if (!d.moved && Math.abs(delta) < 2) return;
+    d.moved = true;
+    // In steps of two units; with Alt held, exactly where it is put.
+    const by = Math.max(0, Math.min(GAP_WIDEST, d.was + delta));
+    this.gapDraft.set(event.altKey ? by : Math.round(by / 2) * 2);
+  }
+
+  private dropGap(): void {
+    const d = this.gapDrag!;
+    this.gapDrag = null;
+    const draft = this.gapDraft();
+    if (!d.moved || draft === null) {
+      this.gapDraft.set(null);
+      return;
+    }
+    this.draggedAt = performance.now();
+    this.setGap(draft);
+    // Shown as dragged until the page drawn with it comes.
+  }
+
   protected onPointerDown(event: PointerEvent): void {
+    if (event.button === 0 && (event.target as Element | null)?.closest('.gap-band') && this.startGapDrag(event)) return;
     const card = event.button === 0 ? (event.target as Element | null)?.closest<SVGGElement>('g[data-person]') : null;
     const parent = card?.parentNode;
     if (card && parent instanceof SVGGraphicsElement) {
@@ -536,7 +690,7 @@ export class PrintPreview {
   private markLines(event: PointerEvent): void {
     const page = this.sheet()?.nativeElement;
     if (!page) return;
-    const on = !!(event.target as Element | null)?.closest('[data-person], .page-box');
+    const on = !!(event.target as Element | null)?.closest('[data-person], .page-box, .gap-band');
     const hits = on ? [] : this.linesAt(event.clientX, event.clientY);
     const key = hits.map((h) => `${h.familyId} ${h.childId}`).join('|');
     if (key === this.marked) return;
@@ -548,6 +702,10 @@ export class PrintPreview {
   }
 
   protected onPointerMove(event: PointerEvent): void {
+    if (this.gapDrag?.id === event.pointerId) {
+      this.dragGap(event);
+      return;
+    }
     if (this.cardDrag?.id === event.pointerId) {
       this.dragCard(event);
       return;
@@ -574,6 +732,10 @@ export class PrintPreview {
   }
 
   protected onPointerUp(event: PointerEvent): void {
+    if (this.gapDrag?.id === event.pointerId) {
+      this.dropGap();
+      return;
+    }
     const c = this.cardDrag;
     if (c?.id === event.pointerId) {
       this.cardDrag = null;
@@ -797,9 +959,14 @@ export class PrintPreview {
       return;
     }
     // A line: what hangs on it goes.
-    if ((event.target as Element | null)?.closest('.page-box')) return;
+    if ((event.target as Element | null)?.closest('.page-box, .gap-band')) return;
     const hits = this.linesAt(event.clientX, event.clientY);
-    if (hits.length) this.lineCut.emit(hits.map((h) => ({ familyId: h.familyId, childId: h.childId })));
+    if (hits.length) {
+      this.lineCut.emit(hits.map((h) => ({ familyId: h.familyId, childId: h.childId })));
+      return;
+    }
+    // The empty room between two cards: that gap is picked, to be made wider. Anywhere else: let go of.
+    if (!this.pickGap(event.clientX, event.clientY)) this.closeGap();
   }
 
   /** The menu of the card the pointer is on. */
@@ -831,10 +998,19 @@ export class PrintPreview {
         host.classList.remove('on-line');
         this.marked = '';
       }
+      // The gap picked is found on the new page, drawn as wide as it now is.
+      untracked(() => {
+        this.findGap();
+        this.gapDraft.set(null);
+      });
       // A new page: what still waits is shown on it.
       untracked(() => this.showMoved());
     });
     effect(() => this.showMoved());
+    effect(() => {
+      this.svg();
+      this.drawGap();
+    });
     // Another paper or orientation is another page: back to the whole of it.
     effect(() => {
       this.ratio();

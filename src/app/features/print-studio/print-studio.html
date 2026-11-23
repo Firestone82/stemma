@@ -59,6 +59,11 @@
         (unbend)="model.unbend()"
         (lineBend)="model.bendLine($event.key, $event.points)"
         (cardMove)="model.moveCard($event.personId, $event.dx, $event.dy, $event.alone)"
+        [gaps]="model.settings().gaps ?? {}"
+        [gapped]="model.gappedCount()"
+        [unitMm]="model.poster() ? model.poster()!.cardMm.w / model.poster()!.cardUnits.w : 0"
+        (gapChange)="model.setGap($event.key, $event.by)"
+        (ungap)="model.ungap()"
       />
     }
 
