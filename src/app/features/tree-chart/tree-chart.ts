@@ -30,7 +30,7 @@ import { ContextMenu, ContextMenuItem } from './context-menu/context-menu';
 import { FamilyLines } from './family-lines/family-lines';
 import { FamilyBalloons, FamilySlot } from './family-balloons/family-balloons';
 import { FamilyBar } from './family-bar/family-bar';
-import { Screen, coupleCentre, fitView, floatOver, revealView } from './framing';
+import { Screen, coupleCentre, familyFrame, fitView, floatOver, revealView } from './framing';
 import { ChartGestures } from './gestures';
 import { chartKey, neighbour } from './keyboard';
 import { LayoutMotion } from './layout-motion';
@@ -284,6 +284,10 @@ export class TreeChart {
       const req = this.ui.centreRequest();
       if (req) untracked(() => this.centreOnCouple(req.personId));
     });
+    effect(() => {
+      const req = this.ui.familyRequest();
+      if (req) untracked(() => this.centreOnFamily(req.familyId));
+    });
     let firstFit = true;
     effect(() => {
       this.ui.fitRequest();
@@ -367,6 +371,21 @@ export class TreeChart {
     const { w, h } = this.visible();
     this.motion.userMoved = true;
     this.viewport.centreOn(centre.x, centre.y, clampZoom(Math.min(Math.max(this.viewport.view().k, 0.6), 1.1)), w, h, true);
+  }
+
+  /** Brings a family to the middle of the part of the chart that bars floating over its bottom leave free. */
+  private centreOnFamily(familyId: string): void {
+    const family = this.store.index().family(familyId);
+    if (!family) return;
+    const screen = this.visible();
+    const chart = this.host.nativeElement.getBoundingClientRect();
+    const bar = document.querySelector('stemma-review-bar .bar')?.getBoundingClientRect();
+    if (bar && bar.height) screen.h = Math.max(120, Math.min(screen.h, bar.top - chart.top - 8));
+    const ids = [...family.partners, ...family.children.map((c) => c.personId)];
+    const view = familyFrame(this.model.layout(), ids, this.viewport.view().k, screen);
+    if (!view) return;
+    this.motion.userMoved = true;
+    this.viewport.go(view, true);
   }
 
   private ensureVisible(personId: string): void {

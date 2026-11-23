@@ -2,7 +2,7 @@ import { Layouter, WIDE } from '../../core/layout/engine';
 import { LAYOUT } from '../../core/layout/types';
 import { sampleDocument } from '../../core/model/sample';
 import { TreeIndex } from '../../core/model/tree-index';
-import { coupleCentre, fitView, floatOver, revealView } from './framing';
+import { coupleCentre, familyFrame, fitView, floatOver, revealView } from './framing';
 import { chartKey, neighbour } from './keyboard';
 
 describe('pointing the chart', () => {
@@ -21,6 +21,20 @@ describe('pointing the chart', () => {
     expect((b.y + b.h) * v.k + v.y).toBeLessThanOrEqual(screen.h);
     expect(fitView({ x: 0, y: 0, w: 100, h: 50 }, screen, 0).k).toBe(1.1);
     expect(fitView({ x: 0, y: 0, w: 0, h: 0 }, screen, 0)).toEqual({ x: 500, y: 350, k: 1 });
+  });
+
+  it('brings a whole family to the middle of the screen', () => {
+    const family = doc.families.find((f) => f.partners.length === 2 && f.children.length > 1)!;
+    const ids = [...family.partners, ...family.children.map((c) => c.personId)];
+    const screen = { w: 1000, h: 700 };
+    const v = familyFrame(layout, ids, 1, screen)!;
+    const cards = layout.cards.filter((c) => ids.includes(c.personId) && !c.ghost);
+    const left = Math.min(...cards.map((c) => c.x * v.k + v.x));
+    const right = Math.max(...cards.map((c) => (c.x + c.w) * v.k + v.x));
+    expect(left).toBeGreaterThanOrEqual(0);
+    expect(right).toBeLessThanOrEqual(screen.w);
+    expect(Math.abs(left + right - screen.w)).toBeLessThan(1);
+    expect(familyFrame(layout, ['nobody'], 1, screen)).toBeNull();
   });
 
   it('centres a couple on the marker between them', () => {

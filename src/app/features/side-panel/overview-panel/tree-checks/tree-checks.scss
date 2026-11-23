@@ -2,6 +2,11 @@
   display: block;
 }
 
+/* The heading of the review with the button that starts it on its right. */
+.review-head {
+  align-items: center;
+}
+
 /* Nothing to fix: a single line with a green tick, closer to its neighbours than a section with a heading. */
 .clear {
   padding: 12px 0;

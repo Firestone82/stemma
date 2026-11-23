@@ -262,21 +262,11 @@ export const cs: Catalogue = {
   'overview.tip.find': 'Klávesou Ctrl+F (na Macu Cmd+F) hledáte v seznamu osob.',
   'overview.tip.save':
     'Vše se průběžně ukládá v tomto prohlížeči. Přes Soubor a Uložit jako XML si uchováte kopii, kterou otevřete v jakékoli verzi aplikace Stemma.',
-  'legend.familyTitle': 'Barvy rodů',
-  'legend.others': 'Ostatní',
   'display.relationships': 'Příbuzenské vztahy',
   'display.relationshipsHint':
     'Jak je kdo příbuzný s osobou ve středu (teta, sestřenice), nahoře na kartě. Postavit do středu někoho jiného změní jen je, rozložení stromu zůstane.',
   'display.familyBackgrounds': 'Pozadí rodů',
   'display.familyBackgroundsHint': 'Za kartami každého rodu jemná plocha v jeho barvě, aby rody bylo vidět na první pohled. Jen v editoru, nikdy v tisku.',
-  'legend.spellings': 'Jeden rod, jiný zápis',
-  'legend.spellingsHint': 'Písmena s diakritikou i bez ní jsou vždy jeden rod: Novák a Novak, Müller a Muller.',
-  'legend.uniteForeign': 'Německý a český zápis je jeden rod',
-  'legend.uniteForeignHint': 'Schmidt a Šmíd, Schwarz a Švarc, Müller a Mueller, Weiss a Vajs: příjmení psané německy a česky se počítá jako jeden rod.',
-  'legend.unite': 'Polský a český zápis je jeden rod',
-  'legend.uniteHint': 'Nowak a Novák, Szturc a Šturc, Heczko a Hečko: příjmení psané polsky a česky se počítá jako jeden rod s jednou barvou.',
-  'legend.familyHint':
-    'Každé příjmení má na jmenných štítech vlastní barvu. Ženy a muži jednoho rodu ji sdílejí (Novák a Nováková se počítají jako jedno jméno) a každý nese barvu příjmení, se kterým se narodil.',
 
   'person.thisPerson': 'tato osoba',
   'person.nee': 'roz. {name}',
