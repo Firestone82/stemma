@@ -864,12 +864,15 @@ export class PrintModel {
   /** The print as it is now differs from what is kept for the person in the middle. */
   readonly savedDiffers = computed(() => {
     const kept = this.saved();
-    return !!kept && !samePrint(kept, this.toKeep());
+    // Where the title and the families' names stand, and their sizes, wait to be applied: they count all the same.
+    return !!kept && !samePrint(kept, { ...this.toKeep(), ...this.staged() });
   });
 
   /** The print as it is now kept for the person in the middle and their partner, in place of anything kept for them before. */
   saveForMiddle(): void {
     if (!this.middleId()) return;
+    // What waits (the title and the families' names placed or sized) is applied first, and kept with the rest.
+    this.applyStaged();
     const keep = this.toKeep();
     this.store.update((doc) => savePrintFor(doc, keep), 'print save');
   }
@@ -884,6 +887,7 @@ export class PrintModel {
   useSaved(): void {
     const id = this.saved()?.centerId;
     if (!id) return;
+    this.staged.set({});
     this.store.update((doc) => useSavedPrint(doc, id), 'print use');
     this.ui.printEdited();
   }
@@ -891,6 +895,7 @@ export class PrintModel {
   /** Someone else in the middle of the page: with the settings kept for them, when there are any. */
   chooseMiddle(id: string): void {
     if (savedPrintOf(this.store.doc(), id)) {
+      this.staged.set({});
       this.store.update((doc) => useSavedPrint(doc, id), 'print');
       this.ui.printEdited();
     } else {
