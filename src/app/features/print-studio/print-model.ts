@@ -4,7 +4,7 @@ import { CutLine, cutOff } from '../../core/model/cut-off';
 import { GAP_WIDEST } from '../../core/layout/gaps';
 import { forgetPrintFor, savePrintFor, savedPrintOf, updatePrint, useSavedPrint } from '../../core/model/operations';
 import { isBrokenUp, relationshipStatus } from '../../core/model/relationship';
-import { Anchor, DEFAULT_PRINT, Reach, LEGEND_GAP_CM, LegendBox, anchorShares, effectivePrint, PrintSettings } from '../../core/model/types';
+import { Anchor, DEFAULT_PRINT, Reach, LEGEND_GAP_CM, LegendBox, anchorShares, effectivePrint, printDefaults, PrintSettings } from '../../core/model/types';
 import { CARD_WIDTH } from '../../core/card/card-design';
 import { PAPERS, PX_PER_MM } from '../../core/poster/paper';
 import { escapeText } from '../../core/xml/xml-writer';
@@ -892,15 +892,22 @@ export class PrintModel {
     this.ui.printEdited();
   }
 
-  /** Someone else in the middle of the page: with the settings kept for them, when there are any. */
+  /**
+   * Someone else in the middle of the page: with the settings kept for them (or the couple they are one of), or,
+   * when none are kept, with every setting as it is before anything was chosen.
+   */
   chooseMiddle(id: string): void {
-    if (savedPrintOf(this.store.doc(), id)) {
-      this.staged.set({});
-      this.store.update((doc) => useSavedPrint(doc, id), 'print');
-      this.ui.printEdited();
-    } else {
-      this.set({ centerId: id, partnerId: undefined });
-    }
+    this.staged.set({});
+    if (savedPrintOf(this.store.doc(), id)) this.store.update((doc) => useSavedPrint(doc, id), 'print');
+    else this.store.update((doc) => ({ ...doc, print: { ...printDefaults(doc.view), centerId: id } }), 'print');
+    this.ui.printEdited();
+  }
+
+  /** Ctrl+S in the studio: the print kept for the couple in the middle, with a word that it was. */
+  saveShortcut(): void {
+    if (!this.middleId()) return;
+    this.saveForMiddle();
+    this.toast.show(this.i18n.t('print.savedToast', { name: this.savedNames().join(' & ') }));
   }
 
   paperLabel(): string {

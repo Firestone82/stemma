@@ -5,6 +5,8 @@ import { DEFAULT_PRINT, PrintSettings } from '../../core/model/types';
 import { TreeStore } from '../../core/store/tree-store';
 import { parseTree } from '../../core/xml/parser';
 import { serializeTree } from '../../core/xml/serializer';
+import { Shortcuts } from '../../state/shortcuts';
+import { UiState } from '../../state/ui-state';
 import { PrintModel } from './print-model';
 
 const settings = (patch: Partial<PrintSettings>): PrintSettings => ({ ...DEFAULT_PRINT, ...patch });
@@ -55,9 +57,9 @@ describe('print settings saved for a person', () => {
     expect(model.saved()?.paper).toBe('A1');
     expect(model.savedDiffers()).toBe(false);
 
-    // Someone else, with nothing saved: only the middle changes.
+    // Someone else, with nothing saved: every setting as it was before anything was chosen.
     model.chooseMiddle('I5');
-    expect([store.doc().print?.centerId, store.doc().print?.paper]).toEqual(['I5', 'A1']);
+    expect([store.doc().print?.centerId, store.doc().print?.paper, store.doc().print?.showFrame]).toEqual(['I5', DEFAULT_PRINT.paper, DEFAULT_PRINT.showFrame]);
     model.set({ paper: 'A4', showFrame: true });
 
     // Back to the first: their settings again.
@@ -126,5 +128,23 @@ describe('print settings saved with the title and the families names placed by h
     const print = store.doc().print!;
     expect([print.title, print.legendBox, print.legendSize, print.titleSize]).toEqual(['For Anna', box, 0.8, 2.4]);
     expect(model.waiting()).toBe(false);
+  });
+});
+
+describe('Ctrl+S in the print studio', () => {
+  it('saves the print for the couple in the middle, not the file', () => {
+    const store = TestBed.inject(TreeStore);
+    const model = TestBed.inject(PrintModel);
+    const ui = TestBed.inject(UiState);
+    store.load(sampleDocument());
+    model.chooseMiddle('I3');
+    model.set({ paper: 'A1' });
+    model.stage({ titleSize: 2 });
+    ui.printOpen.set(true);
+    const event = new KeyboardEvent('keydown', { key: 's', ctrlKey: true, cancelable: true });
+    TestBed.inject(Shortcuts).handle(event);
+    expect(event.defaultPrevented).toBe(true);
+    expect([model.saved()?.paper, model.saved()?.titleSize]).toEqual(['A1', 2]);
+    ui.printOpen.set(false);
   });
 });

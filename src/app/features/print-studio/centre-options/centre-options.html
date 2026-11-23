@@ -32,7 +32,7 @@
       {{ t(model.savedDiffers() ? 'print.savedChanged' : 'print.savedFor', { name: savedName() }) }}
     </span>
     @if (model.savedDiffers()) {
-      <button type="button" class="btn small" (click)="model.saveForMiddle()">{{ t('print.saveUpdate') }}</button>
+      <button type="button" class="btn small" [title]="t('print.saveShortcut')" (click)="model.saveForMiddle()">{{ t('print.saveUpdate') }}</button>
       <button type="button" class="btn small" (click)="model.useSaved()">
         <stemma-icon name="reset" [size]="15" />
         {{ t('print.saveUse') }}
@@ -44,7 +44,7 @@
     </button>
   } @else {
     <span id="print-saved-note" class="note hint">{{ t('print.saveHint') }}</span>
-    <button type="button" class="btn small" [disabled]="!model.centerId()" (click)="model.saveForMiddle()">
+    <button type="button" class="btn small" [disabled]="!model.centerId()" [title]="t('print.saveShortcut')" (click)="model.saveForMiddle()">
       <stemma-icon name="check" [size]="15" />
       {{ t('print.saveFor', { name: savedName() }) }}
     </button>
