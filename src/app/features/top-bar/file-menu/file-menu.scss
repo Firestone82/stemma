@@ -8,16 +8,3 @@
   max-height: calc(100dvh - 72px);
   overflow-y: auto;
 }
-
-.menu-label {
-  padding: 4px 10px 2px;
-  color: var(--ink-3);
-  font-size: var(--text-xs);
-}
-
-.recent-name {
-  overflow: hidden;
-  max-width: 30ch;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}

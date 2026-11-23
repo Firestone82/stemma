@@ -1,6 +1,5 @@
 import { TestBed } from '@angular/core/testing';
 import { FileIo, PickedFile, ReadOutcome, SavedAs, SaveOutcome } from '../core/services/file-io';
-import { DriveFile, DriveOutcome, GoogleDrive } from '../core/services/google-drive';
 import { RecentFile, RecentFiles, RecentStorage } from '../core/services/recent-files';
 import { TreeStore } from '../core/store/tree-store';
 import { emptyDocument } from '../core/model/types';
@@ -8,9 +7,8 @@ import { serializeTree } from '../core/xml/serializer';
 import { DocumentActions } from './document-actions';
 import { UiState } from './ui-state';
 
-/** Stand-ins for the browser's pickers and for Google Drive, recording what was written where. */
+/** A stand-in for the browser's pickers, recording what was written where. */
 class FakeFiles {
-  hosted = false;
   picked: PickedFile | null = null;
   written: { handle: FileSystemFileHandle; data: Blob | string }[] = [];
   savedAs: string[] = [];
@@ -39,32 +37,6 @@ class FakeFiles {
   }
 }
 
-class FakeDrive {
-  configured = true;
-  updated: DriveFile[] = [];
-  created: string[] = [];
-  opened: { file: DriveFile; text: string } | null = null;
-  inDrive = new Map<string, string>();
-  pickerShown = 0;
-
-  async read(file: DriveFile): Promise<DriveOutcome<{ file: DriveFile; text: string }>> {
-    const text = this.inDrive.get(file.id);
-    return text === undefined ? { status: 'missing' } : { status: 'done', value: { file, text } };
-  }
-  async open(): Promise<DriveOutcome<{ file: DriveFile; text: string }>> {
-    this.pickerShown++;
-    return this.opened ? { status: 'done', value: this.opened } : { status: 'declined' };
-  }
-  async update(file: DriveFile): Promise<DriveOutcome<DriveFile>> {
-    this.updated.push(file);
-    return { status: 'done', value: file };
-  }
-  async create(name: string): Promise<DriveOutcome<DriveFile>> {
-    this.created.push(name);
-    return { status: 'done', value: { id: 'new-id', name } };
-  }
-}
-
 /** Keeps the recent files in memory instead of IndexedDB. */
 function memoryStorage(initial: RecentFile[] = []): RecentStorage & { list: RecentFile[] } {
   return {
@@ -86,18 +58,13 @@ function fakeHandle(name: string): FileSystemFileHandle {
 describe('DocumentActions saving', () => {
   let actions: DocumentActions;
   let files: FakeFiles;
-  let drive: FakeDrive;
   const xml = serializeTree(emptyDocument('Novák'));
   const handle = { name: 'novak.xml' } as FileSystemFileHandle;
 
   beforeEach(() => {
     files = new FakeFiles();
-    drive = new FakeDrive();
     TestBed.configureTestingModule({
-      providers: [
-        { provide: FileIo, useValue: files },
-        { provide: GoogleDrive, useValue: drive },
-      ],
+      providers: [{ provide: FileIo, useValue: files }],
     });
     void TestBed.inject(RecentFiles).useStorage(memoryStorage());
     actions = TestBed.inject(DocumentActions);
@@ -142,23 +109,6 @@ describe('DocumentActions saving', () => {
     expect(files.written).toEqual([]);
   });
 
-  it('writes back to the Google Drive file the tree was opened from', async () => {
-    drive.opened = { file: { id: 'abc', name: 'novak.xml' }, text: xml };
-    await actions.openFromDrive();
-    expect(actions.source()).toEqual({ kind: 'drive', file: { id: 'abc', name: 'novak.xml' } });
-
-    await actions.saveXml();
-    expect(drive.updated).toEqual([{ id: 'abc', name: 'novak.xml' }]);
-    expect(files.savedAs).toEqual([]);
-  });
-
-  it('saves to the copy made in Google Drive from then on', async () => {
-    await actions.saveToDrive();
-    expect(drive.created).toHaveLength(1);
-    await actions.saveXml();
-    expect(drive.updated).toEqual([{ id: 'new-id', name: drive.created[0] }]);
-  });
-
   it('forgets the file for a new tree or the example family', async () => {
     files.picked = { file: new File([xml], 'novak.xml'), handle };
     await actions.openFile();
@@ -180,7 +130,6 @@ describe('DocumentActions saving', () => {
 describe('DocumentActions recent files and reopening', () => {
   let actions: DocumentActions;
   let files: FakeFiles;
-  let drive: FakeDrive;
   let recent: RecentFiles;
   let store: TreeStore;
   let ui: UiState;
@@ -191,12 +140,8 @@ describe('DocumentActions recent files and reopening', () => {
   beforeEach(async () => {
     localStorage.clear();
     files = new FakeFiles();
-    drive = new FakeDrive();
     TestBed.configureTestingModule({
-      providers: [
-        { provide: FileIo, useValue: files },
-        { provide: GoogleDrive, useValue: drive },
-      ],
+      providers: [{ provide: FileIo, useValue: files }],
     });
     recent = TestBed.inject(RecentFiles);
     await recent.useStorage(memoryStorage());
@@ -211,12 +156,12 @@ describe('DocumentActions recent files and reopening', () => {
   it('remembers an opened file with its title, newest first', async () => {
     files.picked = { file: new File([novak], 'novak.xml'), handle };
     await actions.openFile();
-    drive.opened = { file: { id: 'abc', name: 'drive.xml' }, text: serializeTree(emptyDocument('Dvořák')) };
-    await actions.openFromDrive();
+    files.picked = { file: new File([serializeTree(emptyDocument('Dvořák'))], 'dvorak.xml'), handle: fakeHandle('dvorak.xml') };
+    await actions.openFile();
     await recent.settled();
 
     expect(recent.list().map((e) => [e.kind, e.name, e.title])).toEqual([
-      ['drive', 'drive.xml', 'Dvořák'],
+      ['local', 'dvorak.xml', 'Dvořák'],
       ['local', 'novak.xml', 'Novák'],
     ]);
   });
@@ -263,38 +208,6 @@ describe('DocumentActions recent files and reopening', () => {
 
     await actions.openRecent(recent.list()[0]);
     expect(files.picks).toBe(2);
-  });
-
-  it('reads a recent Drive file afresh', async () => {
-    drive.opened = { file: { id: 'abc', name: 'drive.xml' }, text: novak };
-    await actions.openFromDrive();
-    await recent.settled();
-    actions.startEmpty();
-
-    drive.inDrive.set('abc', newer);
-    await actions.openRecent(recent.list()[0]);
-    expect(store.doc().meta.title).toBe('Novák, saved since');
-    expect(actions.source()).toEqual({ kind: 'drive', file: { id: 'abc', name: 'drive.xml' } });
-  });
-
-  it('explains how to set up Google Drive instead of opening it when no project is set up', async () => {
-    drive.configured = false;
-    await actions.openFromDrive();
-    expect(ui.dialog()).toEqual({ kind: 'drive-setup' });
-    expect(drive.pickerShown).toBe(0);
-
-    ui.dialog.set(null);
-    await actions.saveToDrive();
-    expect(ui.dialog()).toEqual({ kind: 'drive-setup' });
-    expect(drive.created).toEqual([]);
-  });
-
-  it('offers the Drive items outside a viewer even before Drive is set up', () => {
-    drive.configured = false;
-    expect(actions.offersDrive()).toBe(true);
-    expect(actions.driveReady()).toBe(false);
-    files.hosted = true;
-    expect(actions.offersDrive()).toBe(false);
   });
 
   it('keeps no browser copy of a tree from a file, so the next visit starts on the start page', async () => {

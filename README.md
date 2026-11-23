@@ -79,19 +79,7 @@ Other scripts: `npm test` (Vitest), `npm run lint` (ESLint), `npm run format` (P
 
 In Chrome and Edge, a tree opened from a file is saved back to that same file (Ctrl S), and Save as (Ctrl Shift S) picks a new one. Browsers without the File System Access API (Firefox, Safari) download a new copy each time.
 
-A tree opened from or saved to a file (on the computer or in Google Drive) is not reopened from the browser on the next visit: the start page lists the recent files instead, and opening one reads it again from the file, so you always go on from what was last saved. In Chrome and Edge the browser asks once more for permission to the file; elsewhere the file is picked again. Leaving the page, or opening another tree, with changes that are not saved yet asks first. A new tree that was never saved to a file is still kept in the browser between visits.
-
-## Google Drive
-
-Trees can also be opened from and saved to Google Drive (Open from Google Drive on the start page, or in the File menu). The browser talks to Google directly, and the app only gets the `drive.file` permission: it sees the files picked in the Google Picker and the ones it saved, nothing else in the Drive. Until a Google Cloud project is set up, the Drive items show the steps below instead of Google's sign-in. Set one up in [src/app/core/services/google-config.ts](src/app/core/services/google-config.ts):
-
-1. In the [Google Cloud console](https://console.cloud.google.com/), create a project and enable the **Google Drive API** and the **Google Picker API**.
-2. Under **Google Auth Platform**, set up the consent screen (External), add the scope `https://www.googleapis.com/auth/drive.file`, and add yourself as a test user (or publish the app).
-3. Create an **OAuth client ID** of type _Web application_, with `http://localhost:4200` and `https://firestone82.github.io` as authorised JavaScript origins. Copy it to `clientId`.
-4. Create an **API key** restricted to the Google Picker API and to the same websites. Copy it to `apiKey`.
-5. Copy the **project number** (on the project's dashboard) to `appId`.
-
-None of these is a secret: they are part of the page, and Google accepts them only from the listed origins.
+A tree opened from or saved to a file is not reopened from the browser on the next visit: the start page lists the recent files instead, and opening one reads it again from the file, so you always go on from what was last saved. In Chrome and Edge the browser asks once more for permission to the file; elsewhere the file is picked again. Leaving the page, or opening another tree, with changes that are not saved yet asks first. A new tree that was never saved to a file is still kept in the browser between visits.
 
 ## License
 
