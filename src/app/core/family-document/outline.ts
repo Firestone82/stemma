@@ -103,9 +103,14 @@ export function familyOutline(input: OutlineInput): OutlineFamily[] {
   const keyFor = (id: string) => keyOf.get(id) ?? '';
 
   // A wife known only by her husband's name was not born into his family: she is written beside him, not
-  // listed among those born into it.
+  // listed among those born into it. So is one whose surname at birth is entered as just his (Anna née
+  // Kowalová, wife of Kowala, no parents of hers in the tree): it is his name written in the wrong field.
+  const onlyHusbandsName = (p: Person) => {
+    const born = p.name.birthSurname?.trim();
+    return born ? birthSurnameUnknown(index, { ...p, name: { ...p.name, surname: born, birthSurname: undefined } }) : birthSurnameUnknown(index, p);
+  };
   const marriedIn = (p: Person) =>
-    birthSurnameUnknown(index, p) && index.partnerFamilies(p.id).some((f) => f.kind === 'marriage' && f.partners.some((id) => id !== p.id && shown(id)));
+    onlyHusbandsName(p) && index.partnerFamilies(p.id).some((f) => f.kind === 'marriage' && f.partners.some((id) => id !== p.id && shown(id)));
 
   const members = new Map<string, Person[]>();
   for (const p of doc.people) {

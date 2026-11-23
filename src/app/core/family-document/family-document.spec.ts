@@ -243,4 +243,32 @@ describe('family document, a wife known only by her husband’s name', () => {
     expect(rows[0].partners.map((p) => p.personId)).toEqual(['marie']);
     expect(families[0].people).toBe(2);
   });
+
+  it('also when her surname at birth is entered as just his, but not when it is her own', () => {
+    const b = new DocBuilder();
+    b.person('pavel', 'Pavel', 'Kowala', 'male', '1773');
+    b.person('anna', 'Anna', 'Kowalová', 'female');
+    b.person('jiri', 'Jiří', 'Kowala', 'male', '1819');
+    b.person('marie', 'Marie', 'Kowalová', 'female', '1822');
+    b.family('f1', ['pavel', 'anna'], ['jiri']);
+    b.family('f2', ['jiri', 'marie']);
+    const doc = b.build('Kowala');
+    doc.people.find((p) => p.id === 'anna')!.name.birthSurname = 'Kowalová';
+    // Marie was born a Tasková: a Taska, with a table of her own.
+    doc.people.find((p) => p.id === 'marie')!.name.birthSurname = 'Tasková';
+    const index = new TreeIndex(doc);
+    const keys: Record<string, string> = { marie: 'taska' };
+    const families = familyOutline({
+      doc,
+      index,
+      keyOf: new Map(doc.people.map((p) => [p.id, keys[p.id] ?? 'kowala'])),
+      labelOf: (k) => (k === 'taska' ? 'Taska' : 'Kowala'),
+      birthSurnames: new Map(doc.people.map((p) => [p.id, p.name.birthSurname ?? p.name.surname])),
+      language: english,
+      compare: (a, c) => a.localeCompare(c, 'cs'),
+    });
+    const ids = (key: string) => families.find((f) => f.key === key)!.rows.map((r) => r.kind === 'person' && r.personId);
+    expect(ids('kowala')).toEqual(['pavel', 'jiri']);
+    expect(ids('taska')).toEqual(['marie']);
+  });
 });
