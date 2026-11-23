@@ -2,7 +2,7 @@
 <div class="couple">
   <div class="field">
     <label for="print-center">{{ t('print.person') }}</label>
-    <stemma-search-select inputId="print-center" [options]="people()" [value]="model.centerId()" (valueChange)="setCenter($event)" />
+    <stemma-search-select inputId="print-center" [options]="people()" [value]="model.middleId()" (valueChange)="setCenter($event)" />
   </div>
   <button
     type="button"
@@ -44,7 +44,7 @@
     </button>
   } @else {
     <span id="print-saved-note" class="note hint">{{ t('print.saveHint') }}</span>
-    <button type="button" class="btn small" [disabled]="!model.centerId()" [title]="t('print.saveShortcut')" (click)="model.saveForMiddle()">
+    <button type="button" class="btn small" [disabled]="!model.middleId()" [title]="t('print.saveShortcut')" (click)="model.saveForMiddle()">
       <stemma-icon name="check" [size]="15" />
       {{ t('print.saveFor', { name: savedName() }) }}
     </button>

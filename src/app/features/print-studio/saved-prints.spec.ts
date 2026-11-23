@@ -5,6 +5,7 @@ import { DEFAULT_PRINT, PrintSettings } from '../../core/model/types';
 import { TreeStore } from '../../core/store/tree-store';
 import { parseTree } from '../../core/xml/parser';
 import { serializeTree } from '../../core/xml/serializer';
+import { DocumentActions } from '../../state/document-actions';
 import { Shortcuts } from '../../state/shortcuts';
 import { UiState } from '../../state/ui-state';
 import { PrintModel } from './print-model';
@@ -53,7 +54,7 @@ describe('print settings saved for a person', () => {
     model.chooseMiddle('I3');
     expect(model.saved()).toBeUndefined();
     model.set({ paper: 'A1', showFrame: false });
-    model.saveForMiddle();
+    model.saveForMiddle(false);
     expect(model.saved()?.paper).toBe('A1');
     expect(model.savedDiffers()).toBe(false);
 
@@ -82,7 +83,7 @@ describe('print settings saved for a couple in the studio', () => {
     store.load(sampleDocument());
     model.chooseMiddle('I22');
     model.set({ partnerId: 'I26', paper: 'A1' });
-    model.saveForMiddle();
+    model.saveForMiddle(false);
     expect(model.savedNames()).toHaveLength(2);
     model.chooseMiddle('I3');
     model.set({ paper: 'A4' });
@@ -104,7 +105,7 @@ describe('print settings saved with the title and the families names placed by h
     const box = { x: 0.6, y: 0.7, w: 0.3, h: 0.2 };
     model.stage({ legendBox: box, legendAlign: 'top', legendSize: 0.8, titleSize: 2.4, titleAnchor: 'top-left', legendGap: 1 });
     expect(model.savedDiffers()).toBe(false);
-    model.saveForMiddle();
+    model.saveForMiddle(false);
     const kept = model.saved()!;
     expect([kept.title, kept.subtitle, kept.legendBox, kept.legendAlign, kept.legendSize, kept.titleSize, kept.titleAnchor, kept.legendGap]).toEqual([
       'For Anna',
@@ -141,10 +142,30 @@ describe('Ctrl+S in the print studio', () => {
     model.set({ paper: 'A1' });
     model.stage({ titleSize: 2 });
     ui.printOpen.set(true);
+    const saveFile = vi.spyOn(TestBed.inject(DocumentActions), 'saveXml').mockResolvedValue();
     const event = new KeyboardEvent('keydown', { key: 's', ctrlKey: true, cancelable: true });
     TestBed.inject(Shortcuts).handle(event);
     expect(event.defaultPrevented).toBe(true);
     expect([model.saved()?.paper, model.saved()?.titleSize]).toEqual(['A1', 2]);
+    // And the file saved with them in it.
+    expect(saveFile).toHaveBeenCalledTimes(1);
     ui.printOpen.set(false);
+  });
+});
+
+describe('print settings kept without naming the partner', () => {
+  it('are found from the partner too (kept before couples shared them)', () => {
+    // I22 and I26 are a couple in the sample; the page chose the partner, so none was named.
+    const doc = savePrintFor(sampleDocument(), settings({ centerId: 'I22', paper: 'A1' }));
+    expect(savedPrintOf(doc, 'I26')?.paper).toBe('A1');
+    expect(savedPrintOf(doc, 'I3')).toBeUndefined();
+  });
+
+  it('the person chosen shows at once, before the page is drawn for them', () => {
+    const store = TestBed.inject(TreeStore);
+    const model = TestBed.inject(PrintModel);
+    store.load(sampleDocument());
+    model.chooseMiddle('I5');
+    expect(model.middleId()).toBe('I5');
   });
 });

@@ -634,7 +634,7 @@ export const cs: Catalogue = {
   'print.nobody': 'Nikdo',
   'print.swap': 'Prohodit je',
   'print.saveFor': 'Uložit pro: {name}',
-  'print.saveHint': 'Ctrl+S uloží nastavení pro pár; vyberete-li doprostřed kteréhokoli z partnerů, vrátí se.',
+  'print.saveHint': 'Ctrl+S uloží nastavení pro pár i do souboru; vyberete-li doprostřed kteréhokoli z partnerů, vrátí se.',
   'print.savedFor': 'Uloženo pro: {name}.',
   'print.savedChanged': 'Změněno oproti uloženému pro: {name}.',
   'print.saveUpdate': 'Uložit změny',

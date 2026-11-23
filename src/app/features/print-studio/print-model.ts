@@ -1,4 +1,4 @@
-import { Injectable, computed, effect, inject, signal, untracked } from '@angular/core';
+import { Injectable, Injector, computed, effect, inject, signal, untracked } from '@angular/core';
 import { bloodRelatives } from '../../core/kinship/kinship';
 import { CutLine, cutOff } from '../../core/model/cut-off';
 import { GAP_WIDEST } from '../../core/layout/gaps';
@@ -23,6 +23,7 @@ import { TreeStore } from '../../core/store/tree-store';
 import { I18n } from '../../i18n/i18n';
 import { MessageKey } from '../../i18n/locales';
 import { STATUS_LABEL } from '../../i18n/labels';
+import { DocumentActions } from '../../state/document-actions';
 import { UiState } from '../../state/ui-state';
 
 /** The print settings that lay the tree out anew: changing one puts back the cards moved and lines led by hand. */
@@ -137,6 +138,7 @@ export class PrintModel {
   private readonly files = inject(FileIo);
   private readonly toast = inject(ToastService);
   private readonly i18n = inject(I18n);
+  private readonly injector = inject(Injector);
 
   /** The browser print dialog is not available inside the artifact viewer. */
   readonly canPrint = !this.files.hosted;
@@ -610,7 +612,8 @@ export class PrintModel {
 
   readonly partners = computed(() => {
     const index = this.store.index();
-    const id = this.centerId();
+    // As chosen, not as last drawn: the page may still be drawing for someone else.
+    const id = this.middleId();
     return index
       .partnerFamilies(id)
       .filter((f) => f.partners.length === 2)
@@ -621,7 +624,13 @@ export class PrintModel {
       });
   });
 
-  readonly partnerChoice = computed(() => (this.settings().partnerId === null ? '' : (this.poster()?.partnerId ?? '')));
+  readonly partnerChoice = computed(() => {
+    const s = this.settings();
+    if (s.partnerId !== undefined) return s.partnerId ?? '';
+    // Chosen by the page: as it was drawn, once it is drawn for the person chosen.
+    const p = this.poster();
+    return p?.centerId === this.middleId() ? (p.partnerId ?? '') : '';
+  });
 
   /** How many generations there are above and below the couple in the whole tree. */
   readonly depth = computed(() => {
@@ -838,12 +847,14 @@ export class PrintModel {
   }
 
   /** The person the print is drawn around as the settings name them (the home person when they name nobody). */
-  private readonly middleId = computed(() => this.settings().centerId ?? this.store.doc().meta.homePersonId ?? '');
+  readonly middleId = computed(() => this.settings().centerId ?? this.store.doc().meta.homePersonId ?? '');
 
   /** The settings as they would be kept: naming the person in the middle and the partner the page shows beside them. */
   private readonly toKeep = computed<PrintSettings>(() => {
     const s = this.settings();
-    const partnerId = s.partnerId === null ? null : (s.partnerId ?? this.poster()?.partnerId ?? undefined);
+    const p = this.poster();
+    const drawn = p?.centerId === this.middleId() ? (p.partnerId ?? undefined) : undefined;
+    const partnerId = s.partnerId === null ? null : (s.partnerId ?? drawn);
     const keep: PrintSettings = { ...s, centerId: this.middleId(), partnerId };
     if (partnerId === undefined) delete keep.partnerId;
     return keep;
@@ -869,12 +880,14 @@ export class PrintModel {
   });
 
   /** The print as it is now kept for the person in the middle and their partner, in place of anything kept for them before. */
-  saveForMiddle(): void {
+  saveForMiddle(file = true): void {
     if (!this.middleId()) return;
     // What waits (the title and the families' names placed or sized) is applied first, and kept with the rest.
     this.applyStaged();
     const keep = this.toKeep();
     this.store.update((doc) => savePrintFor(doc, keep), 'print save');
+    // Kept in the tree's file at once, like any other save (asking where, for a tree that has no file yet).
+    if (file) void this.injector.get(DocumentActions).saveXml();
   }
 
   /** What is kept for the person in the middle, forgotten. */
