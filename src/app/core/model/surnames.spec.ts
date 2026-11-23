@@ -1,7 +1,7 @@
 import { czechSurnameFor } from '../lang/cs-surnames';
 import { DocBuilder } from '../testing/fixtures';
 import { surnameKey } from './names';
-import { SAME_SURNAME, birthFather, birthSurname, birthSurnameUnknown, maleSurnames, surnameFromFather } from './surnames';
+import { SAME_SURNAME, birthFather, birthSurname, birthSurnameUnknown, lineSurname, maleSurnames, surnameFromFather } from './surnames';
 import { TreeIndex } from './tree-index';
 
 describe('surnames at birth', () => {
@@ -96,5 +96,34 @@ describe('surnames at birth', () => {
     b.family('F1', ['F', 'M'], ['D']);
     const index = new TreeIndex(b.build());
     expect(birthSurname(index, index.person('D')!, czechSurnameFor)).toBe('Nováková');
+  });
+
+  it('passes a surname nobody typed in down the male line', () => {
+    const b = new DocBuilder();
+    b.person('G', 'Josef', 'Mikula', 'male');
+    b.person('F', 'Pavel', '', 'male');
+    b.person('W', 'Anna', 'Mikulová', 'female');
+    b.person('S', 'Jan', '', 'male');
+    b.person('D', 'Eva', '', 'female');
+    b.family('F1', ['G'], ['F']);
+    b.family('F2', ['F', 'W'], ['S', 'D']);
+    const index = new TreeIndex(b.build());
+    // Pavel has his surname from his father, and passes it on to his children born in his marriage.
+    expect(lineSurname(index, index.person('F')!)).toBe('Mikula');
+    expect(birthSurname(index, index.person('S')!, czechSurnameFor)).toBe('Mikula');
+    expect(birthSurname(index, index.person('D')!, czechSurnameFor)).toBe('Mikulová');
+    expect(surnameFromFather(index, index.person('D')!, SAME_SURNAME)).toBe('Mikula');
+    // Anna bears that surname too, and nobody knows hers at birth.
+    expect(birthSurnameUnknown(index, index.person('W')!)).toBe(true);
+  });
+
+  it('does not loop when the line of fathers does', () => {
+    const b = new DocBuilder();
+    b.person('A', 'Adam', '', 'male');
+    b.person('B', 'Bedřich', '', 'male');
+    b.family('F1', ['A'], ['B']);
+    b.family('F2', ['B'], ['A']);
+    const index = new TreeIndex(b.build());
+    expect(lineSurname(index, index.person('A')!)).toBe('');
   });
 });
