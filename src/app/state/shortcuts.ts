@@ -1,5 +1,6 @@
-import { Injectable, inject } from '@angular/core';
+import { Injectable, Injector, inject } from '@angular/core';
 import { TreeStore } from '../core/store/tree-store';
+import { PrintModel } from '../features/print-studio/print-model';
 import { DocumentActions } from './document-actions';
 import { PersonActions } from './person-actions';
 import { UiState } from './ui-state';
@@ -11,6 +12,7 @@ export class Shortcuts {
   private readonly ui = inject(UiState);
   private readonly documents = inject(DocumentActions);
   private readonly people = inject(PersonActions);
+  private readonly injector = inject(Injector);
 
   handle(e: KeyboardEvent): void {
     const mod = e.ctrlKey || e.metaKey;
@@ -26,7 +28,9 @@ export class Shortcuts {
       this.redo();
     } else if (mod && key === 's') {
       e.preventDefault();
-      if (e.shiftKey) void this.documents.saveXmlAs();
+      // In the print studio, Ctrl+S keeps the print for the couple in the middle (the file is saved as usual with Shift).
+      if (this.ui.printOpen() && !e.shiftKey && !this.ui.dialog()) this.injector.get(PrintModel).saveShortcut();
+      else if (e.shiftKey) void this.documents.saveXmlAs();
       else void this.documents.saveXml();
     } else if (mod && key === 'n' && !e.shiftKey) {
       // A new tree, after a warning when the tree has anyone in it (DocumentActions.newTree). Not from the print

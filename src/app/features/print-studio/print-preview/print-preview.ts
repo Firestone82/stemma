@@ -1,5 +1,5 @@
 import { ChangeDetectionStrategy, Component, ElementRef, computed, effect, inject, input, output, signal, untracked, viewChild } from '@angular/core';
-import { LegendBox, PrintSettings } from '../../../core/model/types';
+import { Anchor, LegendBox, PrintSettings } from '../../../core/model/types';
 import { NamesStyle, PosterResult } from '../../../core/poster/poster';
 import { CardGap, GAP_WIDEST, gapAt, gapBetween, gapKey } from '../../../core/layout/gaps';
 import { roundedPath } from '../../../core/layout/lines';
@@ -859,8 +859,11 @@ export class PrintPreview {
   /** A box put somewhere, or (`sized`) made bigger or smaller: it waits like that, with the other changes, until applied. */
   private putBox(which: Which, box: LegendBox, sized = false): void {
     this.boxDraft.set(null);
-    if (which === 'legend') this.boxesPlace.emit({ legendBox: box, legendSizedOnly: sized });
-    else this.boxesPlace.emit({ titleAt: { x: box.x + box.w / 2, y: box.y } });
+    // Let go of at one of the places the settings offer (it snapped there): held there, so the settings show it.
+    const inner = this.inner();
+    const anchor = !sized && inner ? anchorOf(box, inner) : undefined;
+    if (which === 'legend') this.boxesPlace.emit({ legendBox: box, legendSizedOnly: sized, ...(anchor ? { legendAnchor: anchor } : {}) });
+    else this.boxesPlace.emit({ titleAt: { x: box.x + box.w / 2, y: box.y }, ...(anchor?.startsWith('top') ? { titleAnchor: anchor } : {}) });
   }
 
   /**
@@ -1031,6 +1034,10 @@ export interface BoxesPlaced {
   /** The names' box was made bigger or smaller where it is, and not dragged anywhere. */
   legendSizedOnly?: boolean;
   titleAt?: { x: number; y: number } | null;
+  /** The title was let go of at one of its places along the top (snapped there): held there, as if picked. */
+  titleAnchor?: Anchor;
+  /** The names' box was let go of at one of the page's places (snapped there): its size held there, as if picked. */
+  legendAnchor?: Anchor;
 }
 
 /**
@@ -1041,9 +1048,38 @@ export interface BoxesPlaced {
 export function placedSettings(placed: BoxesPlaced): Partial<PrintSettings> {
   return {
     ...('legendBox' in placed ? { legendBox: placed.legendBox ?? undefined } : {}),
-    ...('legendBox' in placed && !(placed.legendBox && placed.legendSizedOnly) ? { legendAnchor: undefined } : {}),
-    ...('titleAt' in placed ? { titleAt: placed.titleAt ?? undefined, titleAnchor: undefined } : {}),
+    ...('legendBox' in placed && !(placed.legendBox && placed.legendSizedOnly) ? { legendAnchor: placed.legendAnchor } : {}),
+    ...(placed.titleAnchor ? { titleAt: undefined, titleAnchor: placed.titleAnchor === 'top' ? undefined : placed.titleAnchor } : {}),
+    ...('titleAt' in placed && !placed.titleAnchor ? { titleAt: placed.titleAt ?? undefined, titleAnchor: undefined } : {}),
   };
+}
+
+/** How near a box has to stand to one of the page's places to be taken as held there: about what snapping leaves. */
+const AT_ANCHOR = 0.002;
+
+/**
+ * The place of the page (a corner, the middle of a side, the middle) a box stands at inside the margin
+ * (`inner`), lined up across and down as alignBox snaps it: none when it stands anywhere else.
+ */
+export function anchorOf(box: LegendBox, inner: LegendBox): Anchor | undefined {
+  const near = (a: number, b: number) => Math.abs(a - b) < AT_ANCHOR;
+  const across = near(box.x, inner.x)
+    ? 'left'
+    : near(box.x + box.w / 2, inner.x + inner.w / 2)
+      ? 'middle'
+      : near(box.x + box.w, inner.x + inner.w)
+        ? 'right'
+        : undefined;
+  const down = near(box.y, inner.y)
+    ? 'top'
+    : near(box.y + box.h / 2, inner.y + inner.h / 2)
+      ? 'middle'
+      : near(box.y + box.h, inner.y + inner.h)
+        ? 'bottom'
+        : undefined;
+  if (!across || !down) return undefined;
+  if (down === 'middle') return across === 'middle' ? 'center' : across;
+  return across === 'middle' ? down : (`${down}-${across}` as Anchor);
 }
 
 /** A line shown while a box is moved, in shares of the page; `equal` where it marks two margins of one length. */

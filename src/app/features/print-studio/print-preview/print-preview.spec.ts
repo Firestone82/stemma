@@ -1,6 +1,6 @@
 import { TestBed } from '@angular/core/testing';
 import { NamesStyle } from '../../../core/poster/poster';
-import { BoxesPlaced, PrintPreview, alignBox, distanceTo, movedBox, placedSettings } from './print-preview';
+import { BoxesPlaced, PrintPreview, alignBox, anchorOf, distanceTo, movedBox, placedSettings } from './print-preview';
 
 describe('movedBox', () => {
   const start = { x: 0.1, y: 0.7, w: 0.3, h: 0.2 };
@@ -183,6 +183,33 @@ describe('a box moved in the preview', () => {
     expect(t).toBe('translate(1095 110) scale(1.5) translate(-750 -90)');
   });
 
+  it('holds a title let go of where it snapped to a place along the top, so the settings show that place', async () => {
+    const { fixture, el, set, placed } = await preview();
+    await set('inner', { x: 0.05, y: 0.05, w: 0.9, h: 0.9 });
+    const sheet = el.querySelector<HTMLElement>('.sheet')!;
+    sheet.getBoundingClientRect = () => ({ x: 0, y: 0, left: 0, top: 0, width: 1500, height: 1000, right: 1500, bottom: 1000, toJSON: () => ({}) });
+    const title = el.querySelector<HTMLElement>('.title-box')!;
+    title.setPointerCapture = () => undefined;
+    const pointer = (type: string, x: number, y: number) => {
+      const e = new MouseEvent(type, { clientX: x, clientY: y, button: 0, bubbles: true });
+      Object.assign(e, { pointerId: 1 });
+      return e;
+    };
+    // Dragged near the right margin: pulled onto it, and held at the top right.
+    title.dispatchEvent(pointer('pointerdown', 700, 100));
+    title.dispatchEvent(pointer('pointermove', 1084, 100));
+    title.dispatchEvent(pointer('pointerup', 1084, 100));
+    await fixture.whenStable();
+    expect(placed.at(-1)?.titleAnchor).toBe('top-right');
+    expect(placedSettings(placed.at(-1)!)).toEqual({ titleAt: undefined, titleAnchor: 'top-right' });
+    // Left somewhere else: where it was put.
+    title.dispatchEvent(pointer('pointerdown', 700, 100));
+    title.dispatchEvent(pointer('pointermove', 900, 300));
+    title.dispatchEvent(pointer('pointerup', 900, 300));
+    await fixture.whenStable();
+    expect(placed.at(-1)?.titleAnchor).toBeUndefined();
+  });
+
   it('asks for a box put back where the page has it, from its cross', async () => {
     const { el, set, placed } = await preview();
     await set('legend', { ...legend, free: true });
@@ -201,9 +228,32 @@ describe('placedSettings', () => {
     expect('legendAnchor' in placedSettings({ legendBox: box, legendSizedOnly: true })).toBe(false);
   });
 
+  it('holds a box let go of at one of the places of the page there, as if that place were picked', () => {
+    expect(placedSettings({ legendBox: box, legendSizedOnly: false, legendAnchor: 'bottom-right' })).toEqual({ legendBox: box, legendAnchor: 'bottom-right' });
+    expect(placedSettings({ titleAt: { x: 0.5, y: 0.05 }, titleAnchor: 'top' })).toEqual({ titleAt: undefined, titleAnchor: undefined });
+    expect(placedSettings({ titleAt: { x: 0.2, y: 0.05 }, titleAnchor: 'top-left' })).toEqual({ titleAt: undefined, titleAnchor: 'top-left' });
+  });
+
   it('puts either back where the page has it by itself: neither placed by hand nor held', () => {
     expect(placedSettings({ legendBox: null })).toEqual({ legendBox: undefined, legendAnchor: undefined });
     expect(placedSettings({ titleAt: null })).toEqual({ titleAt: undefined, titleAnchor: undefined });
     expect(placedSettings({})).toEqual({});
+  });
+});
+
+describe('anchorOf', () => {
+  const inner = { x: 0.05, y: 0.05, w: 0.9, h: 0.9 };
+
+  it('names the place of the page a box stands at inside the margin', () => {
+    expect(anchorOf({ x: 0.05, y: 0.05, w: 0.2, h: 0.1 }, inner)).toBe('top-left');
+    expect(anchorOf({ x: 0.4, y: 0.05, w: 0.2, h: 0.1 }, inner)).toBe('top');
+    expect(anchorOf({ x: 0.75, y: 0.85, w: 0.2, h: 0.1 }, inner)).toBe('bottom-right');
+    expect(anchorOf({ x: 0.05, y: 0.45, w: 0.2, h: 0.1 }, inner)).toBe('left');
+    expect(anchorOf({ x: 0.4, y: 0.45, w: 0.2, h: 0.1 }, inner)).toBe('center');
+  });
+
+  it('names none for a box anywhere else', () => {
+    expect(anchorOf({ x: 0.2, y: 0.05, w: 0.2, h: 0.1 }, inner)).toBeUndefined();
+    expect(anchorOf({ x: 0.05, y: 0.3, w: 0.2, h: 0.1 }, inner)).toBeUndefined();
   });
 });
