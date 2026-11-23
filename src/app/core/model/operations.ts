@@ -550,19 +550,34 @@ export function updatePrint(doc: TreeDocument, patch: Partial<PrintSettings>): T
   return { ...doc, print };
 }
 
-/** The print settings kept for a person (their centerId), in place of any kept for them before. */
+/** Whether print settings were kept for this person: as the one in the middle, or as their partner beside them. */
+function keptFor(s: PrintSettings, personId: string): boolean {
+  return s.centerId === personId || (!!personId && s.partnerId === personId);
+}
+
+/** The print settings kept for a person or for the couple they are one of (see TreeDocument.savedPrints). */
+export function savedPrintOf(doc: TreeDocument, personId: string): PrintSettings | undefined {
+  return doc.savedPrints?.find((s) => s.centerId === personId) ?? doc.savedPrints?.find((s) => keptFor(s, personId));
+}
+
+/**
+ * The print settings kept for the person in the middle (their centerId) and the partner beside them (partnerId,
+ * when it names one): the couple share the page, so either of them brings it back. Anything kept for either of
+ * them before goes.
+ */
 export function savePrintFor(doc: TreeDocument, settings: PrintSettings): TreeDocument {
   const id = settings.centerId;
   if (!id) return doc;
-  const rest = (doc.savedPrints ?? []).filter((s) => s.centerId !== id);
+  const partner = settings.partnerId ?? '';
+  const rest = (doc.savedPrints ?? []).filter((s) => !keptFor(s, id) && !(partner && keptFor(s, partner)));
   return { ...doc, savedPrints: [...rest, { ...settings }] };
 }
 
-/** The print settings kept for a person forgotten. */
+/** The print settings kept for a person (or the couple they are one of) forgotten. */
 export function forgetPrintFor(doc: TreeDocument, personId: string): TreeDocument {
-  const all = doc.savedPrints ?? [];
-  if (!all.some((s) => s.centerId === personId)) return doc;
-  const rest = all.filter((s) => s.centerId !== personId);
+  const kept = savedPrintOf(doc, personId);
+  if (!kept) return doc;
+  const rest = (doc.savedPrints ?? []).filter((s) => s !== kept);
   const next: TreeDocument = { ...doc, savedPrints: rest };
   if (!rest.length) delete next.savedPrints;
   return next;
@@ -570,7 +585,7 @@ export function forgetPrintFor(doc: TreeDocument, personId: string): TreeDocumen
 
 /** The print settings kept for a person, made the print's settings. */
 export function useSavedPrint(doc: TreeDocument, personId: string): TreeDocument {
-  const saved = doc.savedPrints?.find((s) => s.centerId === personId);
+  const saved = savedPrintOf(doc, personId);
   return saved ? { ...doc, print: { ...saved } } : doc;
 }
 

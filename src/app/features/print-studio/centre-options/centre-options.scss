@@ -15,17 +15,31 @@
   width: 36px;
 }
 
-/* What is kept for the person in the middle, under the couple. */
+/* What is kept for the couple in the middle, on one row under them: a note, then its buttons. */
 .saved {
-  display: grid;
-  gap: 6px;
-  margin-top: 8px;
-}
-
-.saved-actions {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: 6px;
+  margin-top: 8px;
+
+  .note {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    flex: 1 1 12em;
+    min-width: 0;
+  }
+
+  .note.changed {
+    font-style: italic;
+  }
+
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+  }
 }
 
 @media (max-width: 380px) {
