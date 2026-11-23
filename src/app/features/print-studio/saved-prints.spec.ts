@@ -1,6 +1,6 @@
 import { TestBed } from '@angular/core/testing';
 import { sampleDocument } from '../../core/model/sample';
-import { forgetPrintFor, savePrintFor, savedPrintOf, updatePrint } from '../../core/model/operations';
+import { forgetPrintFor, savePrintFor, savedPrintForCouple, savedPrintOf, updatePrint } from '../../core/model/operations';
 import { DEFAULT_PRINT, PrintSettings } from '../../core/model/types';
 import { TreeStore } from '../../core/store/tree-store';
 import { parseTree } from '../../core/xml/parser';
@@ -21,7 +21,7 @@ describe('print settings saved for a person', () => {
       ['I5', 'A2'],
       ['I3', 'A0'],
     ]);
-    doc = forgetPrintFor(forgetPrintFor(doc, 'I3'), 'I5');
+    doc = forgetPrintFor(forgetPrintFor(doc, savedPrintOf(doc, 'I3')!), savedPrintOf(doc, 'I5')!);
     expect(doc.savedPrints).toBeUndefined();
   });
 
@@ -32,7 +32,22 @@ describe('print settings saved for a person', () => {
     doc = savePrintFor(doc, settings({ centerId: 'I4', partnerId: 'I3', paper: 'A2' }));
     expect(doc.savedPrints).toHaveLength(1);
     expect(savedPrintOf(doc, 'I3')?.paper).toBe('A2');
-    expect(forgetPrintFor(doc, 'I3').savedPrints).toBeUndefined();
+    expect(forgetPrintFor(doc, savedPrintOf(doc, 'I3')!).savedPrints).toBeUndefined();
+  });
+
+  it('are kept for each couple: someone married twice has one for each marriage', () => {
+    // Bruno (B) divorced from Irena (I), married to Vera (V).
+    let doc = savePrintFor(sampleDocument(), settings({ centerId: 'B', partnerId: 'I', paper: 'A1' }));
+    doc = savePrintFor(doc, settings({ centerId: 'V', partnerId: 'B', paper: 'A2' }));
+    expect(doc.savedPrints).toHaveLength(2);
+    expect(savedPrintForCouple(doc, 'B', 'I')?.paper).toBe('A1');
+    expect(savedPrintForCouple(doc, 'I', 'B')?.paper).toBe('A1');
+    expect(savedPrintForCouple(doc, 'B', 'V')?.paper).toBe('A2');
+    // Saving again for one couple leaves the other's alone.
+    doc = savePrintFor(doc, settings({ centerId: 'B', partnerId: 'V', paper: 'A0' }));
+    expect(doc.savedPrints?.map((s) => s.paper).sort()).toEqual(['A0', 'A1']);
+    doc = forgetPrintFor(doc, savedPrintForCouple(doc, 'V', 'B')!);
+    expect(doc.savedPrints?.map((s) => s.paper)).toEqual(['A1']);
   });
 
   it('are written into the file and read back, for people still in the tree', () => {
@@ -167,5 +182,33 @@ describe('print settings kept without naming the partner', () => {
     store.load(sampleDocument());
     model.chooseMiddle('I5');
     expect(model.middleId()).toBe('I5');
+  });
+});
+
+describe('print settings for someone with two partners in the studio', () => {
+  it('keeps one for each couple and brings back the one for the partner chosen', () => {
+    const store = TestBed.inject(TreeStore);
+    const model = TestBed.inject(PrintModel);
+    store.load(sampleDocument());
+    // I11 had two partners: I14 and I15.
+    model.chooseMiddle('I11');
+    model.choosePartner('I14');
+    model.set({ paper: 'A1' });
+    model.saveForMiddle(false);
+    model.choosePartner('I15');
+    // Nothing kept for this couple: only the partner changed.
+    expect(model.saved()).toBeUndefined();
+    expect(store.doc().print?.paper).toBe('A1');
+    model.set({ paper: 'A2' });
+    model.saveForMiddle(false);
+    expect(store.doc().savedPrints).toHaveLength(2);
+
+    model.choosePartner('I14');
+    expect(store.doc().print?.paper).toBe('A1');
+    expect(model.savedNames()).toHaveLength(2);
+    model.choosePartner('I15');
+    expect(store.doc().print?.paper).toBe('A2');
+    model.forgetSaved();
+    expect(store.doc().savedPrints?.map((s) => s.partnerId)).toEqual(['I14']);
   });
 });

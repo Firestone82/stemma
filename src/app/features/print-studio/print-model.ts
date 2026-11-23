@@ -2,7 +2,7 @@ import { Injectable, Injector, computed, effect, inject, signal, untracked } fro
 import { bloodRelatives } from '../../core/kinship/kinship';
 import { CutLine, cutOff } from '../../core/model/cut-off';
 import { GAP_WIDEST } from '../../core/layout/gaps';
-import { forgetPrintFor, savePrintFor, savedPrintOf, updatePrint, useSavedPrint } from '../../core/model/operations';
+import { forgetPrintFor, savePrintFor, savedPrintForCouple, savedPrintOf, updatePrint, useSavedPrint } from '../../core/model/operations';
 import { isBrokenUp, relationshipStatus } from '../../core/model/relationship';
 import { Anchor, DEFAULT_PRINT, Reach, LEGEND_GAP_CM, LegendBox, anchorShares, effectivePrint, printDefaults, PrintSettings } from '../../core/model/types';
 import { CARD_WIDTH } from '../../core/card/card-design';
@@ -860,11 +860,18 @@ export class PrintModel {
     return keep;
   });
 
-  /** The print settings kept for the person in the middle or their partner, if any (see TreeDocument.savedPrints). */
-  readonly saved = computed(() => {
+  /** The print settings kept for the couple in the middle, as kept (see TreeDocument.savedPrints). */
+  private readonly kept = computed(() => {
     const doc = this.store.doc();
     const keep = this.toKeep();
-    const kept = savedPrintOf(doc, keep.centerId ?? '') ?? (keep.partnerId ? savedPrintOf(doc, keep.partnerId) : undefined);
+    const id = keep.centerId ?? '';
+    // The partner not known yet (the page is still drawing for them): whatever is kept for the one in the middle.
+    if (keep.partnerId === undefined) return savedPrintOf(doc, id);
+    return savedPrintForCouple(doc, id, keep.partnerId);
+  });
+  /** The print settings kept for the couple in the middle, if any. */
+  readonly saved = computed(() => {
+    const kept = this.kept();
     return kept ? ({ ...DEFAULT_PRINT, ...kept } as PrintSettings) : undefined;
   });
   /** Who the kept settings are for: the person in the middle, and their partner when the page shows one. */
@@ -872,14 +879,14 @@ export class PrintModel {
     const s = this.saved() ?? this.toKeep();
     return [s.centerId, s.partnerId].filter((id): id is string => !!id).map((id) => this.nameOf(id));
   });
-  /** The print as it is now differs from what is kept for the person in the middle. */
+  /** The print as it is now differs from what is kept for the couple in the middle. */
   readonly savedDiffers = computed(() => {
     const kept = this.saved();
     // Where the title and the families' names stand, and their sizes, wait to be applied: they count all the same.
     return !!kept && !samePrint(kept, { ...this.toKeep(), ...this.staged() });
   });
 
-  /** The print as it is now kept for the person in the middle and their partner, in place of anything kept for them before. */
+  /** The print as it is now kept for the couple in the middle, in place of anything kept for that couple before. */
   saveForMiddle(file = true): void {
     if (!this.middleId()) return;
     // What waits (the title and the families' names placed or sized) is applied first, and kept with the rest.
@@ -890,30 +897,48 @@ export class PrintModel {
     if (file) void this.injector.get(DocumentActions).saveXml();
   }
 
-  /** What is kept for the person in the middle, forgotten. */
+  /** What is kept for the couple in the middle, forgotten. */
   forgetSaved(): void {
-    const id = this.saved()?.centerId;
-    if (id) this.store.update((doc) => forgetPrintFor(doc, id), 'print forget');
+    const kept = this.kept();
+    if (kept) this.store.update((doc) => forgetPrintFor(doc, kept), 'print forget');
   }
 
-  /** The print back as it was kept for the person in the middle (and their partner). */
+  /** The print back as it was kept for the couple in the middle. */
   useSaved(): void {
-    const id = this.saved()?.centerId;
-    if (!id) return;
+    const kept = this.kept();
+    if (!kept) return;
     this.staged.set({});
-    this.store.update((doc) => useSavedPrint(doc, id), 'print use');
+    this.store.update((doc) => useSavedPrint(doc, kept), 'print use');
     this.ui.printEdited();
   }
 
   /**
-   * Someone else in the middle of the page: with the settings kept for them (or the couple they are one of), or,
+   * Someone else in the middle of the page: with the settings kept for them (with one of their partners), or,
    * when none are kept, with every setting as it is before anything was chosen.
    */
   chooseMiddle(id: string): void {
     this.staged.set({});
-    if (savedPrintOf(this.store.doc(), id)) this.store.update((doc) => useSavedPrint(doc, id), 'print');
+    const kept = savedPrintOf(this.store.doc(), id);
+    if (kept) this.store.update((doc) => useSavedPrint(doc, kept), 'print');
     else this.store.update((doc) => ({ ...doc, print: { ...printDefaults(doc.view), centerId: id } }), 'print');
     this.ui.printEdited();
+  }
+
+  /**
+   * Another partner beside the person in the middle (or nobody, null): with the settings kept for that couple
+   * when there are any; otherwise only the partner changes.
+   */
+  choosePartner(partnerId: string | null): void {
+    const centerId = this.middleId();
+    const kept = savedPrintForCouple(this.store.doc(), centerId, partnerId);
+    // Only what was kept for this very couple (not settings kept without naming a partner).
+    if (kept && kept.partnerId !== undefined) {
+      this.staged.set({});
+      this.store.update((doc) => useSavedPrint(doc, kept), 'print');
+      this.ui.printEdited();
+    } else {
+      this.set({ partnerId });
+    }
   }
 
   /** Ctrl+S in the studio: the print kept for the couple in the middle, with a word that it was. */
