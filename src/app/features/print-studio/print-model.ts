@@ -362,7 +362,7 @@ export class PrintModel {
       const k = v.legendBox ? 1 : ratio(v.legendSize ?? p.lettering.autoLegendCm, p.lettering.legendCm);
       const size = v.legendBox ?? { w: p.legend.w * k, h: p.legend.h * k };
       let box: LegendBox = v.legendAnchor
-        ? placeIn(inner, v.legendAnchor, size.w, size.h)
+        ? placeIn(inner, v.legendAnchor, size.w, size.h, p.cornerClear)
         : v.legendBox
           ? { ...v.legendBox }
           : { x: p.legend.x + (p.legend.w - size.w) / 2, y: p.legend.y + p.legend.h - size.h, w: size.w, h: size.h };
@@ -1150,7 +1150,9 @@ function printInPlace(p: Pick<PosterResult, 'svg' | 'width' | 'height' | 'paper'
 }
 
 /** A box so big at an anchor of the page inside its margin (`inner`), all as shares of the page. */
-function placeIn(inner: LegendBox, at: Anchor, w: number, h: number): LegendBox {
+function placeIn(inner: LegendBox, at: Anchor, w: number, h: number, clear = { x: 0, y: 0 }): LegendBox {
   const to = anchorShares(at);
-  return { x: inner.x + to.x * (inner.w - w), y: inner.y + to.y * (inner.h - h), w, h };
+  // In a corner, as far inside the margin as the page keeps it from the frame's flourishes (as the page's placeAt).
+  const c = to.x !== 0.5 && to.y !== 0.5 ? clear : { x: 0, y: 0 };
+  return { x: inner.x + c.x + to.x * (inner.w - 2 * c.x - w), y: inner.y + c.y + to.y * (inner.h - 2 * c.y - h), w, h };
 }
