@@ -1,6 +1,6 @@
 /**
- * The Google Cloud project Stemma uses to open and save trees in Google Drive. While the client ID is empty,
- * the Google Drive items stay out of the File menu. These values are not secrets: they end up in the page anyway,
+ * The Google Cloud project Stemma uses to open and save trees in Google Drive. While any of these is empty, the
+ * Google Drive items (on the start page and in the File menu) show these steps instead of Google's sign-in. These values are not secrets: they end up in the page anyway,
  * and Google only accepts them from the origins listed for the client.
  *
  * To fill them in (see README, "Google Drive"):

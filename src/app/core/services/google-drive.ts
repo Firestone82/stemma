@@ -7,8 +7,11 @@ export interface DriveFile {
   name: string;
 }
 
-/** How a Drive request ended: `declined` when the person closed the sign-in or the picker, `blocked` when the browser stopped the sign-in pop-up. */
-export type DriveOutcome<T> = { status: 'done'; value: T } | { status: 'declined' } | { status: 'blocked' } | { status: 'failed' };
+/**
+ * How a Drive request ended: `declined` when the person closed the sign-in or the picker, `blocked` when the browser
+ * stopped the sign-in pop-up, `missing` when the file is no longer there (deleted, or no longer shared with the app).
+ */
+export type DriveOutcome<T> = { status: 'done'; value: T } | { status: 'declined' } | { status: 'blocked' } | { status: 'missing' } | { status: 'failed' };
 
 /** Only files this app opens through the picker or creates itself; nothing else in the person's Drive. */
 const SCOPE = 'https://www.googleapis.com/auth/drive.file';
@@ -68,7 +71,7 @@ interface GoogleWindow {
 /**
  * Opening and saving trees in Google Drive: the person signs in with Google in a pop-up, picks a file in the
  * Google Picker, and the file is read and written through the Drive API, straight from the browser. Nothing goes
- * through a server of Stemma's. The Google scripts are loaded only when the File menu is first opened, so the app
+ * through a server of Stemma's. The Google scripts are loaded only when a Drive item is about to be used, so the app
  * does not talk to Google for anyone who does not use Drive.
  */
 @Injectable({ providedIn: 'root' })
@@ -76,9 +79,9 @@ export class GoogleDrive {
   private ready: Promise<GoogleGlobal> | undefined;
   private token: { value: string; expires: number } | undefined;
 
-  /** True when a Google client ID is set up (see google-config.ts). */
+  /** True when a Google Cloud project is set up (see google-config.ts). */
   get configured(): boolean {
-    return !!GOOGLE_CONFIG.clientId && !!GOOGLE_CONFIG.apiKey;
+    return !!GOOGLE_CONFIG.clientId && !!GOOGLE_CONFIG.apiKey && !!GOOGLE_CONFIG.appId;
   }
 
   /** Loads the Google scripts ahead of a click, so the sign-in pop-up opens straight from it. */
@@ -113,6 +116,25 @@ export class GoogleDrive {
       const response = await fetch(`${FILES}/${encodeURIComponent(doc.id)}?alt=media`, { headers: this.headers(auth.value.token) });
       if (!response.ok) return this.failed(response);
       return { status: 'done', value: { file: { id: doc.id, name: doc.name }, text: await response.text() } };
+    } catch {
+      return { status: 'failed' };
+    }
+  }
+
+  /** Reads a file opened from or saved to Drive earlier again (the recent files), signing in if needed. */
+  async read(file: DriveFile): Promise<DriveOutcome<{ file: DriveFile; text: string }>> {
+    const auth = await this.authorize();
+    if (auth.status !== 'done') return auth;
+    try {
+      const headers = this.headers(auth.value.token);
+      const id = encodeURIComponent(file.id);
+      const meta = await fetch(`${FILES}/${id}?fields=id,name,trashed`, { headers });
+      if (!meta.ok) return this.failed(meta);
+      const info = (await meta.json()) as DriveFile & { trashed?: boolean };
+      if (info.trashed) return { status: 'missing' };
+      const response = await fetch(`${FILES}/${id}?alt=media`, { headers });
+      if (!response.ok) return this.failed(response);
+      return { status: 'done', value: { file: { id: info.id, name: info.name }, text: await response.text() } };
     } catch {
       return { status: 'failed' };
     }
@@ -164,9 +186,10 @@ export class GoogleDrive {
     return { Authorization: `Bearer ${token}` };
   }
 
-  /** A refused token is forgotten, so the next try signs in again. */
+  /** A refused token is forgotten, so the next try signs in again. A file Drive does not know (or no longer lets the app see) is missing. */
   private failed(response: Response): DriveOutcome<never> {
     if (response.status === 401) this.token = undefined;
+    if (response.status === 404) return { status: 'missing' };
     return { status: 'failed' };
   }
 

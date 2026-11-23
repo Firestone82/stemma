@@ -18,7 +18,9 @@ export type DialogRequest =
   | { kind: 'newer-version'; notice: Notice; xml: string; name: string }
   | { kind: 'xml'; xml: string; filename: string }
   | { kind: 'about' }
-  | { kind: 'family-export' };
+  | { kind: 'family-export' }
+  | { kind: 'unsaved'; proceed: () => unknown }
+  | { kind: 'drive-setup' };
 
 export type MenuName = 'file' | 'appearance' | 'relatives';
 

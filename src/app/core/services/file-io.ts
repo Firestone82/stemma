@@ -24,9 +24,12 @@ interface FileAccessWindow {
 }
 
 interface PermissionedHandle {
-  queryPermission?(options: { mode: 'readwrite' }): Promise<PermissionState>;
-  requestPermission?(options: { mode: 'readwrite' }): Promise<PermissionState>;
+  queryPermission?(options: { mode: 'read' | 'readwrite' }): Promise<PermissionState>;
+  requestPermission?(options: { mode: 'read' | 'readwrite' }): Promise<PermissionState>;
 }
+
+/** How reading a file again from a kept handle ended: `missing` when it was moved or deleted. */
+export type ReadOutcome = { status: 'done'; file: File } | { status: 'declined' } | { status: 'missing' } | { status: 'failed' };
 
 /** A file picked from the computer, with the handle to write it back where the browser gives one. */
 export interface PickedFile {
@@ -128,6 +131,26 @@ export class FileIo {
     } catch (e) {
       if ((e as DOMException | null)?.name === 'AbortError') return null;
       throw e;
+    }
+  }
+
+  /**
+   * Reads a file again from a handle kept from an earlier visit. The browser forgets the permission between visits,
+   * so it asks the person again; asking for writing too spares a second question on the first Save. Must be called
+   * from a click or key handler.
+   */
+  async readHandle(handle: FileSystemFileHandle): Promise<ReadOutcome> {
+    try {
+      const permissioned = handle as unknown as PermissionedHandle;
+      if (permissioned.queryPermission && (await permissioned.queryPermission({ mode: 'read' })) !== 'granted') {
+        const answer = await permissioned.requestPermission?.({ mode: 'readwrite' });
+        if (answer !== 'granted') return { status: 'declined' };
+      }
+      return { status: 'done', file: await handle.getFile() };
+    } catch (e) {
+      const name = (e as DOMException | null)?.name;
+      if (name === 'NotFoundError') return { status: 'missing' };
+      return name === 'AbortError' || name === 'NotAllowedError' ? { status: 'declined' } : { status: 'failed' };
     }
   }
 

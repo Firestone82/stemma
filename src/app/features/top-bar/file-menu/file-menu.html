@@ -17,10 +17,26 @@
         <stemma-icon name="copy" />{{ t('file.saveAs') }}<span class="shortcut">Ctrl Shift S</span>
       </button>
     }
-    @if (documents.canUseDrive()) {
+    @if (documents.offersDrive()) {
       <div class="menu-sep" role="separator"></div>
-      <button type="button" class="menu-item" role="menuitem" (click)="documents.openFromDrive()"><stemma-icon name="cloud" />{{ t('file.openDrive') }}</button>
-      <button type="button" class="menu-item" role="menuitem" (click)="documents.saveToDrive()"><stemma-icon name="cloudUp" />{{ t('file.saveDrive') }}</button>
+      <button type="button" class="menu-item" role="menuitem" [attr.title]="driveHint()" (click)="documents.openFromDrive()">
+        <stemma-icon name="cloud" />{{ t('file.openDrive') }}
+      </button>
+      <button type="button" class="menu-item" role="menuitem" [attr.title]="driveHint()" (click)="documents.saveToDrive()">
+        <stemma-icon name="cloudUp" />{{ t('file.saveDrive') }}
+      </button>
+    }
+    @if (recent().length) {
+      <div class="menu-sep" role="separator"></div>
+      <div class="menu-label" aria-hidden="true">{{ t('recent.title') }}</div>
+      @for (entry of recent(); track entry.key) {
+        <button type="button" class="menu-item" role="menuitem" [attr.title]="entry.name" (click)="documents.openRecent(entry)">
+          <stemma-icon [name]="entry.kind === 'drive' ? 'cloud' : 'folder'" /><span class="recent-name">{{ entry.title || entry.name }}</span>
+        </button>
+      }
+    }
+    @if (documents.fileBacked()) {
+      <button type="button" class="menu-item" role="menuitem" (click)="documents.closeTree()"><stemma-icon name="close" />{{ t('file.close') }}</button>
     }
     <div class="menu-sep" role="separator"></div>
     <button type="button" class="menu-item" role="menuitem" (click)="documents.exportGedcom()"><stemma-icon name="upload" />{{ t('file.gedcom') }}</button>

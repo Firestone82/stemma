@@ -21,6 +21,12 @@
       @case ('family-export') {
         <stemma-family-export (done)="close()" />
       }
+      @case ('unsaved') {
+        <stemma-unsaved-changes [proceed]="r.proceed" (done)="close()" />
+      }
+      @case ('drive-setup') {
+        <stemma-drive-setup (done)="close()" />
+      }
       @case ('about') {
         <stemma-about-format (done)="close()" />
       }

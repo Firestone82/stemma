@@ -1,0 +1,11 @@
+<div class="dialog-body">
+  <h2>{{ t('dialog.unsaved.title') }}</h2>
+  <p>{{ fileName() ? t('dialog.unsaved.textFile', { name: fileName()! }) : t('dialog.unsaved.text') }}</p>
+</div>
+<div class="dialog-actions">
+  <button type="button" class="btn" (click)="done.emit()">{{ t('common.cancel') }}</button>
+  <button type="button" class="btn" (click)="documents.discardThen(proceed())">{{ t('dialog.unsaved.discard') }}</button>
+  <button type="button" class="btn primary" (click)="documents.saveThen(proceed())">
+    <stemma-icon name="download" [size]="16" />{{ t('dialog.unsaved.save') }}
+  </button>
+</div>

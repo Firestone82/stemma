@@ -6,5 +6,38 @@
 <div class="actions">
   <button type="button" class="btn primary" (click)="addFirst()"><stemma-icon name="plus" [size]="16" />{{ t('empty.addFirst') }}</button>
   <button type="button" class="btn" (click)="documents.openFile()"><stemma-icon name="folder" [size]="16" />{{ t('empty.open') }}</button>
+  @if (documents.offersDrive()) {
+    <button type="button" class="btn" (pointerenter)="documents.prepareDrive()" (focus)="documents.prepareDrive()" (click)="documents.openFromDrive()">
+      <stemma-icon name="cloud" [size]="16" />{{ t('empty.openDrive') }}
+    </button>
+  }
 </div>
 <button type="button" class="link-btn" (click)="documents.loadSample()">{{ t('empty.sample') }}</button>
+@if (recent().length) {
+  <section class="recent" aria-labelledby="recent-title">
+    <h2 id="recent-title">{{ t('recent.title') }}</h2>
+    <ul>
+      @for (entry of recent(); track entry.key) {
+        <li>
+          <button type="button" class="open" (pointerenter)="entry.kind === 'drive' && documents.prepareDrive()" (click)="documents.openRecent(entry)">
+            <stemma-icon [name]="entry.kind === 'drive' ? 'cloud' : 'folder'" [size]="16" />
+            <span class="names">
+              <span class="title">{{ entry.title || entry.name }}</span>
+              <span class="meta">{{ entry.kind === 'drive' ? t('recent.inDrive', { name: entry.name }) : entry.name }} · {{ when(entry.at) }}</span>
+            </span>
+          </button>
+          <button
+            type="button"
+            class="btn ghost small icon forget"
+            [attr.aria-label]="t('recent.forget', { name: entry.name })"
+            [attr.title]="t('recent.forget', { name: entry.name })"
+            (click)="documents.forgetRecent(entry)"
+          >
+            <stemma-icon name="close" [size]="14" />
+          </button>
+        </li>
+      }
+    </ul>
+    <p class="hint">{{ t('recent.hint') }}</p>
+  </section>
+}
