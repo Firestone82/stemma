@@ -403,15 +403,37 @@ describe('the printed page', () => {
   it('draws the family names into any box asked for, as they would stand there', () => {
     const r = render(sampleDocument(), { paper: 'A3', orientation: 'landscape', legendHeading: false });
     const at = (markup: string) => [...markup.matchAll(/<text x="([\d.]+)" y="([\d.]+)"[^>]*font-size="([\d.]+)"/g)].map((m) => m.slice(1).map(Number));
-    const wide = at(r.namesIn({ x: 0.1, y: 0.1, w: 0.8, h: 0.1 }, { cm: null }));
-    const tall = at(r.namesIn({ x: 0.1, y: 0.1, w: 0.1, h: 0.8 }, { cm: null }));
+    const wide = at(r.namesIn({ x: 0.1, y: 0.1, w: 0.8, h: 0.05 }));
+    const tall = at(r.namesIn({ x: 0.1, y: 0.1, w: 0.1, h: 0.8 }));
     expect(wide.length).toBe(tall.length);
     // In a wide box they stand in a row or two, in a tall one in a column.
     expect(new Set(wide.map((t) => t[1])).size).toBeLessThan(new Set(tall.map((t) => t[1])).size);
+    // Their letters are as big in either: the box lays them out, it does not size them.
+    expect(new Set([...wide, ...tall].map((t) => t[2])).size).toBe(1);
     // So big as asked, and in the corner asked.
     const fixed = at(r.namesIn({ x: 0.1, y: 0.1, w: 0.8, h: 0.8 }, { cm: 0.6, align: 'bottom-right' }));
     expect(fixed[0][2]).toBeCloseTo((0.6 * 10 * (96 / 25.4)) / 1.2, 1);
     expect(Math.max(...fixed.map((t) => t[1])) / r.height).toBeGreaterThan(0.85);
+  });
+
+  it('keeps the family names one size in a box sized by hand, only their columns and rows follow the box', () => {
+    const doc = randomFamily(3, 60);
+    const page = { paper: 'A3', orientation: 'landscape', legendHeading: false } as const;
+    // The names placed by hand are the page's last group of them.
+    const names = (svg: string) => svg.slice(svg.lastIndexOf('<g class="pp-legend">'));
+    const sizes = (svg: string) => [...names(svg).matchAll(/<text [^>]*font-size="([\d.]+)"/g)].map((m) => Number(m[1]));
+    const columns = (svg: string) => new Set([...names(svg).matchAll(/<text x="([\d.]+)"/g)].map((m) => m[1])).size;
+    const small = render(doc, { ...page, legendBox: { x: 0.05, y: 0.6, w: 0.15, h: 0.3 } });
+    const big = render(doc, { ...page, legendBox: { x: 0.05, y: 0.3, w: 0.6, h: 0.6 } });
+    const flat = render(doc, { ...page, legendBox: { x: 0.05, y: 0.8, w: 0.9, h: 0.08 } });
+    const all = [small, big, flat].map((r) => sizes(r.svg));
+    expect(all.every((s) => s.length > 2)).toBe(true);
+    // The same letters in every box, as big as the page makes them by itself.
+    const one = new Set(all.flat());
+    expect(one.size).toBe(1);
+    expect([...one][0]).toBeCloseTo((small.lettering.legendCm * 10 * (96 / 25.4)) / 1.2, 1);
+    // A wide, low box puts them in more columns than a narrow one.
+    expect(columns(flat.svg)).toBeGreaterThan(columns(small.svg));
   });
 
   it('holds the title at its anchor whatever size it is: against the margin at a side, at the top or the foot', () => {
