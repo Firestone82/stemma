@@ -557,7 +557,12 @@ function keptFor(s: PrintSettings, personId: string): boolean {
 
 /** The print settings kept for a person or for the couple they are one of (see TreeDocument.savedPrints). */
 export function savedPrintOf(doc: TreeDocument, personId: string): PrintSettings | undefined {
-  return doc.savedPrints?.find((s) => s.centerId === personId) ?? doc.savedPrints?.find((s) => keptFor(s, personId));
+  const saved = doc.savedPrints ?? [];
+  const found = saved.find((s) => s.centerId === personId) ?? saved.find((s) => keptFor(s, personId));
+  if (found || !personId) return found;
+  // Kept without naming the partner (the page chose them): for any partner of the one it was kept for.
+  const partners = new Set(doc.families.filter((f) => f.partners.includes(personId)).flatMap((f) => f.partners));
+  return saved.find((s) => s.partnerId === undefined && !!s.centerId && partners.has(s.centerId));
 }
 
 /**

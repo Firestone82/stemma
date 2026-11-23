@@ -616,7 +616,7 @@ export const en = {
   'print.nobody': 'Nobody',
   'print.swap': 'Swap the two',
   'print.saveFor': 'Save for {name}',
-  'print.saveHint': 'Ctrl+S saves these settings for the couple; choosing either partner brings them back.',
+  'print.saveHint': 'Ctrl+S saves these settings for the couple, in the file; choosing either partner brings them back.',
   'print.savedFor': 'Saved for {name}.',
   'print.savedChanged': 'Changed since saved for {name}.',
   'print.saveUpdate': 'Save changes',
