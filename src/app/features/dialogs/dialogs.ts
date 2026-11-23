@@ -3,6 +3,7 @@ import { UiState } from '../../state/ui-state';
 import { AboutFormat } from './about-format/about-format';
 import { ConfirmDelete } from './confirm-delete/confirm-delete';
 import { ConfirmNew } from './confirm-new/confirm-new';
+import { FamilyExport } from './family-export/family-export';
 import { ImportReport } from './import-report/import-report';
 import { NewerVersion } from './newer-version/newer-version';
 import { XmlExport } from './xml-export/xml-export';
@@ -10,7 +11,7 @@ import { XmlExport } from './xml-export/xml-export';
 /** The one modal dialog of the app; what it shows comes from UiState.dialog. */
 @Component({
   selector: 'stemma-dialogs',
-  imports: [ConfirmDelete, ConfirmNew, ImportReport, NewerVersion, XmlExport, AboutFormat],
+  imports: [ConfirmDelete, ConfirmNew, FamilyExport, ImportReport, NewerVersion, XmlExport, AboutFormat],
   templateUrl: './dialogs.html',
   styleUrl: './dialogs.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,

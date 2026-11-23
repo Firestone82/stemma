@@ -6,8 +6,8 @@
  * document.
  */
 import { ChildRelation, Sex } from '../model/types';
-import { DOCX_TEXT_WIDTH, DocxBlock, DocxCell, DocxParagraph, DocxRow, DocxRun, docx, estimatePages } from './docx';
-import { OutlineFamily, OutlinePartner, OutlinePerson, OutlineRow } from './outline';
+import { DOCX_PAGE_HEIGHT, DOCX_TEXT_WIDTH, DocxBlock, DocxCell, DocxParagraph, DocxRow, DocxRun, blocksHeight, docx, estimatePages } from './docx';
+import { OutlineFamily, OutlinePartner, OutlinePerson, OutlineRow, numberOutline } from './outline';
 
 /** The words of the document, in its language. */
 export interface FamilyDocumentWords {
@@ -29,8 +29,6 @@ export interface FamilyDocumentWords {
   withUnknown: string;
   /** "continues in the Mikula family". */
   continuesIn(family: string): string;
-  /** "listed above". */
-  listedAbove: string;
   /** "No. 23", where someone is set out. */
   see(number: string): string;
   /** The heading of the list of families. */
@@ -61,12 +59,11 @@ const HEAD_FILL = 'EDE4D3';
 /**
  * The generations under the oldest of a family, each in a colour of its own: children, grandchildren,
  * great-grandchildren and on, the colours coming round again. A family of parents and children only has none.
+ * Printed in grey, each is a different grey from the ones next to it (light, darker, lighter, darkest).
  */
-const GENERATIONS: readonly string[] = ['EADCC3', 'D6E6DA', 'D8E2EF', 'ECD9D9', 'E4DDF0'];
+const GENERATIONS: readonly string[] = ['F2EADD', 'BBD6C3', 'D5E0EB', 'D6B2B2'];
 /** No., name (with how they are a child, and their partners under it), born, died. */
 const WIDTHS = [650, DOCX_TEXT_WIDTH - 650 - 1500 - 1500, 1500, 1500];
-/** Families of no more rows than this share pages. */
-const SMALL = 4;
 /** Each generation further in, in twips. */
 const STEP = 280;
 
@@ -81,12 +78,14 @@ export function familyDocument(input: FamilyDocumentInput): Uint8Array<ArrayBuff
 
   blocks.push({ kind: 'p', style: 'Heading1', runs: [{ text: words.legend.heading }] }, legendTable(words.legend.entries));
 
-  const several = input.families.length > 1;
+  // The biggest families first, the smaller ones filling the pages after them (see arrange); numbered in that order.
+  const families = numberOutline(arrange(input.families, words));
+  const several = families.length > 1;
   const mark = (i: number) => `family-${i + 1}`;
   if (several) {
     // A table of contents: each family, dots, the page it starts on.
     blocks.push({ kind: 'p', style: 'Heading1', runs: [{ text: words.contents }] });
-    input.families.forEach((f, i) =>
+    families.forEach((f, i) =>
       blocks.push({
         kind: 'p',
         style: 'Contents',
@@ -101,15 +100,8 @@ export function familyDocument(input: FamilyDocumentInput): Uint8Array<ArrayBuff
     );
   }
 
-  input.families.forEach((f, i) => {
-    blocks.push(
-      // A family of a few people follows on; a bigger one starts a page of its own, to be handed round on its own sheets.
-      { kind: 'p', style: 'Heading1', runs: [{ text: f.label }], bookmark: mark(i), pageBreak: several && (i === 0 || f.rows.length > SMALL) },
-      { kind: 'p', style: 'Note', keepNext: true, runs: [{ text: words.summary(f.people, f.generations) }] },
-      { kind: 'p', keepNext: true, runs: [] },
-      { kind: 'table', widths: WIDTHS, rows: [headRow(words), ...rows(f.rows, words)] },
-    );
-  });
+  // The families from a new page after the contents, one after another.
+  families.forEach((f, i) => blocks.push(...familyBlocks(f, words, mark(i), several && i === 0)));
 
   // The pages in the contents as they will come out; Word puts in its own when it opens the document.
   const pages = estimatePages(blocks);
@@ -121,6 +113,44 @@ export function familyDocument(input: FamilyDocumentInput): Uint8Array<ArrayBuff
     }
   }
   return docx(blocks, { title: input.title, language: input.language, footer: input.title, now: input.now });
+}
+
+/** A family's heading, the line under it and its table; a table that fits on a page is kept on one. */
+function familyBlocks(f: OutlineFamily, words: FamilyDocumentWords, bookmark?: string, pageBreak = false): DocxBlock[] {
+  const table: DocxBlock = { kind: 'table', widths: WIDTHS, rows: [headRow(words), ...rows(f.rows, words)] };
+  const blocks: DocxBlock[] = [
+    { kind: 'p', style: 'Heading1', runs: [{ text: f.label }], bookmark, pageBreak },
+    { kind: 'p', style: 'Note', keepNext: true, runs: [{ text: words.summary(f.people, f.generations) }] },
+    { kind: 'p', keepNext: true, runs: [] },
+    table,
+  ];
+  table.keepTogether = blocksHeight(blocks) <= DOCX_PAGE_HEIGHT;
+  return blocks;
+}
+
+/**
+ * The order the families are printed in: the biggest first, and after each, the biggest that still fits
+ * in what is left of the page, so pages are not left half empty. A family longer than a page goes on from
+ * wherever the one before it ends.
+ */
+function arrange(families: readonly OutlineFamily[], words: FamilyDocumentWords): OutlineFamily[] {
+  const left = families.map((f) => ({ f, h: blocksHeight(familyBlocks(f, words)) })).sort((a, b) => b.h - a.h || a.f.label.localeCompare(b.f.label));
+  const out: OutlineFamily[] = [];
+  let used = 0;
+  while (left.length) {
+    const room = DOCX_PAGE_HEIGHT - used;
+    let at = left.findIndex((x) => x.h <= room);
+    // Nothing fits: a family longer than a page starts here all the same; otherwise a new page.
+    if (at < 0 && (used === 0 || left[0].h > DOCX_PAGE_HEIGHT)) at = 0;
+    if (at < 0) {
+      used = 0;
+      continue;
+    }
+    const [next] = left.splice(at, 1);
+    out.push(next.f);
+    used = next.h > room ? (used + next.h) % DOCX_PAGE_HEIGHT : used + next.h;
+  }
+  return out;
 }
 
 function legendTable(entries: readonly LegendEntry[]): DocxBlock {
@@ -181,10 +211,10 @@ function nameCell(r: OutlinePerson, words: FamilyDocumentWords): DocxParagraph[]
   // The name at birth beside the name ("Claire Ferri née Ashworth"); born into another family, it is that family's, which the family says.
   const born: DocxRun[] = r.bornAs && !r.continuesIn ? [{ text: `  ${r.bornAs}`, italic: true, color: MUTED, size: 8.5 }] : [];
   const out = [para([...lead, { text: r.name, bold: r.level === 0 || undefined }, ...born], indent)];
-  const notes = [r.bornWith, r.continuesIn ? words.continuesIn(r.continuesIn) : '', r.repeated ? words.listedAbove : ''].filter(Boolean);
+  const notes = r.continuesIn ? [words.continuesIn(r.continuesIn)] : [];
   if (notes.length) out.push(para([{ text: notes.join(', '), italic: true, color: MUTED, size: 8.5 }], indent));
   // Someone set out elsewhere has their partners given there.
-  if (!r.continuesIn && !r.repeated) for (const p of r.partners) out.push(partnerPara(p, words, indent));
+  if (!r.continuesIn) for (const p of r.partners) out.push(partnerPara(p, words, indent));
   return out;
 }
 

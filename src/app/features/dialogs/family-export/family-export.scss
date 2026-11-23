@@ -1,0 +1,87 @@
+:host {
+  display: block;
+}
+
+.quick {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.summary {
+  margin-left: auto;
+  color: var(--ink-3);
+  font-size: var(--text-sm);
+}
+
+.tree {
+  max-height: min(52dvh, 420px);
+  margin: 0;
+  padding: 4px 0;
+  overflow-y: auto;
+  border: 1px solid var(--rule);
+  border-radius: 10px;
+  list-style: none;
+}
+
+li {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px 10px 2px calc(6px + var(--depth, 0) * 22px);
+}
+
+.twisty {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--ink-3);
+  cursor: pointer;
+
+  stemma-icon {
+    transition: rotate 120ms ease-out;
+  }
+
+  &.open stemma-icon {
+    rotate: 90deg;
+  }
+
+  &:hover {
+    background: var(--rule);
+  }
+}
+
+span.twisty {
+  cursor: default;
+}
+
+.check {
+  flex: 1;
+  min-width: 0;
+}
+
+.name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.partial .name {
+  color: var(--ink-2);
+  font-style: italic;
+}
+
+.count {
+  color: var(--ink-3);
+  font-size: var(--text-sm);
+  font-variant-numeric: tabular-nums;
+}
