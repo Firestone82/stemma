@@ -530,10 +530,15 @@ describe('the printed page', () => {
     expect(tight.y + tight.h).toBeCloseTo(inner.y + inner.h, 3);
     // Without an anchor the box lies where it was put, as ever.
     expect(render(doc, { ...page, legendBox: { x: 0.5, y: 0.5, w: 0.4, h: 0.3 } }).legend).toMatchObject({ x: 0.5, y: 0.5, free: true });
-    // On a page with a frame, names in a corner keep clear of the flourish there: a little in from the margin, whatever the title's size
-    // (the flourishes grow with it); along a side there is none to keep clear of.
+    // On a page with a frame, names in a corner stand on the margin as the title does at its anchor; only when asked
+    // do they keep clear of the flourish there: a little in from the margin, whatever the title's size (the
+    // flourishes grow with it); along a side there is none to keep clear of.
     for (const titleSize of [1.5, 3]) {
-      const framed = { ...page, showFrame: true, titleSize, legendSize: 0.5 } as const;
+      const onMargin = render(doc, { ...page, showFrame: true, titleSize, legendSize: 0.5, legendAnchor: 'bottom-left' });
+      expect(onMargin.legend!.x).toBeCloseTo(inner.x, 3);
+      expect(onMargin.legend!.y + onMargin.legend!.h).toBeCloseTo(inner.y + inner.h, 3);
+      expect(onMargin.cornerClear).toEqual({ x: 0, y: 0 });
+      const framed = { ...page, showFrame: true, legendFrameClear: true, titleSize, legendSize: 0.5 } as const;
       const corner = render(doc, { ...framed, legendAnchor: 'bottom-left' }).legend!;
       const clear = corner.x - inner.x;
       expect(clear).toBeGreaterThanOrEqual(0);

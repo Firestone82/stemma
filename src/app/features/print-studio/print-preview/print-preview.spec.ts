@@ -308,18 +308,22 @@ describe("the families' names snapped into a corner and applied", () => {
       now: new Date('2026-01-01T00:00:00Z'),
     });
 
-  it('stay where they snapped, on a page with a frame and without', () => {
-    for (const showFrame of [true, false]) {
-      const page = render({ showFrame });
+  it('stay where they snapped, on a page with a frame (clear of its corners or not) and without', () => {
+    for (const [showFrame, legendFrameClear] of [
+      [true, true],
+      [true, false],
+      [false, false],
+    ]) {
+      const page = render({ showFrame, legendFrameClear });
       const { inner, cornerClear } = page;
       const l = page.legend!;
-      expect(cornerClear.x > 0).toBe(showFrame);
+      expect(cornerClear.x > 0).toBe(showFrame && legendFrameClear);
       // Dragged onto the margin in the bottom right corner.
       const dropped = { x: inner.x + inner.w - l.w, y: inner.y + inner.h - l.h, w: l.w, h: l.h };
       const snapped = alignBox(dropped, inner, page.width / page.height, true, cornerClear).box;
       const legendAnchor = anchorOf(snapped, inner, cornerClear);
       expect(legendAnchor).toBe('bottom-right');
-      const applied = render({ showFrame, ...placedSettings({ legendBox: snapped, legendAnchor }) }).legend!;
+      const applied = render({ showFrame, legendFrameClear, ...placedSettings({ legendBox: snapped, legendAnchor }) }).legend!;
       expect(applied.x).toBeCloseTo(snapped.x, 4);
       expect(applied.y).toBeCloseTo(snapped.y, 4);
     }

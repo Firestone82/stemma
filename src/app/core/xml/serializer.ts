@@ -222,6 +222,7 @@ function writePrint(w: XmlWriter, p: PrintSettings): void {
     ['legendHeadAlign', p.legendHeadAlign && p.legendHeadAlign !== 'center' ? p.legendHeadAlign : undefined],
     ['legendHeadWidth', p.legendHeadWidth ? String(Math.round(p.legendHeadWidth * 100) / 100) : undefined],
     ['legendBlocks', p.legendBlocks ? 'true' : undefined],
+    ['legendFrameClear', p.legendFrameClear ? 'true' : undefined],
     ['settingsPage', p.settingsPage ? undefined : 'false'],
     ['layoutChoice', p.layoutChoice ? String(p.layoutChoice) : undefined],
     ['amidPartners', p.amidPartners ? undefined : 'false'],

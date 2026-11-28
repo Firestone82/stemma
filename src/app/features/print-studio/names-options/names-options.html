@@ -53,6 +53,16 @@
       </div>
     </div>
     <stemma-box-coords of="legend" />
+    <div class="studio-option">
+      <stemma-switch
+        [disabled]="!model.settings().showFrame"
+        [attr.title]="model.settings().showFrame ? null : t('print.why.noFrame')"
+        [checked]="s.legendFrameClear"
+        (checkedChange)="model.set({ legendFrameClear: $event })"
+        >{{ t('print.legendFrameClear') }}</stemma-switch
+      >
+      <span class="hint">{{ t('print.legendFrameClearHint') }}</span>
+    </div>
   </fieldset>
   <div class="studio-option">
     <stemma-switch [checked]="s.legendHeading" (checkedChange)="model.set({ legendHeading: $event })">{{ t('print.legendHeading') }}</stemma-switch>
