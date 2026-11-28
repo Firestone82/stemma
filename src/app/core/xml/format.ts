@@ -59,6 +59,8 @@ export interface FormatVersion {
  *      showRelationships on <view> again: how everyone is related to the person in the middle, on the
  *      chart's cards (the chart is drawn the same whoever that is).
  *      <savedPrints>: print settings kept for particular people, a <print> for each (its center).
+ *      <part>: in a file holding a part of a tree taken out to be filled in elsewhere, how its people
+ *      and families were then, so that merging it back can tell which side changed what.
  */
 export const CURRENT_FORMAT: FormatVersion = { major: 1, minor: 9 };
 

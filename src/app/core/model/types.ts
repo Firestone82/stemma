@@ -406,6 +406,29 @@ export interface LegendBox {
   h: number;
 }
 
+/** A family as it was when its part of the tree was taken out (see PartInfo): the fingerprints of its fields, and who was in it. */
+export interface PartFamilyBase {
+  fields: string;
+  partners: string[];
+  children: string[];
+}
+
+/**
+ * What a file holding a part of a tree records of how the part was taken out (see core/part), so that merging
+ * it back can tell what was changed in the file from what was changed in the tree since.
+ */
+export interface PartInfo {
+  /** The title of the tree it was taken from. */
+  source: string;
+  /** When it was taken out (ISO timestamp). */
+  exported: string;
+  /** The person it was taken around. */
+  rootId?: string;
+  /** By person id: the fingerprints of the person's fields as they were (see personFingerprints). */
+  people: Record<string, string>;
+  families: Record<string, PartFamilyBase>;
+}
+
 export interface TreeDocument {
   meta: TreeMeta;
   view: ViewSettings;
@@ -418,6 +441,8 @@ export interface TreeDocument {
    * of the page in the print studio brings them back.
    */
   savedPrints?: PrintSettings[];
+  /** Set in a file that holds a part of a tree, taken out to be filled in and merged back (format 1.9). */
+  part?: PartInfo;
   /** Unknown root attributes and top-level sections. */
   ext?: Extensions;
   /** Unknown attributes and elements inside <people> and <families>. */

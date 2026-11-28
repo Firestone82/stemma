@@ -21,6 +21,12 @@
       @case ('family-export') {
         <stemma-family-export (done)="close()" />
       }
+      @case ('part-export') {
+        <stemma-part-export (done)="close()" />
+      }
+      @case ('part-merge') {
+        <stemma-part-merge [part]="r.part" [name]="r.name" (done)="close()" />
+      }
       @case ('unsaved') {
         <stemma-unsaved-changes [proceed]="r.proceed" (done)="close()" />
       }

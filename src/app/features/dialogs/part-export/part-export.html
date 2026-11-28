@@ -1,0 +1,51 @@
+@let c = center();
+<div class="dialog-body">
+  <h2>{{ t('part.export.title') }}</h2>
+  <p>{{ t('part.export.text') }}</p>
+  <div class="field">
+    <span class="field-label">{{ t('part.export.around') }}</span>
+    <div class="center">
+      <span class="name">{{ c ? name(c) : '—' }}</span>
+      <button type="button" class="btn small" [attr.aria-expanded]="choosing()" (click)="choosing.set(!choosing())">
+        {{ t('part.export.change') }}
+      </button>
+    </div>
+    @if (choosing()) {
+      <stemma-person-picker inputId="part-center" [selected]="centerId()" (selectedChange)="choose($event)" />
+    }
+  </div>
+  <div class="grid-2">
+    <div class="field">
+      <label for="part-up">{{ t('part.export.up') }}</label>
+      <select class="select" id="part-up" (change)="setReach('up', $event)">
+        @for (r of reaches; track r) {
+          <option [value]="r" [selected]="r === up()">{{ reachLabel(r) }}</option>
+        }
+      </select>
+    </div>
+    <div class="field">
+      <label for="part-down">{{ t('part.export.down') }}</label>
+      <select class="select" id="part-down" (change)="setReach('down', $event)">
+        @for (r of reaches; track r) {
+          <option [value]="r" [selected]="r === down()">{{ reachLabel(r) }}</option>
+        }
+      </select>
+    </div>
+  </div>
+  <div class="field">
+    <label for="part-sideways">{{ t('part.export.sideways') }}</label>
+    <select class="select" id="part-sideways" (change)="setRelatives($event)">
+      @for (r of relativesSteps; track r) {
+        <option [value]="r" [selected]="r === relatives()">{{ relativesLabel(r) }}</option>
+      }
+    </select>
+    <span class="hint">{{ relativesHint(relatives()) }}</span>
+  </div>
+  <p class="summary">
+    {{ t('part.export.size', { people: t('part.people', { count: size().people }), families: t('part.families', { count: size().families }) }) }}
+  </p>
+</div>
+<div class="dialog-actions">
+  <button type="button" class="btn" (click)="done.emit()">{{ t('common.cancel') }}</button>
+  <button type="button" class="btn primary" [disabled]="!c" (click)="export()"><stemma-icon name="download" [size]="16" />{{ t('part.export.save') }}</button>
+</div>

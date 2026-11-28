@@ -1,0 +1,24 @@
+:host {
+  display: block;
+}
+
+.center {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  font-family: var(--font-serif);
+  font-size: var(--text-md);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dialog-body p.summary {
+  color: var(--ink);
+  font-weight: 600;
+}

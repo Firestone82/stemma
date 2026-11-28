@@ -1,4 +1,4 @@
-import { CardSettings, Extensions, Family, LifeEvent, Person, PrintSettings, Reach, TreeDocument } from '../model/types';
+import { CardSettings, Extensions, Family, LifeEvent, PartInfo, Person, PrintSettings, Reach, TreeDocument } from '../model/types';
 import { CURRENT_FORMAT, GENERATOR, ROOT_ELEMENT, XML_NAMESPACE, formatVersionString } from './format';
 import { Attrs, XmlWriter } from './xml-writer';
 
@@ -44,10 +44,37 @@ export function serializeTree(doc: TreeDocument, options: SerializeOptions = {})
     for (const s of saved) writePrint(w, s);
     w.close();
   }
+  if (doc.part) writePart(w, doc.part);
 
   extElements(w, doc.ext);
   w.close();
   return w.toString();
+}
+
+/**
+ * Later in 1.9: how a part of a tree was when it was taken out (see core/part). Records of people and families
+ * since deleted from the file stay: they tell a merge that they were deleted.
+ */
+function writePart(w: XmlWriter, part: PartInfo): void {
+  w.open('part', [
+    ['source', part.source],
+    ['exported', part.exported],
+    ['root', part.rootId],
+  ]);
+  for (const [id, fields] of Object.entries(part.people))
+    w.element('person', [
+      ['ref', id],
+      ['base', fields],
+    ]);
+  for (const [id, f] of Object.entries(part.families)) {
+    w.element('family', [
+      ['ref', id],
+      ['base', f.fields],
+      ['partners', f.partners.join(' ') || undefined],
+      ['children', f.children.join(' ') || undefined],
+    ]);
+  }
+  w.close();
 }
 
 function writeMeta(w: XmlWriter, doc: TreeDocument): void {
