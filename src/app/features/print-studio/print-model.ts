@@ -564,7 +564,8 @@ export class PrintModel {
     this.set({ lineBends: key && Object.keys(bends).length ? bends : undefined });
   }
 
-  readonly bentCount = computed(() => Object.keys(this.settings().lineBends ?? {}).length);
+  readonly bentKeys = computed(() => Object.keys(this.settings().lineBends ?? {}));
+  readonly bentCount = computed(() => this.bentKeys().length);
 
   /**
    * Makes the gap between two cards (see gapKey) so much wider than the layout has it, in the layout's units, or

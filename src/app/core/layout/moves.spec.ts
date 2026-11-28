@@ -1,7 +1,7 @@
 import { sampleDocument } from '../model/sample';
 import { TreeIndex } from '../model/tree-index';
 import { Layouter, WIDE } from './engine';
-import { applyBends, applyMoves, bent } from './moves';
+import { addBend, applyBends, applyMoves, bent, removeBend } from './moves';
 import { crossing } from './route';
 import { LAYOUT, LayoutCard, LayoutResult, Pt } from './types';
 
@@ -266,5 +266,64 @@ describe('cards moved by hand', () => {
     const far = applyMoves(l, new Map([['I29', { x: 4000, y: 0 }]]));
     expect(far.bounds.w).toBeGreaterThan(l.bounds.w + 3000);
     expect(far.bounds.x).toBe(l.bounds.x);
+  });
+
+  describe('bends put on a line by hand', () => {
+    const z = [
+      { x: 0, y: 0 },
+      { x: 0, y: 40 },
+      { x: 100, y: 40 },
+      { x: 100, y: 80 },
+    ];
+
+    it('puts a bend on the stretch nearest the click, exactly on it', () => {
+      expect(addBend(z, { x: 50, y: 43 })).toEqual({ points: [z[0], z[1], { x: 50, y: 40 }, z[2], z[3]], at: 2 });
+      // At a corner already: nothing to put.
+      expect(addBend(z, { x: 1, y: 41 })).toBeUndefined();
+    });
+
+    it('keeps a bend in the middle of a straight run when the line is drawn with its ends moved', () => {
+      const split = [z[0], { x: 0, y: 20 }, z[1], z[2], z[3]];
+      expect(bent(split, { x: 10, y: 5 }, { x: 130, y: 90 })).toEqual([
+        { x: 10, y: 5 },
+        { x: 10, y: 20 },
+        { x: 10, y: 40 },
+        { x: 130, y: 40 },
+        { x: 130, y: 90 },
+      ]);
+    });
+
+    it('takes a bend off: one in a straight run simply goes', () => {
+      expect(removeBend([z[0], z[1], { x: 50, y: 40 }, z[2], z[3]], 2)).toEqual(z);
+    });
+
+    it('takes a corner off with its step, the stretch beyond put in line with the one before', () => {
+      // Down, across, down a step, across, down into the card.
+      const step = [
+        { x: 0, y: 0 },
+        { x: 0, y: 20 },
+        { x: 50, y: 20 },
+        { x: 50, y: 40 },
+        { x: 100, y: 40 },
+        { x: 100, y: 80 },
+      ];
+      expect(removeBend(step, 3)).toEqual([
+        { x: 0, y: 0 },
+        { x: 0, y: 20 },
+        { x: 100, y: 20 },
+        { x: 100, y: 80 },
+      ]);
+      // A corner with only the two ends round it cannot go without the line running askew: led by the layout again.
+      expect(
+        removeBend(
+          [
+            { x: 0, y: 0 },
+            { x: 0, y: 40 },
+            { x: 100, y: 40 },
+          ],
+          1,
+        ),
+      ).toBeNull();
+    });
   });
 });
