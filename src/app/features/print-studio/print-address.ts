@@ -8,7 +8,10 @@ export function isPrintHash(hash: string): boolean {
   return hash === PRINT_HASH || hash.startsWith(PRINT_HASH + '?');
 }
 
-/** The parameter that names the person the page is drawn around (PrintSettings.centerId): first, and shorter. */
+/**
+ * The parameter that names the person the page is drawn around (PrintSettings.centerId): first, and shorter.
+ * Empty (`person=`) for nobody, the whole family on the page.
+ */
 const PERSON = 'person';
 
 /**
@@ -115,13 +118,13 @@ const same = (a: unknown, b: unknown) => a === b || JSON.stringify(a) === JSON.s
 
 /**
  * The print studio's address for these settings (#/print?person=I1&paper=A2…): the person the page is drawn
- * around (`person`, the home person when the settings name nobody) and every setting that differs from
+ * around (`person`, the home person when the settings name nobody, empty for the whole family) and every setting that differs from
  * `defaults`, so the address stays short and a setting left as it was stays out of it.
  */
 export function printAddress(settings: PrintSettings, defaults: PrintSettings, person?: string): string {
   const params = new URLSearchParams();
-  const center = settings.centerId ?? person;
-  if (center) params.set(PERSON, center);
+  const center = settings.centerId === null ? '' : (settings.centerId ?? person);
+  if (center !== undefined) params.set(PERSON, center);
   for (const key of ADDRESS_KEYS) {
     if (key === 'centerId') continue;
     const value = settings[key];
@@ -146,7 +149,7 @@ export function readPrintAddress(hash: string, defaults: PrintSettings): Partial
   for (const [name, text] of params) {
     const key = name === PERSON ? 'centerId' : name;
     if (!known.has(key) || name === 'centerId') continue;
-    const value = key === 'centerId' ? text : read(text);
+    const value = key === 'centerId' ? text.trim() || null : read(text);
     if (!fits(value, defaults[key as keyof PrintSettings])) continue;
     out[key] = value;
   }

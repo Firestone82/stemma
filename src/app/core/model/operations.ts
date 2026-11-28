@@ -561,7 +561,7 @@ function keptFor(s: PrintSettings, personId: string): boolean {
 }
 
 /** The couple print settings were kept for, whichever of them is in the middle: the same for both ways round. */
-function coupleKey(centerId: string | undefined, partnerId: string | null | undefined): string {
+function coupleKey(centerId: string | null | undefined, partnerId: string | null | undefined): string {
   return [centerId ?? '', partnerId ?? ''].sort().join('|');
 }
 
@@ -570,8 +570,10 @@ function coupleKey(centerId: string | undefined, partnerId: string | null | unde
  * TreeDocument.savedPrints): one kept with them in the middle first, else one with them beside the one in the
  * middle. Someone married twice may have one for each marriage; the first kept is taken.
  */
-export function savedPrintOf(doc: TreeDocument, personId: string): PrintSettings | undefined {
+export function savedPrintOf(doc: TreeDocument, personId: string | null): PrintSettings | undefined {
   const saved = doc.savedPrints ?? [];
+  // Nobody in the middle: what was kept for the whole family.
+  if (personId === null) return saved.find((s) => s.centerId === null);
   const found = saved.find((s) => s.centerId === personId) ?? saved.find((s) => keptFor(s, personId));
   if (found || !personId) return found;
   // Kept without naming the partner (the page chose them): for any partner of the one it was kept for.
@@ -584,8 +586,9 @@ export function savedPrintOf(doc: TreeDocument, personId: string): PrintSettings
  * round), or with nobody beside them (null). Settings kept without naming the partner (the page chose them) count
  * for the one in the middle with whoever is beside them, when nothing was kept for the couple itself.
  */
-export function savedPrintForCouple(doc: TreeDocument, centerId: string, partnerId: string | null | undefined): PrintSettings | undefined {
+export function savedPrintForCouple(doc: TreeDocument, centerId: string | null, partnerId: string | null | undefined): PrintSettings | undefined {
   const saved = doc.savedPrints ?? [];
+  if (centerId === null) return savedPrintOf(doc, null);
   const key = coupleKey(centerId, partnerId);
   return (
     saved.find((s) => s.partnerId !== undefined && coupleKey(s.centerId, s.partnerId) === key) ??
@@ -599,7 +602,8 @@ export function savedPrintForCouple(doc: TreeDocument, centerId: string, partner
  * was kept for this couple before is replaced.
  */
 export function savePrintFor(doc: TreeDocument, settings: PrintSettings): TreeDocument {
-  if (!settings.centerId) return doc;
+  // Kept for a person, or for the whole family (nobody in the middle: one of those at most).
+  if (!settings.centerId && settings.centerId !== null) return doc;
   const key = coupleKey(settings.centerId, settings.partnerId);
   const same = (s: PrintSettings) => coupleKey(s.centerId, s.partnerId) === key || (s.partnerId === undefined && s.centerId === settings.centerId);
   const rest = (doc.savedPrints ?? []).filter((s) => !same(s));

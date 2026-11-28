@@ -756,6 +756,9 @@ export const en = {
   'print.middle': 'In the middle',
   'print.person': 'Person',
   'print.with': 'With',
+  'print.wholeFamily': 'Whole family',
+  'print.wholeFamilyName': 'the whole family',
+  'print.saveHintWhole': 'Ctrl+S saves these settings for the whole family, in the file; choosing the whole family again brings them back.',
   'print.nobody': 'Nobody',
   'print.swap': 'Swap the two',
   'print.saveFor': 'Save for {name}',
@@ -819,6 +822,8 @@ export const en = {
   'print.amidPartnersHint':
     'Someone who married more than once stands between their partners, each couple side by side. Switched off, the partners of a family that hangs at the side of a line all stand on one side, the line to the further one led over the card between.',
   'print.reach': 'How far',
+  'print.wholeFamilyHint':
+    'Nobody is in the middle, so everyone in the tree is printed (except those hidden from prints). Choose a person in the middle to print only part of the family.',
   'print.up': 'Generations up',
   'print.down': 'Generations down',
   'print.fewerUp': 'Fewer generations up',

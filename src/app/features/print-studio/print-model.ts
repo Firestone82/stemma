@@ -440,8 +440,9 @@ export class PrintModel {
     const rest = added.filter((id) => id !== personId);
     this.set({ added: rest.length ? rest : undefined }, `print add ${++this.stepCount}`);
     const p = this.poster();
-    if (!p?.centerId) return;
-    const scope = scopeDocument(this.store.doc(), this.store.index(), scopeOptions(this.settings(), p.centerId, p.partnerId, new Set(this.ui.printOmitted())));
+    if (!p || (!p.centerId && !this.wholeFamily())) return;
+    const omitted = new Set(this.ui.printOmitted());
+    const scope = scopeDocument(this.store.doc(), this.store.index(), scopeOptions(this.settings(), p.centerId ?? '', p.partnerId, omitted));
     if (scope.people.has(personId)) this.ui.omitFromPrint([personId]);
   }
 
@@ -523,7 +524,9 @@ export class PrintModel {
    * middle is left out. Where the tree stays in one piece without it (cousins who married), only the children go.
    */
   omitBranch(cuts: readonly CutLine[]): void {
-    this.ui.omitFromPrint(cutOff(this.store.index(), this.poster()?.shown ?? [], this.centerId(), cuts));
+    // The whole family on the page: what stays is the part joined to the one it is laid out around.
+    const keep = this.centerId() || this.poster()?.anchorId || '';
+    this.ui.omitFromPrint(cutOff(this.store.index(), this.poster()?.shown ?? [], keep, cuts));
   }
 
   /** Moves a card by hand, from where it is now: the lines to it follow. */
@@ -609,7 +612,11 @@ export class PrintModel {
       .sort((a, b) => this.i18n.compare(a.name, b.name)),
   );
 
-  readonly centerId = computed(() => this.poster()?.centerId ?? this.store.doc().meta.homePersonId ?? '');
+  /** The person in the middle of the page as drawn; empty for the whole family. */
+  readonly centerId = computed(() => (this.wholeFamily() ? '' : (this.poster()?.centerId ?? this.store.doc().meta.homePersonId ?? '')));
+
+  /** Nobody in the middle: the whole family on the page (PrintSettings.centerId null). */
+  readonly wholeFamily = computed(() => this.settings().centerId === null);
 
   readonly partners = computed(() => {
     const index = this.store.index();
@@ -763,7 +770,11 @@ export class PrintModel {
         },
         {
           heading: t('print.sp.middle'),
-          rows: [row('print.sp.person', person(p.centerId)), row('print.sp.partner', person(p.partnerId)), row('print.sp.people', `${p.people} / ${p.total}`)],
+          rows: [
+            row('print.sp.person', s.centerId === null ? t('print.wholeFamily') : person(p.centerId)),
+            row('print.sp.partner', person(p.partnerId)),
+            row('print.sp.people', `${p.people} / ${p.total}`),
+          ],
         },
         {
           heading: t('print.sp.reach'),
@@ -849,12 +860,25 @@ export class PrintModel {
     return this.exporter.withEmbeddedFonts(settingsPageSvg(sheet), settingsText(sheet));
   }
 
-  /** The person the print is drawn around as the settings name them (the home person when they name nobody). */
-  readonly middleId = computed(() => this.settings().centerId ?? this.store.doc().meta.homePersonId ?? '');
+  /** The person the print is drawn around as the settings name them (the home person when they name nobody); empty for the whole family. */
+  readonly middleId = computed(() => {
+    const id = this.settings().centerId;
+    const doc = this.store.doc();
+    return id === null ? '' : (id ?? doc.meta.homePersonId ?? doc.people[0]?.id ?? '');
+  });
+
+  /** There is something to keep the print for: a person in the middle, or the whole family. */
+  readonly canKeep = computed(() => this.wholeFamily() || !!this.middleId());
 
   /** The settings as they would be kept: naming the person in the middle and the partner the page shows beside them. */
   private readonly toKeep = computed<PrintSettings>(() => {
     const s = this.settings();
+    // The whole family: kept as that, with nobody beside anybody.
+    if (s.centerId === null) {
+      const whole: PrintSettings = { ...s, centerId: null };
+      delete whole.partnerId;
+      return whole;
+    }
     const p = this.poster();
     const drawn = p?.centerId === this.middleId() ? (p.partnerId ?? undefined) : undefined;
     const partnerId = s.partnerId === null ? null : (s.partnerId ?? drawn);
@@ -867,6 +891,7 @@ export class PrintModel {
   private readonly kept = computed(() => {
     const doc = this.store.doc();
     const keep = this.toKeep();
+    if (keep.centerId === null) return savedPrintOf(doc, null);
     const id = keep.centerId ?? '';
     // The partner not known yet (the page is still drawing for them): whatever is kept for the one in the middle.
     if (keep.partnerId === undefined) return savedPrintOf(doc, id);
@@ -880,6 +905,7 @@ export class PrintModel {
   /** Who the kept settings are for: the person in the middle, and their partner when the page shows one. */
   readonly savedNames = computed(() => {
     const s = this.saved() ?? this.toKeep();
+    if (s.centerId === null) return [this.i18n.t('print.wholeFamilyName')];
     return [s.centerId, s.partnerId].filter((id): id is string => !!id).map((id) => this.nameOf(id));
   });
   /** The print as it is now differs from what is kept for the couple in the middle. */
@@ -891,7 +917,7 @@ export class PrintModel {
 
   /** The print as it is now kept for the couple in the middle, in place of anything kept for that couple before. */
   saveForMiddle(file = true): void {
-    if (!this.middleId()) return;
+    if (!this.canKeep()) return;
     // What waits (the title and the families' names placed or sized) is applied first, and kept with the rest.
     this.applyStaged();
     const keep = this.toKeep();
@@ -916,14 +942,15 @@ export class PrintModel {
   }
 
   /**
-   * Someone else in the middle of the page: with the settings kept for them (with one of their partners), or,
-   * when none are kept, with every setting as it is before anything was chosen.
+   * Someone else in the middle of the page (empty: nobody, the whole family): with the settings kept for them
+   * (with one of their partners), or, when none are kept, with every setting as it is before anything was chosen.
    */
   chooseMiddle(id: string): void {
     this.staged.set({});
-    const kept = savedPrintOf(this.store.doc(), id);
+    const centerId = id || null;
+    const kept = savedPrintOf(this.store.doc(), centerId);
     if (kept) this.store.update((doc) => useSavedPrint(doc, kept), 'print');
-    else this.store.update((doc) => ({ ...doc, print: { ...printDefaults(doc.view), centerId: id } }), 'print');
+    else this.store.update((doc) => ({ ...doc, print: { ...printDefaults(doc.view), centerId } }), 'print');
     this.ui.printEdited();
   }
 
@@ -932,6 +959,7 @@ export class PrintModel {
    * when there are any; otherwise only the partner changes.
    */
   choosePartner(partnerId: string | null): void {
+    if (this.wholeFamily()) return;
     const centerId = this.middleId();
     const kept = savedPrintForCouple(this.store.doc(), centerId, partnerId);
     // Only what was kept for this very couple (not settings kept without naming a partner).
@@ -946,7 +974,7 @@ export class PrintModel {
 
   /** Ctrl+S in the studio: the print kept for the couple in the middle, with a word that it was. */
   saveShortcut(): void {
-    if (!this.middleId()) return;
+    if (!this.canKeep()) return;
     this.saveForMiddle();
     this.toast.show(this.i18n.t('print.savedToast', { name: this.savedNames().join(' & ') }));
   }

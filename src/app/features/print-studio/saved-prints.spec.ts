@@ -212,3 +212,36 @@ describe('print settings for someone with two partners in the studio', () => {
     expect(store.doc().savedPrints?.map((s) => s.partnerId)).toEqual(['I14']);
   });
 });
+
+describe('print settings for the whole family', () => {
+  it('print everyone with nobody in the middle, kept in the file and brought back when the whole family is chosen', () => {
+    const store = TestBed.inject(TreeStore);
+    const model = TestBed.inject(PrintModel);
+    store.load(sampleDocument());
+    model.chooseMiddle('I3');
+    model.set({ paper: 'A4', ancestors: 1 });
+    model.chooseMiddle('');
+    expect(model.wholeFamily()).toBe(true);
+    expect([store.doc().print?.centerId, store.doc().print?.paper]).toEqual([null, DEFAULT_PRINT.paper]);
+    expect([model.middleId(), model.centerId()]).toEqual(['', '']);
+    // Nobody beside anybody.
+    model.choosePartner('I4');
+    expect(store.doc().print?.partnerId).toBeUndefined();
+
+    model.set({ paper: 'A0' });
+    model.saveForMiddle(false);
+    expect(model.saved()?.centerId).toBeNull();
+    expect(model.saved()?.partnerId).toBeUndefined();
+    expect(model.savedNames()).toEqual(['the whole family']);
+
+    model.chooseMiddle('I3');
+    expect(store.doc().print?.paper).toBe(DEFAULT_PRINT.paper);
+    model.chooseMiddle('');
+    expect([store.doc().print?.centerId, store.doc().print?.paper]).toEqual([null, 'A0']);
+
+    const back = parseTree(serializeTree(store.doc())).doc;
+    expect(back.print?.centerId).toBeNull();
+    expect(back.savedPrints?.map((s) => [s.centerId, s.paper])).toEqual([[null, 'A0']]);
+    expect(savedPrintOf(back, null)?.paper).toBe('A0');
+  });
+});

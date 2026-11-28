@@ -333,10 +333,12 @@ class Reader {
     const savedEl = first(root, 'savedPrints');
     if (savedEl) {
       const ids = new Set(people.map((p) => p.id));
+      // The one kept for the whole family (nobody in the middle) under ''.
       const byPerson = new Map<string, PrintSettings>();
       for (const el of elements(savedEl, 'print')) {
         const print = this.readPrint(el);
-        if (print.centerId && ids.has(print.centerId)) byPerson.set(print.centerId, print);
+        if (print.centerId === null) byPerson.set('', print);
+        else if (print.centerId && ids.has(print.centerId)) byPerson.set(print.centerId, print);
       }
       if (byPerson.size) doc.savedPrints = [...byPerson.values()];
     }
@@ -429,7 +431,9 @@ class Reader {
     if (paper) print.paper = paper;
     print.orientation = this.enumAttr(el, 'orientation', ORIENTATION_VALUES, DEFAULT_PRINT.orientation);
     const center = el.getAttribute('center')?.trim();
-    if (center) print.centerId = center;
+    // Later in 1.9: nobody in the middle, the whole family on the page.
+    if (boolAttr(el, 'wholeFamily', false)) print.centerId = null;
+    else if (center) print.centerId = center;
     const partner = el.getAttribute('partner')?.trim();
     if (!boolAttr(el, 'withPartner', true)) print.partnerId = null;
     else if (partner) print.partnerId = partner;

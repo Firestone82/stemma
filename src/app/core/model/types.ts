@@ -243,8 +243,8 @@ export interface PrintSettings extends CardSettings {
   /** 'A4', 'A3', 'A2', 'A1', 'A0', 'letter', 'tabloid', or 'fit' for a page the size of the tree. */
   paper: string;
   orientation: Orientation;
-  /** The person the page is drawn around. The home person when not set. */
-  centerId?: string;
+  /** The person the page is drawn around. The home person when not set; null for nobody, the whole family on the page. */
+  centerId?: string | null;
   /** Their partner beside them. Chosen automatically when undefined; null for nobody. */
   partnerId?: string | null;
   /** Families as close together as they go, with the least room between cards and lines: bigger cards, a busier page. */
