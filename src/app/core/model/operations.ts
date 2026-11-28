@@ -148,21 +148,26 @@ export function updatePerson(doc: TreeDocument, id: string, patch: PersonPatch):
 /** Removes a person and every link to them. Families left meaningless are removed too. */
 export function deletePerson(doc: TreeDocument, id: string): TreeDocument {
   requirePerson(doc, id);
+  return deletePeople(doc, new Set([id]));
+}
+
+export function deletePeople(doc: TreeDocument, ids: ReadonlySet<string>): TreeDocument {
+  if (!ids.size) return doc;
   const affected: string[] = [];
   const families = doc.families.map((f) => {
-    if (!f.partners.includes(id) && !f.children.some((c) => c.personId === id)) return f;
+    if (!f.partners.some((p) => ids.has(p)) && !f.children.some((c) => ids.has(c.personId))) return f;
     affected.push(f.id);
     return {
       ...f,
-      partners: f.partners.filter((p) => p !== id),
-      children: f.children.filter((c) => c.personId !== id),
+      partners: f.partners.filter((p) => !ids.has(p)),
+      children: f.children.filter((c) => !ids.has(c.personId)),
     };
   });
-  const meta = doc.meta.homePersonId === id ? withoutKey(doc.meta, 'homePersonId') : doc.meta;
+  const meta = doc.meta.homePersonId && ids.has(doc.meta.homePersonId) ? withoutKey(doc.meta, 'homePersonId') : doc.meta;
   let print = doc.print;
-  if (print?.centerId === id) print = withoutKey(withoutKey(print, 'centerId'), 'partnerId');
-  if (print?.partnerId === id) print = withoutKey(print, 'partnerId');
-  const next: TreeDocument = { ...doc, meta, people: doc.people.filter((p) => p.id !== id), families };
+  if (print?.centerId && ids.has(print.centerId)) print = withoutKey(withoutKey(print, 'centerId'), 'partnerId');
+  if (print?.partnerId && ids.has(print.partnerId)) print = withoutKey(print, 'partnerId');
+  const next: TreeDocument = { ...doc, meta, people: doc.people.filter((p) => !ids.has(p.id)), families };
   if (print) next.print = print;
   return cleanupFamilies(next, affected);
 }

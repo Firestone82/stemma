@@ -17,7 +17,7 @@ import { Relation } from '../../../../state/ui-state';
   host: { class: 'panel-section', '[attr.aria-label]': "t('person.addRelative')", role: 'group' },
 })
 export class PersonSummary {
-  private readonly store = inject(TreeStore);
+  protected readonly store = inject(TreeStore);
   private readonly i18n = inject(I18n);
   protected readonly t = this.i18n.t;
 

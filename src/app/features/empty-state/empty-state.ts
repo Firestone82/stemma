@@ -1,8 +1,9 @@
-import { ChangeDetectionStrategy, Component, computed, inject } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject, input } from '@angular/core';
 import { RecentFile } from '../../core/services/recent-files';
 import { I18n } from '../../i18n/i18n';
 import { Icon } from '../../shared/icon/icon';
 import { DocumentActions } from '../../state/document-actions';
+import { UiState } from '../../state/ui-state';
 import { PersonActions } from '../../state/person-actions';
 
 /**
@@ -18,6 +19,8 @@ import { PersonActions } from '../../state/person-actions';
   host: { role: 'region', 'aria-labelledby': 'empty-title' },
 })
 export class EmptyState {
+  readonly canResume = input(false);
+  protected readonly ui = inject(UiState);
   protected readonly documents = inject(DocumentActions);
   private readonly people = inject(PersonActions);
   private readonly i18n = inject(I18n);
@@ -53,6 +56,7 @@ export class EmptyState {
   }
 
   protected addFirst(): void {
+    this.ui.home.set(false);
     this.people.addLoosePerson({ given: '' });
   }
 }

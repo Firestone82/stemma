@@ -54,6 +54,75 @@ describe('App', () => {
     expect(el.querySelector('stemma-confirm-delete')).toBeTruthy();
   });
 
+  it('previews a family export with all generations in both directions', async () => {
+    const fixture = TestBed.createComponent(App);
+    await fixture.whenStable();
+    const el = fixture.nativeElement as HTMLElement;
+    const card = el.querySelector<SVGGElement>('g.card[data-person="I11"]')!;
+    card.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }));
+    await fixture.whenStable();
+    const menu = el.querySelector('stemma-context-menu')!;
+    HTMLDialogElement.prototype.showModal ??= function (this: HTMLDialogElement) {
+      this.setAttribute('open', '');
+    };
+    [...menu.querySelectorAll('button')].find((b) => b.textContent?.includes('Export this family as XML'))!.click();
+    await fixture.whenStable();
+
+    expect(el.querySelector<HTMLSelectElement>('#part-up')?.value).toBe('all');
+    expect(el.querySelector<HTMLSelectElement>('#part-down')?.value).toBe('all');
+    const preview = el.querySelector('.export-preview');
+    expect(preview?.textContent).toContain('Simon');
+    expect(preview?.querySelectorAll('li').length).toBeLessThan(29);
+  });
+
+  it('selects a box of cards and bulk deletes them in one undo step', async () => {
+    const fixture = TestBed.createComponent(App);
+    await fixture.whenStable();
+    const el = fixture.nativeElement as HTMLElement;
+    const stage = el.querySelector('.stage')!;
+    const pointer = (type: string, clientX: number, clientY: number) => {
+      stage.dispatchEvent(new PointerEvent(type, { bubbles: true, pointerId: 1, pointerType: 'mouse', clientX, clientY }));
+    };
+    pointer('pointerdown', -100000, -100000);
+    pointer('pointermove', 100000, 100000);
+    pointer('pointerup', 100000, 100000);
+    await fixture.whenStable();
+    const store = TestBed.inject(TreeStore);
+    expect(store.selection()?.kind).toBe('people');
+    const selected = el.querySelectorAll('g.card[aria-pressed="true"]');
+    expect(selected.length).toBeGreaterThan(1);
+    const size = store.doc().people.length;
+    HTMLDialogElement.prototype.showModal ??= function (this: HTMLDialogElement) {
+      this.setAttribute('open', '');
+    };
+    el.querySelector<HTMLButtonElement>('.tools .btn')?.click();
+    await fixture.whenStable();
+    expect(el.querySelector('stemma-confirm-delete h2')?.textContent).toContain(`Delete ${selected.length} people?`);
+    HTMLDialogElement.prototype.close ??= function (this: HTMLDialogElement) {
+      this.removeAttribute('open');
+    };
+    el.querySelector<HTMLButtonElement>('stemma-confirm-delete .primary')!.click();
+    expect(store.doc().people.length).toBe(size - selected.length);
+    store.undo();
+    expect(store.doc().people.length).toBe(size);
+  });
+
+  it('goes to the home page from the Stemma brand and resumes the open tree', async () => {
+    const fixture = TestBed.createComponent(App);
+    await fixture.whenStable();
+    const el = fixture.nativeElement as HTMLElement;
+    const store = TestBed.inject(TreeStore);
+    const doc = store.doc();
+    el.querySelector<HTMLButtonElement>('.brand')!.click();
+    await fixture.whenStable();
+    expect(el.querySelector('stemma-empty-state')).toBeTruthy();
+    expect(el.querySelector('stemma-chart')).toBeNull();
+    el.querySelector<HTMLButtonElement>('stemma-empty-state .primary')!.click();
+    await fixture.whenStable();
+    expect(el.querySelector('stemma-chart')).toBeTruthy();
+    expect(store.doc()).toBe(doc);
+  });
+
   it('keeps a copy of the tree in the browser', async () => {
     const fixture = TestBed.createComponent(App);
     await fixture.whenStable();

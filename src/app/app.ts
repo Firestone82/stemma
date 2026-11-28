@@ -11,6 +11,7 @@ import { SidePanel } from './features/side-panel/side-panel';
 import { Toasts } from './features/toasts/toasts';
 import { TopBar } from './features/top-bar/top-bar';
 import { TreeChart } from './features/tree-chart/tree-chart';
+import { I18n } from './i18n/i18n';
 import { DocumentActions } from './state/document-actions';
 import { FamilyView } from './state/family-view';
 import { Shortcuts } from './state/shortcuts';
@@ -34,6 +35,7 @@ import { UiState } from './state/ui-state';
 })
 export class App {
   private readonly store = inject(TreeStore);
+  protected readonly t = inject(I18n).t;
   protected readonly ui = inject(UiState);
   protected readonly shortcuts = inject(Shortcuts);
   protected readonly documents = inject(DocumentActions);

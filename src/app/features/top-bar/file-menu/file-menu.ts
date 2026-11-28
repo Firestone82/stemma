@@ -30,6 +30,7 @@ export class FileMenu {
   /** Save writes back to the tree's file; without one it saves a new file, or shows the XML to copy where .xml cannot be downloaded. */
   protected readonly saveLabel = computed(() => {
     const source = this.documents.source();
+    if (this.documents.readOnly()) return this.t('file.saveCopy');
     if (source) return this.t(source.kind === 'drive' ? 'file.saveInDrive' : 'file.saveInPlace');
     return this.t(this.documents.canSaveXml() ? 'file.save' : 'file.saveCopy');
   });

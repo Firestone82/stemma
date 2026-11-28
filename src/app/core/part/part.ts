@@ -13,7 +13,9 @@ import { Family, FamilyChild, LifeEvent, PartFamilyBase, Person, TreeDocument } 
 import { ScopeOptions, scopeDocument } from '../poster/scope';
 
 /** How far a part reaches from the person it is taken around (see scopeDocument). */
-export type PartScope = Pick<ScopeOptions, 'centerId' | 'ancestors' | 'descendants' | 'branches' | 'inLawFamilies' | 'siblingsOnly'>;
+export type PartScope = Pick<ScopeOptions, 'centerId' | 'ancestors' | 'descendants' | 'branches' | 'inLawFamilies' | 'siblingsOnly'> & {
+  members?: ReadonlySet<string>;
+};
 
 /** The fields of a person that are merged one by one. Places are not among them: the app keeps no places. */
 export const PERSON_FIELDS = ['sex', 'given', 'surname', 'birthSurname', 'birth', 'death', 'notes', 'photo', 'hidden'] as const;
@@ -155,25 +157,34 @@ export interface PartOptions extends PartScope {
  * record of how it was (PartInfo). Everyone is in it, hidden from prints or not; print settings stay behind.
  */
 export function partDocument(doc: TreeDocument, index: TreeIndex, options: PartOptions): TreeDocument {
-  const scope = scopeDocument(doc, index, { ...options, showHidden: true });
+  const scoped = scopedPart(doc, index, options);
   const now = (options.now ?? new Date()).toISOString();
   const people: Record<string, string> = {};
-  for (const p of scope.doc.people) people[p.id] = personFingerprints(p);
+  for (const p of scoped.people) people[p.id] = personFingerprints(p);
   const families: Record<string, PartFamilyBase> = {};
-  for (const f of scope.doc.families) {
+  for (const f of scoped.families) {
     families[f.id] = { fields: familyFingerprints(f), partners: [...f.partners], children: f.children.map((c) => c.personId) };
   }
   return {
     meta: { title: options.title, description: doc.meta.description, created: now, modified: now, homePersonId: options.centerId },
     view: doc.view,
-    people: scope.doc.people,
-    families: scope.doc.families,
+    people: scoped.people,
+    families: scoped.families,
     part: { source: doc.meta.title, exported: now, rootId: options.centerId, people, families },
   };
 }
 
-/** How many people and families a part would have. */
+/** The same people and relationships used by the preview and the XML export. */
+export function scopedPart(doc: TreeDocument, index: TreeIndex, options: PartScope): TreeDocument {
+  const { members } = options;
+  return scopeDocument(doc, index, {
+    ...options,
+    showHidden: true,
+    omit: members ? new Set(doc.people.filter((p) => !members.has(p.id)).map((p) => p.id)) : undefined,
+  }).doc;
+}
+
 export function partSize(doc: TreeDocument, index: TreeIndex, options: PartScope): { people: number; families: number } {
-  const scope = scopeDocument(doc, index, { ...options, showHidden: true });
-  return { people: scope.doc.people.length, families: scope.doc.families.length };
+  const scoped = scopedPart(doc, index, options);
+  return { people: scoped.people.length, families: scoped.families.length };
 }

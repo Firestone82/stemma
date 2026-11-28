@@ -22,3 +22,20 @@
   color: var(--ink);
   font-weight: 600;
 }
+
+.export-layout {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 24px;
+}
+
+.export-preview {
+  max-height: 50vh;
+  overflow: auto;
+}
+
+@media (max-width: 620px) {
+  .export-layout {
+    grid-template-columns: 1fr;
+  }
+}

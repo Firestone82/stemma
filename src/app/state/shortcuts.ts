@@ -60,10 +60,10 @@ export class Shortcuts {
     } else if (e.key === 'Escape') {
       this.escape();
     } else if (!typing && (e.key === 'Delete' || e.key === 'Backspace')) {
-      const person = this.store.selectedPerson();
-      if (person && !this.ui.dialog()) {
+      const selection = this.store.selection();
+      if ((selection?.kind === 'person' || selection?.kind === 'people') && !this.ui.dialog() && !this.ui.printOpen() && !this.ui.home()) {
         e.preventDefault();
-        this.people.askDelete(person.id);
+        this.people.askDelete(selection.kind === 'person' ? selection.id : selection.ids);
       }
     }
   }

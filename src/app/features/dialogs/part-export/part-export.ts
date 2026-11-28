@@ -1,5 +1,5 @@
-import { ChangeDetectionStrategy, Component, computed, inject, output, signal } from '@angular/core';
-import { partSize } from '../../../core/part/part';
+import { ChangeDetectionStrategy, Component, computed, inject, input, linkedSignal, output, signal } from '@angular/core';
+import { scopedPart } from '../../../core/part/part';
 import { RELATIVES, Relatives, relativesSettings } from '../../../core/poster/scope';
 import { Person, Reach } from '../../../core/model/types';
 import { TreeStore } from '../../../core/store/tree-store';
@@ -7,6 +7,10 @@ import { I18n } from '../../../i18n/i18n';
 import { MessageKey } from '../../../i18n/locales';
 import { Icon } from '../../../shared/icon/icon';
 import { PersonPicker } from '../../../shared/person-picker/person-picker';
+import { unitingOf } from '../../../core/model/names';
+import { ChartModel } from '../../../state/chart-model';
+import { FamilyGroupItem } from '../../side-panel/overview-panel/people-list/family-group/family-group';
+import { groupByFamily } from '../../side-panel/overview-panel/people-list/family-groups';
 import { PartActions } from '../../../state/part-actions';
 
 const REACHES: readonly Reach[] = [0, 1, 2, 3, 4, 'all'];
@@ -17,30 +21,33 @@ const REACHES: readonly Reach[] = [0, 1, 2, 3, 4, 'all'];
  */
 @Component({
   selector: 'stemma-part-export',
-  imports: [Icon, PersonPicker],
+  imports: [Icon, PersonPicker, FamilyGroupItem],
   templateUrl: './part-export.html',
   styleUrl: './part-export.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class PartExport {
   private readonly store = inject(TreeStore);
+  private readonly model = inject(ChartModel);
   private readonly parts = inject(PartActions);
   private readonly i18n = inject(I18n);
   protected readonly t = this.i18n.t;
 
+  readonly familyPersonId = input<string>();
   readonly done = output<void>();
 
   protected readonly reaches = REACHES;
   protected readonly relativesSteps = RELATIVES;
 
   /** The person the part is taken around: the one selected, else the one the tree is drawn around. */
-  protected readonly centerId = signal<string | null>(
-    this.store.selectedPerson()?.id ?? this.store.doc().meta.homePersonId ?? this.store.doc().people[0]?.id ?? null,
+  protected readonly centerId = linkedSignal<string | null>(
+    () => this.familyPersonId() ?? this.store.selectedPerson()?.id ?? this.store.doc().meta.homePersonId ?? this.store.doc().people[0]?.id ?? null,
   );
   protected readonly choosing = signal(false);
-  protected readonly up = signal<Reach>(0);
+  protected readonly up = signal<Reach>('all');
   protected readonly down = signal<Reach>('all');
-  protected readonly relatives = signal<Relatives>('direct');
+  protected readonly relatives = linkedSignal<Relatives>(() => (this.familyPersonId() ? 'everyone' : 'direct'));
+  protected readonly collapsed = signal<ReadonlySet<string>>(new Set());
 
   protected readonly center = computed(() => {
     const id = this.centerId();
@@ -50,13 +57,48 @@ export class PartExport {
   private readonly scope = computed(() => {
     const centerId = this.center()?.id;
     if (!centerId) return null;
-    return { centerId, ancestors: this.up(), descendants: this.down(), ...relativesSettings(this.relatives()) };
+    const familyPersonId = this.familyPersonId();
+    const keys = this.model.familyKeyOf();
+    const key = familyPersonId ? keys.get(familyPersonId) : undefined;
+    const members = familyPersonId
+      ? new Set(
+          this.store
+            .doc()
+            .people.filter((p) => keys.get(p.id) === key)
+            .map((p) => p.id),
+        )
+      : undefined;
+    return { centerId, ancestors: this.up(), descendants: this.down(), members, ...relativesSettings(this.relatives()) };
   });
 
-  protected readonly size = computed(() => {
+  protected readonly preview = computed(() => {
     const scope = this.scope();
-    return scope ? partSize(this.store.doc(), this.store.index(), scope) : { people: 0, families: 0 };
+    return scope ? scopedPart(this.store.doc(), this.store.index(), scope) : null;
   });
+
+  protected readonly groups = computed(() => {
+    const doc = this.preview();
+    if (!doc) return [];
+    const colors = this.model.colors();
+    const tinctures = new Map(colors.legend.map((e) => [e.key, e.tincture]));
+    return groupByFamily(doc.people, this.i18n.compare, unitingOf(doc.view)).map((g) => ({
+      key: g.key,
+      label: g.key ? g.spellings.slice(0, 3).join(' / ') : this.t('overview.noSurname'),
+      tincture: tinctures.get(g.key) ?? 'argent',
+      members: g.members.map((p) => ({
+        id: p.id,
+        name: this.i18n.sortName(p),
+        dates: this.i18n.lifespan(p),
+        tincture: colors.byPerson.get(p.id) ?? 'argent',
+      })),
+    }));
+  });
+
+  protected toggle(key: string): void {
+    const next = new Set(this.collapsed());
+    if (!next.delete(key)) next.add(key);
+    this.collapsed.set(next);
+  }
 
   protected reachLabel(r: Reach): string {
     return r === 'all' ? this.t('part.reach.all') : r === 0 ? this.t('part.reach.none') : this.t('part.reach.generations', { count: r });

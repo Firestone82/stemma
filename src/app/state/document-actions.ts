@@ -9,7 +9,7 @@ import { LegendEntry, familyDocument } from '../core/family-document/family-docu
 import { ChartLanguage } from '../core/lang/language';
 import { familyOutline, linkedFamilies } from '../core/family-document/outline';
 import { FileIo, PickerType, SaveOutcome, datedFilename } from '../core/services/file-io';
-import { DriveFile, DriveOutcome, GoogleDrive, SHARE_PARAM, sharedFileId } from '../core/services/google-drive';
+import { DriveFile, DriveOutcome, DriveProgress, GoogleDrive, SHARE_PARAM, sharedFileId } from '../core/services/google-drive';
 import { LocalDetails, RecentFile, RecentFiles } from '../core/services/recent-files';
 import { ToastService } from '../core/services/toast';
 import { TreeStore } from '../core/store/tree-store';
@@ -73,11 +73,13 @@ export class DocumentActions {
    */
   readonly fileBacked = signal(false);
   /**
-   * The tree on screen came from a shared link (`?drive=<file id>`, see `shareLink`): someone's tree in Google Drive,
-   * read without signing in. It opens like a copy: it may be explored and changed, but nothing is written back to the
-   * shared file; Save keeps the person's own copy, and closing it brings back the tree they had in the browser.
+   * The tree came from a Drive link. It starts in read-only mode until Drive grants editing to the signed-in account.
+   * Closing a shared tree brings back the tree previously kept in this browser.
    */
   readonly shared = signal<DriveFile | null>(null);
+  readonly readOnly = this.store.readOnly.asReadonly();
+  readonly connecting = signal(false);
+  readonly canEditShared = computed(() => !!this.shared() && this.drive.configured && this.drive.picks);
   /** The tree's revision when it was last opened or saved. */
   private readonly savedRevision = signal(-1);
   /** The tree belongs to a file and has changes the file does not have yet: leaving the page asks first. */
@@ -129,6 +131,7 @@ export class DocumentActions {
     }
     // Loaded before the tie to a file goes, so a shared tree being closed is not written over the browser's copy.
     this.store.load(doc ?? sampleDocument());
+    this.ui.home.set(false);
     this.forgetFile();
     if (!doc) this.ui.showSampleNote.set(!this.prefs.read().sampleNoteDismissed);
     this.autosave.enable();
@@ -150,6 +153,7 @@ export class DocumentActions {
     }
     if (outcome.status === 'done') {
       this.pending = { shared: outcome.value.file };
+      if (this.drive.picks) this.prepareDrive();
       this.openXml(outcome.value.text, outcome.value.file.name);
       this.autosave.enable();
       // Opened, or waiting on the newer-version dialog; a tree that could not be read leaves the person's own one.
@@ -173,6 +177,7 @@ export class DocumentActions {
   private takeFile(source: TreeSource | null, revision = this.store.revision()): void {
     this.leaveShared();
     this.source.set(source);
+    this.store.readOnly.set(source?.kind === 'drive' && source.file.canEdit === false);
     this.fileBacked.set(true);
     this.savedRevision.set(revision);
     this.autosave.setFileBacked(true);
@@ -185,6 +190,8 @@ export class DocumentActions {
     this.savedRevision.set(this.store.revision());
     this.autosave.setAside();
     this.shared.set(file);
+    this.store.readOnly.set(!file.canEdit);
+    if (file.canEdit) this.enableSharedEditing(file);
   }
 
   /** Another tree takes the shared one's place: the address no longer points to it, so a reload does not bring it back. */
@@ -223,6 +230,43 @@ export class DocumentActions {
     await action();
   }
 
+  goHome(): void {
+    this.ui.closeMenu();
+    this.ui.home.set(true);
+  }
+
+  async editShared(): Promise<void> {
+    const file = this.shared();
+    if (!file || !this.drive.configured || !this.drive.picks || this.connecting()) return;
+    this.connecting.set(true);
+    try {
+      const picked = await this.drive.pick('file', this.i18n.code(), this.i18n.t('drive.pickShared'), file.id);
+      if (picked.status !== 'done') {
+        this.driveProblem(picked);
+        return;
+      }
+      const result = await this.readFromDrive(picked.value);
+      if (this.shared()?.id !== file.id) return;
+      if (result.status !== 'done') {
+        this.driveProblem(result);
+        return;
+      }
+      if (!result.value.file.canEdit) {
+        this.toast.error(this.i18n.t('file.driveDenied'));
+        return;
+      }
+      this.pending = { shared: result.value.file };
+      this.openXml(result.value.text, result.value.file.name);
+    } finally {
+      this.connecting.set(false);
+    }
+  }
+
+  private enableSharedEditing(file: DriveFile): void {
+    this.source.set({ kind: 'drive', file });
+    this.store.readOnly.set(false);
+  }
+
   /** Closes the tree and goes back to the start page with the recent files. */
   closeTree(): void {
     this.ui.closeMenu();
@@ -239,13 +283,14 @@ export class DocumentActions {
     const source = this.source();
     const own = source?.kind === 'drive' ? source.file : null;
     const file = own ?? this.shared();
-    if (file) this.ui.dialog.set({ kind: 'drive-share', file, own: !!own });
+    if (file) this.ui.dialog.set({ kind: 'drive-share', file, own: !!own && !this.readOnly() });
   }
 
   /** The start page: an empty tree in the app's language, tied to no file. */
   private closeQuietly(): void {
     const doc = emptyDocument(this.i18n.t('tree.newTitle'));
     this.store.load({ ...doc, view: { ...doc.view, language: this.i18n.code() } });
+    this.ui.home.set(false);
     this.forgetFile();
     this.ui.adding.set(null);
     this.ui.showSampleNote.set(false);
@@ -270,6 +315,7 @@ export class DocumentActions {
     this.ui.closeMenu();
     void this.whenSaved(() => {
       this.store.load(sampleDocument());
+      this.ui.home.set(false);
       this.forgetFile();
       this.ui.showSampleNote.set(true);
       this.toast.show(this.i18n.t('file.sampleOpened'));
@@ -434,6 +480,7 @@ export class DocumentActions {
     try {
       const result = parseTree(xml, { force });
       this.store.load(result.doc);
+      this.ui.home.set(false);
       const pending = this.pending;
       this.pending = null;
       if (pending && 'shared' in pending) {
@@ -480,14 +527,9 @@ export class DocumentActions {
       const outcome = await this.files.writeTo(source.handle, new Blob([this.xml()], { type: 'application/xml' }));
       if (outcome === 'saved') this.saved({ kind: 'local', handle: source.handle, name: source.name }, revision);
       this.reportSave(outcome, source.name);
-    } else if (source?.kind === 'drive') {
-      const outcome = await this.drive.update(source.file, this.xml());
-      if (outcome.status === 'done') {
-        this.saved({ kind: 'drive', file: outcome.value }, revision);
-        this.toast.show(this.i18n.t('file.savedToDrive', { name: outcome.value.name }));
-      } else {
-        this.driveProblem(outcome);
-      }
+    } else if (source?.kind === 'drive' && !this.readOnly()) {
+      const xml = this.xml();
+      await this.writeDrive(source.file.name, (progress) => this.drive.update(source.file, xml, progress));
     } else {
       await this.saveXmlAs();
     }
@@ -526,6 +568,8 @@ export class DocumentActions {
   /** Saves the tree as a new file in Google Drive, in a folder picked in the Google Picker where there is one. Save then writes there. */
   async saveToDrive(): Promise<void> {
     this.ui.closeMenu();
+    if (this.ui.driveSaving()) return;
+    const loadId = this.store.loadId();
     if (!this.drive.configured) {
       this.ui.dialog.set({ kind: 'drive-setup' });
       return;
@@ -539,13 +583,34 @@ export class DocumentActions {
       }
       folder = picked.value;
     }
+    if (this.store.loadId() !== loadId) return;
+    const name = datedFilename(this.store.doc().meta.title, 'xml');
+    const xml = this.xml();
+    await this.writeDrive(name, (progress) => this.drive.create(name, xml, folder, progress));
+  }
+
+  private async writeDrive(name: string, write: (progress: DriveProgress) => Promise<DriveOutcome<DriveFile>>): Promise<void> {
+    if (this.ui.driveSaving()) return;
     const revision = this.store.revision();
-    const outcome = await this.drive.create(datedFilename(this.store.doc().meta.title, 'xml'), this.xml(), folder);
-    if (outcome.status === 'done') {
-      this.saved({ kind: 'drive', file: outcome.value }, revision);
+    const loadId = this.store.loadId();
+    const progress: DriveProgress = (loaded, total) => this.ui.driveSaving.set({ name, loaded, total });
+    progress(0, null);
+    try {
+      const outcome = await write(progress);
+      if (outcome.status !== 'done') {
+        this.driveProblem(outcome);
+        return;
+      }
+      if (this.store.loadId() === loadId) {
+        if (this.shared()?.id === outcome.value.id) {
+          this.savedRevision.set(revision);
+        } else {
+          this.saved({ kind: 'drive', file: outcome.value }, revision);
+        }
+      }
       this.toast.show(this.i18n.t('file.savedToDrive', { name: outcome.value.name }));
-    } else {
-      this.driveProblem(outcome);
+    } finally {
+      this.ui.driveSaving.set(null);
     }
   }
 

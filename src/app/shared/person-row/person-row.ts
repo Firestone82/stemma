@@ -7,7 +7,7 @@ import { Icon } from '../icon/icon';
  */
 @Component({
   // eslint-disable-next-line @angular-eslint/component-selector -- drawn inside an <svg> (or on a <button>), so an attribute selector
-  selector: 'button[stemmaPersonRow]',
+  selector: 'button[stemmaPersonRow], span[stemmaPersonRow]',
   imports: [Icon],
   templateUrl: './person-row.html',
   styleUrl: './person-row.scss',

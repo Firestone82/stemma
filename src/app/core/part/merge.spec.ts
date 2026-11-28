@@ -37,6 +37,42 @@ function exported(doc = tree()): TreeDocument {
 }
 
 describe('parts of the tree', () => {
+  it('excludes other family members from a family-only export at unlimited reach', () => {
+    const doc = tree();
+    const part = partDocument(doc, new TreeIndex(doc), {
+      centerId: 'A',
+      ancestors: 'all',
+      descendants: 'all',
+      branches: 'all',
+      members: new Set(['G1', 'G2', 'A', 'B']),
+      title: 'Novák',
+    });
+    expect(part.people.map((p) => p.id)).toEqual(['G1', 'G2', 'A', 'B']);
+    expect(part.families.map((f) => f.id)).toEqual(['F0']);
+    expect(planMerge(doc, part).unchanged).toBe(true);
+  });
+
+  it('uses family links to disambiguate matching names and previews the imported fields', () => {
+    const b = new DocBuilder();
+    b.person('X', 'Anna', 'Malá', 'female', '1900');
+    b.person('Other', 'Anna', 'Malá', 'female', '1900');
+    b.person('P', 'Josef', 'Malý', 'male', '1875-01-01');
+    b.family('F', ['P'], ['X']);
+    const file = new DocBuilder();
+    file.person('Y', 'Anna', 'Malá', 'female', '1900-03-12');
+    file.person('Z', 'Josef', 'Malý', 'male', '1875-01-01');
+    file.person('X', 'Marie', 'Nová', 'female', '1970');
+    file.family('F', ['Z'], ['Y']);
+    const incoming = file.build();
+    incoming.people[0].death = { date: { value: '1950-02-03' } };
+
+    const plan = planMerge(b.build(), incoming);
+    expect(plan.newPeople.map((p) => p.target)).toEqual(['X', 'P', null]);
+    expect(plan.summary).toMatchObject({ added: 1, updated: 1, familiesAdded: 0 });
+    expect(plan.changes.map((c) => [c.localId, c.field])).toEqual([['X', 'death']]);
+    expect(plan.conflicts.map((c) => [c.localId, c.field])).toEqual([['X', 'birth']]);
+  });
+
   it('takes out the branch around someone, with a record of how it was, that survives the file', () => {
     const doc = tree();
     const part = exported(doc);

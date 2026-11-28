@@ -88,9 +88,12 @@ export class PartMerge {
 
   /** People of the tree already taken by someone else in the file. */
   protected excludeFor(n: NewPerson): ReadonlySet<string> {
-    const local = this.store.index();
-    const out = new Set<string>();
-    for (const p of this.part().people) if (local.person(p.id)) out.add(p.id);
+    const unmatched = new Set(this.plan().newPeople.map((p) => p.person.id));
+    const out = new Set(
+      this.part()
+        .people.filter((p) => !unmatched.has(p.id) && this.store.index().person(p.id))
+        .map((p) => p.id),
+    );
     for (const other of this.plan().newPeople) if (other !== n && other.target) out.add(other.target);
     return out;
   }
@@ -115,7 +118,12 @@ export class PartMerge {
     return names.length ? names.join(' & ') : this.t('part.merge.family');
   }
 
+  protected changeTitle(c: Conflict): string {
+    return c.kind === 'person' ? this.label(c.local as Person) : this.familyTitle(c.local as Family);
+  }
+
   protected fieldLabel(c: Conflict): string {
+    if (c.field === 'kids') return this.t('part.merge.connections');
     return this.t(`part.field.${c.field}` as MessageKey);
   }
 
@@ -132,6 +140,13 @@ export class PartMerge {
     if (c.kind === 'family') {
       const f = rec as Family;
       if (c.field === 'status') return this.t(`status.${relationshipStatus(f)}` as MessageKey);
+      if (c.field === 'kids') {
+        const names = new Map(this.plan().doc.people.map((p) => [p.id, p]));
+        const name = (id: string) => this.i18n.name(names.get(id) ?? this.store.index().person(id));
+        const partners = f.partners.map(name).join(' & ');
+        const children = f.children.map((child) => `${name(child.personId)} (${this.t(`childRelation.${child.relation}` as MessageKey)})`).join(', ');
+        return [partners, children].filter(Boolean).join(' / ') || this.t('part.value.none');
+      }
       return f.notes?.trim() || this.t('part.value.none');
     }
     const p = rec as Person;

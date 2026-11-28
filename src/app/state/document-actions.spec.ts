@@ -63,6 +63,8 @@ class FakeDrive {
     this.progressSeen.push(this.onProgress());
     return { status: 'done', value: found };
   }
+  prepare = () => undefined;
+
   async pick(target: string): Promise<DriveOutcome<DriveFile>> {
     this.picked.push({ target, file: this.toPick });
     return this.toPick ? { status: 'done', value: this.toPick } : { status: 'declined' };
@@ -539,17 +541,40 @@ describe('DocumentActions shared links', () => {
   it('leaves the tree kept in the browser alone, and brings it back when the shared one is closed', async () => {
     drive.public.set(shared.id, { file: shared, text: nowak });
     await visit(shared.id);
+    expect(actions.readOnly()).toBe(true);
     actions.setTitle('Changed while looking');
+    expect(store.doc().meta.title).toBe('Nowak');
     actions.flush();
     expect(localStorage.getItem('stemma.tree.v1')).toContain('My own tree');
 
     actions.closeTree();
-    const asked = ui.dialog();
-    expect(asked?.kind).toBe('unsaved');
-    if (asked?.kind === 'unsaved') await actions.discardThen(asked.proceed);
+    expect(ui.dialog()).toBeNull();
     await vi.waitFor(() => expect(store.doc().meta.title).toBe('My own tree'));
     expect(actions.shared()).toBeNull();
     expect(location.search).toBe('');
+    expect(localStorage.getItem('stemma.tree.v1')).toContain('My own tree');
+  });
+
+  it('uses the shared file as the save target after Drive grants editing', async () => {
+    drive.picks = true;
+    drive.public.set(shared.id, { file: shared, text: nowak });
+    drive.toPick = shared;
+    const editable = { ...shared, canEdit: true };
+    drive.inDrive.set(shared.id, { file: editable, text: nowak });
+    await visit(shared.id);
+
+    await actions.editShared();
+    expect(actions.readOnly()).toBe(false);
+    expect(actions.source()).toEqual({ kind: 'drive', file: editable });
+    actions.setTitle('Updated from the link');
+    const saving = actions.saveXml();
+    expect(ui.driveSaving()?.name).toBe(shared.name);
+    await saving;
+
+    expect(drive.updated).toEqual([editable]);
+    expect(ui.driveSaving()).toBeNull();
+    expect(actions.unsaved()).toBe(false);
+    expect(actions.shared()?.id).toBe(shared.id);
     expect(localStorage.getItem('stemma.tree.v1')).toContain('My own tree');
   });
 

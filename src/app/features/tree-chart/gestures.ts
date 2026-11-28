@@ -61,7 +61,7 @@ export class ChartGestures {
   }
 
   down(e: PointerEvent): void {
-    if (e.pointerType === 'mouse' && e.button !== 0) return;
+    if (e.pointerType === 'mouse' && e.button !== 0 && e.button !== 1) return;
     this.viewport.stop();
     this.stopWheeling();
     const p = this.local(e);

@@ -1,6 +1,8 @@
 <div class="section-head">
   <h3>{{ t('overview.peopleTitle') }}</h3>
-  <button type="button" class="link-btn" (click)="add.emit()"><stemma-icon name="plus" [size]="14" />{{ t('overview.addPerson') }}</button>
+  @if (!store.readOnly()) {
+    <button type="button" class="link-btn" (click)="add.emit()"><stemma-icon name="plus" [size]="14" />{{ t('overview.addPerson') }}</button>
+  }
 </div>
 @if (searchable()) {
   <div class="search">

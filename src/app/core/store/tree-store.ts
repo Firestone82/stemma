@@ -2,7 +2,7 @@ import { Injectable, computed, signal } from '@angular/core';
 import { TreeIndex } from '../model/tree-index';
 import { Family, Person, TreeDocument, emptyDocument } from '../model/types';
 
-export type Selection = { kind: 'person'; id: string } | { kind: 'family'; id: string } | null;
+export type Selection = { kind: 'person'; id: string } | { kind: 'family'; id: string } | { kind: 'people'; ids: ReadonlySet<string> } | null;
 
 interface HistoryEntry {
   doc: TreeDocument;
@@ -22,6 +22,7 @@ export class TreeStore {
   readonly doc = this._doc.asReadonly();
   readonly index = computed(() => new TreeIndex(this._doc()));
 
+  readonly readOnly = signal(false);
   readonly selection = signal<Selection>(null);
   /** Changes when a different tree is opened, not when the current one is edited. */
   readonly loadId = signal(0);
@@ -60,6 +61,7 @@ export class TreeStore {
    * `coalesce` key in quick succession (typing in a field) share one step.
    */
   commit(next: TreeDocument, coalesce?: string): void {
+    if (this.readOnly()) return;
     const prev = this._doc();
     next = this.normalizer(next, false);
     if (next === prev) return;
@@ -108,6 +110,7 @@ export class TreeStore {
 
   /** Opens a different tree. History starts over. */
   load(doc: TreeDocument): void {
+    this.readOnly.set(false);
     this._doc.set(this.normalizer(doc, true));
     this.past = [];
     this.future = [];
@@ -130,6 +133,11 @@ export class TreeStore {
     this.selection.set(id ? { kind: 'person', id } : null);
   }
 
+  selectPeople(ids: ReadonlySet<string>): void {
+    if (ids.size <= 1) this.selectPerson(ids.values().next().value ?? null);
+    else this.selection.set({ kind: 'people', ids });
+  }
+
   selectFamily(id: string | null): void {
     this.selection.set(id ? { kind: 'family', id } : null);
   }
@@ -140,5 +148,9 @@ export class TreeStore {
     const s = this.selection();
     if (s?.kind === 'person' && !this.index().person(s.id)) this.selection.set(null);
     if (s?.kind === 'family' && !this.index().family(s.id)) this.selection.set(null);
+    if (s?.kind === 'people') {
+      const ids = new Set([...s.ids].filter((id) => this.index().person(id)));
+      if (ids.size !== s.ids.size) this.selectPeople(ids);
+    }
   }
 }

@@ -27,6 +27,8 @@ import { FocusedView } from '../../state/focused-view';
 import { FocusedToggle } from './focused-toggle/focused-toggle';
 import { ChartModel } from '../../state/chart-model';
 import { ChartBusy } from '../../state/chart-busy';
+import { PartActions } from '../../state/part-actions';
+import { Icon } from '../../shared/icon/icon';
 import { PersonActions } from '../../state/person-actions';
 import { Relation, UiState } from '../../state/ui-state';
 import { ContextMenu, ContextMenuItem } from './context-menu/context-menu';
@@ -54,7 +56,20 @@ import { ZoomControls } from './zoom-controls/zoom-controls';
  */
 @Component({
   selector: 'stemma-chart',
-  imports: [FamilyLines, Unions, Placeholders, PersonCard, QuickAdd, ZoomControls, RelativesFilter, FocusedToggle, ContextMenu, FamilyBalloons, FamilyBar],
+  imports: [
+    FamilyLines,
+    Unions,
+    Placeholders,
+    PersonCard,
+    QuickAdd,
+    ZoomControls,
+    RelativesFilter,
+    FocusedToggle,
+    ContextMenu,
+    FamilyBalloons,
+    FamilyBar,
+    Icon,
+  ],
   templateUrl: './tree-chart.html',
   styleUrl: './tree-chart.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -68,6 +83,7 @@ export class TreeChart {
   protected readonly store = inject(TreeStore);
   protected readonly model = inject(ChartModel);
   protected readonly ui = inject(UiState);
+  private readonly parts = inject(PartActions);
   private readonly people = inject(PersonActions);
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
   private readonly i18n = inject(I18n);
@@ -238,7 +254,7 @@ export class TreeChart {
 
   /** A balloon brings its families onto the chart, with the nearest of them (the father, the first child, the partner) in view. */
   protected onBalloonPick(id: string): void {
-    if (this.gestures.swallowClick()) return;
+    if (this.ignoreBoxClick || this.gestures.swallowClick()) return;
     const balloon = this.model.balloons().find((b) => b.id === id);
     if (!balloon) return;
     if (!this.model.focusedActive()) this.familyView.add(balloon.keys, balloon.people[0]);
@@ -481,6 +497,15 @@ export class TreeChart {
       // Over the pane laid on the chart after a scroll (.glass): a hand resting on the mouse nudges it, and only a
       // real move ends the scroll.
       if (e.target === this.glass(e) && Math.abs(e.movementX) + Math.abs(e.movementY) > 2) this.gestures.stopWheeling();
+      const start = this.boxDrag;
+      if (start?.id === e.pointerId) {
+        const x = e.clientX - start.rect.left;
+        const y = e.clientY - start.rect.top;
+        if (!this.marquee() && Math.hypot(x - start.x, y - start.y) <= 5) return;
+        if (!this.marquee()) stage.setPointerCapture?.(e.pointerId);
+        this.marquee.set({ left: Math.min(x, start.x), top: Math.min(y, start.y), width: Math.abs(x - start.x), height: Math.abs(y - start.y) });
+        return;
+      }
       this.gestures.move(e);
     };
     stage.addEventListener('pointermove', pointerMove);
@@ -493,14 +518,61 @@ export class TreeChart {
     });
   }
 
+  protected readonly selectedPeople = computed(() => {
+    const selection = this.store.selection();
+    return selection?.kind === 'people' ? selection.ids : null;
+  });
+  protected readonly marquee = signal<{ left: number; top: number; width: number; height: number } | null>(null);
+  private boxDrag: { id: number; x: number; y: number; rect: DOMRect } | null = null;
+  private ignoreBoxClick = false;
+
+  protected deleteSelection(ids: ReadonlySet<string>): void {
+    this.people.askDelete(ids);
+  }
+
   // -- pointer ----------------------------------------------------------------
 
   protected onPointerDown(e: PointerEvent): void {
+    this.ignoreBoxClick = false;
+    const control = (e.target as Element).closest('[role="button"], button');
+    if (!this.store.readOnly() && e.pointerType === 'mouse' && e.button === 0 && !e.altKey && (!control || e.shiftKey)) {
+      this.gestures.stopWheeling();
+      this.viewport.stop();
+      const rect = this.stageRef().nativeElement.getBoundingClientRect();
+      this.boxDrag = { id: e.pointerId, x: e.clientX - rect.left, y: e.clientY - rect.top, rect };
+      return;
+    }
+    if (e.button === 1) e.preventDefault();
     this.gestures.down(e);
   }
 
   protected onPointerUp(e: PointerEvent): void {
-    this.gestures.up(e);
+    if (this.boxDrag?.id !== e.pointerId) {
+      this.gestures.up(e);
+      return;
+    }
+    const start = this.boxDrag;
+    const box = this.marquee();
+    this.boxDrag = null;
+    this.marquee.set(null);
+    if (!box || e.type !== 'pointerup') return;
+    this.ignoreBoxClick = true;
+    const x = e.clientX - start.rect.left;
+    const y = e.clientY - start.rect.top;
+    const left = Math.min(x, start.x);
+    const right = Math.max(x, start.x);
+    const top = Math.min(y, start.y);
+    const bottom = Math.max(y, start.y);
+    const view = this.gestures.current();
+    const ids = new Set<string>();
+    for (const card of this.shown().cards) {
+      if (card.ghost) continue;
+      const cx = card.x * view.k + view.x;
+      const cy = card.y * view.k + view.y;
+      if (cx <= right && cx + card.w * view.k >= left && cy <= bottom && cy + card.h * view.k >= top) ids.add(card.personId);
+    }
+    this.ui.adding.set(null);
+    this.store.selectPeople(ids);
   }
 
   // -- picking ----------------------------------------------------------------
@@ -521,7 +593,7 @@ export class TreeChart {
 
   protected onCardPick(personId: string, event: Event): void {
     event.stopPropagation();
-    if (this.gestures.swallowClick()) return;
+    if ((this.ignoreBoxClick && event instanceof MouseEvent && event.detail !== 0) || this.gestures.swallowClick()) return;
     if (this.ui.adding()?.personId !== personId) this.ui.adding.set(null);
     this.store.selectPerson(personId);
     // On a phone, a person tapped while zoomed far out is brought up close.
@@ -573,6 +645,14 @@ export class TreeChart {
     const t = this.t;
     const names = this.model.familyNames();
     const familyName = (key: string) => names.get(key)?.label ?? key;
+    if (this.store.readOnly()) {
+      return m.personId
+        ? [
+            { id: 'open', label: t('common.open'), icon: 'person' },
+            { id: 'export-family', label: t('part.export.family'), icon: 'download' },
+          ]
+        : [{ id: 'fit', label: t('zoom.fit'), icon: 'fit' }];
+    }
     if (!m.personId) {
       const items: ContextMenuItem[] = [
         { id: 'add', label: t('overview.addPerson'), icon: 'plus' },
@@ -605,6 +685,7 @@ export class TreeChart {
       icon: hidden ? 'printer' : 'noPrint',
       separated: m.personId === this.model.focusId() && !items.some((i) => i.id === 'family'),
     });
+    items.push({ id: 'export-family', label: t('part.export.family'), icon: 'download', separated: true });
     items.push({ id: 'delete', label: t('person.delete'), icon: 'trash', danger: true });
     return items;
   });
@@ -652,6 +733,9 @@ export class TreeChart {
       }
       case 'family':
         this.familyView.add(this.model.familyKeyOf().get(m.personId) ?? '', m.personId);
+        break;
+      case 'export-family':
+        this.parts.exportPart(m.personId);
         break;
       case 'delete':
         this.people.askDelete(m.personId);

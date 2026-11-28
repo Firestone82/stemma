@@ -75,7 +75,7 @@
             [tincture]="tinctureOf(c.personId)"
             [design]="model.design()"
             [parts]="model.parts()"
-            [selected]="c.personId === selectedId() && !c.ghost"
+            [selected]="(c.personId === selectedId() || (selectedPeople()?.has(c.personId) ?? false)) && !c.ghost"
             [focus]="c.personId === model.focusId() && !c.ghost"
             [ribbons]="view.showRibbons"
             [class.flash]="flashId() === c.personId"
@@ -99,6 +99,20 @@
             [attr.rx]="model.design().radius + 4"
           />
         }
+        @if (selectedPeople(); as ids) {
+          @for (c of shown().cards; track c.key) {
+            @if (!c.ghost && ids.has(c.personId)) {
+              <rect
+                class="selection-ring"
+                [attr.x]="c.x - 4.5"
+                [attr.y]="c.y - 4.5"
+                [attr.width]="c.w + 9"
+                [attr.height]="c.h + 9"
+                [attr.rx]="model.design().radius + 4"
+              />
+            }
+          }
+        }
         @if (selectedUnion(); as m) {
           <circle class="selection-ring" [attr.cx]="m.x" [attr.cy]="m.y" r="15" />
         }
@@ -106,6 +120,16 @@
     </g>
   </svg>
   <div class="glass" aria-hidden="true"></div>
+  @if (marquee(); as box) {
+    <div
+      class="marquee"
+      [style.left.px]="box.left"
+      [style.top.px]="box.top"
+      [style.width.px]="box.width"
+      [style.height.px]="box.height"
+      aria-hidden="true"
+    ></div>
+  }
 </div>
 
 @if (chartBusy.busy()) {
@@ -118,7 +142,7 @@
   <stemma-context-menu [x]="m.x" [y]="m.y" [title]="menuTitle()" [items]="menuItems()" (pick)="onMenuPick($event)" (dismiss)="menu.set(null)" />
 }
 
-@if (quickAdd(); as q) {
+@if (store.readOnly() ? null : quickAdd(); as q) {
   <stemma-quick-add
     [left]="q.left"
     [top]="q.top"
@@ -134,6 +158,11 @@
 @if (!isEmpty()) {
   <div class="tools" [style.bottom.px]="insetBottom() + 14">
     <stemma-zoom-controls [percent]="zoomPercent()" (zoomIn)="zoom(1.25)" (zoomOut)="zoom(0.8)" (fit)="fit(true)" />
+    @if (selectedPeople(); as ids) {
+      <button type="button" class="btn" (click)="deleteSelection(ids)">
+        <stemma-icon name="trash" [size]="16" />{{ t('person.deleteSelected', { count: ids.size }) }}
+      </button>
+    }
     @if (familyActive()) {
       <stemma-family-bar />
     } @else {
