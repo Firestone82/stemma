@@ -212,6 +212,12 @@ export const heritage = {
     return over > 0 ? over + u * 0.6 : 0;
   },
 
+  decorationArea(c: PosterContext): Rect {
+    const inner = frame(c).inner;
+    const pad = c.page.u * 0.2;
+    return { x: inner.x + pad, y: inner.y + pad, w: inner.w - pad * 2, h: inner.h - pad * 2 };
+  },
+
   /** Drawn over everything: the frame's corner flourishes. */
   overlay(c: PosterContext): string {
     const f = frame(c).inner;

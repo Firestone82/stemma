@@ -399,6 +399,7 @@
     <xs:attribute name="showTitle" type="xs:boolean" default="true"/>
     <xs:attribute name="showLegend" type="xs:boolean" default="true"/>
     <xs:attribute name="showFrame" type="xs:boolean" default="true"/>
+    <xs:attribute name="showDecorations" type="xs:boolean" default="false"/>
     <!-- 1.6: people hidden from prints are printed all the same. -->
     <xs:attribute name="showHidden" type="xs:boolean" default="false"/>
     <!-- 1.8: the PDF in pieces on sheets of this paper, to be glued together; borderless: the printer prints to the edge. -->

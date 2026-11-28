@@ -12,7 +12,7 @@ import { Steps, finish } from '../layout/steps';
 import { RELATION_DASH, roundedPath, sharedPaths } from '../layout/lines';
 import { spreadGaps } from '../layout/gaps';
 import { applyBends, applyMoves } from '../layout/moves';
-import { LAYOUT, LayoutCard, LayoutOptions, LayoutResult, TIGHT_LAYOUT } from '../layout/types';
+import { LAYOUT, LayoutCard, LayoutOptions, LayoutResult, Pt, TIGHT_LAYOUT } from '../layout/types';
 import { unionMark } from '../layout/union-marks';
 import { diedAtBirth } from '../model/completeness';
 import { dateYear } from '../model/dates';
@@ -21,6 +21,8 @@ import { isBrokenUp, relationshipStatus } from '../model/relationship';
 import { birthSurname, birthSurnameUnknown } from '../model/surnames';
 import { TreeIndex } from '../model/tree-index';
 import { Anchor, DEFAULT_PRINT, LEGEND_GAP_CM, LETTERING_CM, LINE_HEIGHT, PrintSettings, TreeDocument, anchorShares, effectivePrint } from '../model/types';
+import { drawBotanicalBorder } from './decoration-border';
+import { drawDecorations } from './decorations';
 import { GOLD, LETTERING, MARGIN, SERIF, heritage, palette, tinctures } from './heritage';
 import { drawMark } from './marks';
 import { PX_PER_MM, paperSize } from './paper';
@@ -805,6 +807,7 @@ export function* posterSteps(input: PosterInput): Steps<PosterResult> {
   // How each couple stands, in a word: under the marker of a couple side by side, between the cards of one that
   // stands one over the other, beside a marker that sits on a line over other cards.
   const unionWords: string[] = [];
+  const unionLabels: Rect[] = [];
   if (settings.unionText) {
     const font = (size: number): FontSpec => ({ family: SERIF, size, style: 'italic' });
     for (const u of layout.unions) {
@@ -822,6 +825,10 @@ export function* posterSteps(input: PosterInput): Steps<PosterResult> {
         : upright
           ? { x: u.x + (cardsLeft ? -9 : 9), y: u.y + size * 0.32, anchor: cardsLeft ? 'end' : 'start' }
           : { x: u.x + 9, y: u.y + size * 0.32, anchor: 'start' };
+      if (settings.showDecorations) {
+        const w = measure(word, font(size));
+        unionLabels.push({ x: at.x - (at.anchor === 'middle' ? w / 2 : at.anchor === 'end' ? w : 0), y: at.y - size, w, h: size * 1.3 });
+      }
       chartSvg += el(
         'text',
         {
@@ -859,10 +866,26 @@ export function* posterSteps(input: PosterInput): Steps<PosterResult> {
 
   // The title and the families' names each in a group of their own: the print studio moves them with their boxes.
   const group = (name: string, markup: string) => (markup ? `<g class="${name}">${markup}</g>` : '');
+  const chartX = n(chart.x + fitted.x);
+  const chartY = n(chart.y + fitted.y);
+  const chartScale = n(s);
+  let decorations = '';
+  if (settings.showDecorations) {
+    const scale = Number(chartScale);
+    const occupied = decorationObstacles(layout, frames, unionLabels, { x: Number(chartX), y: Number(chartY) }, scale, markScale, weight);
+    const lettering = [titleRect, legendRect].filter((r): r is Rect => !!r);
+    decorations =
+      drawBotanicalBorder(heritage.decorationArea(ctx), occupied, lettering) ||
+      drawDecorations({ x: margin, y: margin, w: W - margin * 2, h: H - margin * 2 }, occupied, lettering, {
+        count: layout.cards.length,
+        width: design.width * scale,
+      });
+  }
   const body = [
     heritage.background(ctx, settings.showFrame),
+    decorations,
     group('pp-title', header.draw(headerRect)),
-    `<g transform="translate(${n(chart.x + fitted.x)},${n(chart.y + fitted.y)}) scale(${n(s)})">${chartSvg}</g>`,
+    `<g transform="translate(${chartX},${chartY}) scale(${chartScale})">${chartSvg}</g>`,
     group('pp-legend', footer.draw(footerRect)),
     (box || cornerNames) && legendRect
       ? drawLegendBox(ctx, legendRect, cornerNames ? { letters: namesSize(ctx), columns: cornerNames.columns } : undefined)
@@ -932,6 +955,39 @@ export function* posterSteps(input: PosterInput): Steps<PosterResult> {
         letters: letters(style.cm),
       }),
   };
+}
+
+/** Printed chart bounds, including strokes and rounded corners, in page coordinates. */
+function decorationObstacles(
+  layout: LayoutResult,
+  frames: readonly Rect[],
+  labels: readonly Rect[],
+  origin: Pt,
+  scale: number,
+  markScale: number,
+  weight: number,
+): Rect[] {
+  const pad = ({ x, y, w, h }: Rect, by: number): Rect => ({ x: x - by, y: y - by, w: w + by * 2, h: h + by * 2 });
+  const obstacles: Rect[] = [...layout.cards, ...layout.placeholders].map((r) => pad(r, 1)).concat(labels);
+  for (const f of frames) {
+    const box = frameBox(f);
+    obstacles.push(pad({ ...box, y: box.y - 8, h: box.h + 8 }, 1));
+  }
+  const mark = 10 * markScale;
+  for (const u of layout.unions) obstacles.push({ x: u.x - mark, y: u.y - mark, w: mark * 2, h: mark * 2 });
+  const addPath = (points: readonly Pt[]) => {
+    // Strokes can miter at tight turns. Rounded bends also reach into the space between two straight segments.
+    const stroke = 2.3 * weight * 2 + 0.1;
+    for (let i = 1; i < points.length; i++) {
+      const a = points[i - 1];
+      const b = points[i];
+      obstacles.push(pad({ x: Math.min(a.x, b.x), y: Math.min(a.y, b.y), w: Math.abs(a.x - b.x), h: Math.abs(a.y - b.y) }, stroke));
+      if (i < points.length - 1) obstacles.push(pad({ ...b, w: 0, h: 0 }, 7 + stroke));
+    }
+  };
+  for (const l of layout.lines) addPath(l.points);
+  for (const u of layout.unions) addPath(u.line);
+  return obstacles.map(({ x, y, w, h }) => ({ x: origin.x + x * scale, y: origin.y + y * scale, w: w * scale, h: h * scale }));
 }
 
 interface Drawing {

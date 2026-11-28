@@ -673,6 +673,7 @@ export const en = {
   'print.showTitle': 'Title',
   'print.showLegend': 'Family names',
   'print.showFrame': 'Frame',
+  'print.showDecorations': 'Decorations',
   'print.menu.centre': 'The page is drawn around this person.',
   'print.title': 'Print',
   'print.needPeople': 'Add someone to the tree first.',

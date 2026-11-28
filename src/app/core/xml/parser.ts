@@ -204,6 +204,7 @@ const KNOWN = {
       'showTitle',
       'showLegend',
       'showFrame',
+      'showDecorations',
       'showHidden',
       'legendBox',
       'tiles',
@@ -443,6 +444,7 @@ class Reader {
     print.showTitle = boolAttr(el, 'showTitle', DEFAULT_PRINT.showTitle);
     print.showLegend = boolAttr(el, 'showLegend', DEFAULT_PRINT.showLegend);
     print.showFrame = boolAttr(el, 'showFrame', DEFAULT_PRINT.showFrame);
+    print.showDecorations = boolAttr(el, 'showDecorations', DEFAULT_PRINT.showDecorations);
     print.showHidden = boolAttr(el, 'showHidden', DEFAULT_PRINT.showHidden);
     print.fill = boolAttr(el, 'fill', DEFAULT_PRINT.fill);
     print.stackCouples = boolAttr(el, 'stackCouples', DEFAULT_PRINT.stackCouples);

@@ -40,6 +40,23 @@ describe('the printed page', () => {
     expect(p.svg).not.toMatch(/<image|leaf|branch|canopy/);
   });
 
+  it('adds decorations behind the chart without changing the layout', () => {
+    const doc = sampleDocument();
+    const page = { paper: 'A3', orientation: 'landscape' } as const;
+    const plain = render(doc, page);
+    const decorated = render(doc, { ...page, showDecorations: true });
+    expect(plain.svg).not.toContain('pp-decoration');
+    expect(decorated.svg).toContain('data-decoration="edge-branch"');
+    expect(decorated.svg).toContain('data-decoration="footer-branch"');
+    expect(decorated.svg.indexOf('pp-decoration')).toBeLessThan(decorated.svg.indexOf('data-person'));
+    const parser = new DOMParser();
+    const embellishments = parser.parseFromString(decorated.svg, 'image/svg+xml');
+    const artwork = [...embellishments.querySelectorAll('.pp-decoration')];
+    expect(artwork.every((group) => group.getAttribute('fill') === 'none' && !group.querySelector('[fill]'))).toBe(true);
+    embellishments.querySelectorAll('.pp-decoration').forEach((group) => group.remove());
+    expect(embellishments.documentElement.isEqualNode(parser.parseFromString(plain.svg, 'image/svg+xml').documentElement)).toBe(true);
+  });
+
   it('picks the orientation that gives the bigger cards, and fills the sheet better than the tree as it comes', () => {
     const doc = randomFamily(7, 40);
     const best = render(doc, { paper: 'A3', orientation: 'auto' });

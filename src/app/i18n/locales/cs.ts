@@ -693,6 +693,7 @@ export const cs: Catalogue = {
   'print.showTitle': 'Nadpis',
   'print.showLegend': 'Jména rodů',
   'print.showFrame': 'Rám',
+  'print.showDecorations': 'Ozdoby',
   'print.menu.centre': 'Kolem této osoby je stránka nakreslená.',
   'print.title': 'Tisk',
   'print.needPeople': 'Nejdřív do stromu někoho přidejte.',

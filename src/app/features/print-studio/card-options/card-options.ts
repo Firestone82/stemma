@@ -6,12 +6,13 @@ import { CardSettingsForm } from '../../../shared/card-settings/card-settings';
 import { Switch } from '../../../shared/switch/switch';
 import { PrintModel } from '../print-model';
 
-type PageKey = 'showTitle' | 'showLegend' | 'showFrame' | 'showHidden' | 'unionText';
+type PageKey = 'showTitle' | 'showLegend' | 'showFrame' | 'showDecorations' | 'showHidden' | 'unionText';
 
 const SWITCHES: readonly { key: PageKey; label: MessageKey }[] = [
   { key: 'showTitle', label: 'print.showTitle' },
   { key: 'showLegend', label: 'print.showLegend' },
   { key: 'showFrame', label: 'print.showFrame' },
+  { key: 'showDecorations', label: 'print.showDecorations' },
   { key: 'unionText', label: 'print.unionText' },
   { key: 'showHidden', label: 'print.showHidden' },
 ];
