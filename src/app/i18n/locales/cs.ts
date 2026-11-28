@@ -626,8 +626,7 @@ export const cs: Catalogue = {
   'print.cardSmall':
     'Jména se vytisknou velikostí {pt} pt, karta měří jen {w} × {h} mm, je užší než {min} mm, které tento papír chce. Na tu by bylo třeba zhruba {paper}, nebo méně generací či příbuzných.',
   'print.paperBeyond': 'víc než A0',
-  'print.nameSizeSmall':
-    'Jména se vytisknou velikostí {pt} pt (karta {w} × {h} mm), a to je na čtení příliš málo. Zvolte větší papír nebo méně generací či příbuzných.',
+  'print.nameSizeSmall': 'Jména se vytisknou velikostí {pt} pt (karta {w} × {h} mm).',
   'print.middle': 'Uprostřed',
   'print.person': 'Osoba',
   'print.with': 'Spolu s',

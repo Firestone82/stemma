@@ -555,7 +555,16 @@ function keptFor(s: PrintSettings, personId: string): boolean {
   return s.centerId === personId || (!!personId && s.partnerId === personId);
 }
 
-/** The print settings kept for a person or for the couple they are one of (see TreeDocument.savedPrints). */
+/** The couple print settings were kept for, whichever of them is in the middle: the same for both ways round. */
+function coupleKey(centerId: string | undefined, partnerId: string | null | undefined): string {
+  return [centerId ?? '', partnerId ?? ''].sort().join('|');
+}
+
+/**
+ * The print settings kept for a person, to bring back when they are picked for the middle (see
+ * TreeDocument.savedPrints): one kept with them in the middle first, else one with them beside the one in the
+ * middle. Someone married twice may have one for each marriage; the first kept is taken.
+ */
 export function savedPrintOf(doc: TreeDocument, personId: string): PrintSettings | undefined {
   const saved = doc.savedPrints ?? [];
   const found = saved.find((s) => s.centerId === personId) ?? saved.find((s) => keptFor(s, personId));
@@ -566,32 +575,46 @@ export function savedPrintOf(doc: TreeDocument, personId: string): PrintSettings
 }
 
 /**
- * The print settings kept for the person in the middle (their centerId) and the partner beside them (partnerId,
- * when it names one): the couple share the page, so either of them brings it back. Anything kept for either of
- * them before goes.
+ * The print settings kept for this couple: the person in the middle with this partner beside them (either way
+ * round), or with nobody beside them (null). Settings kept without naming the partner (the page chose them) count
+ * for the one in the middle with whoever is beside them, when nothing was kept for the couple itself.
+ */
+export function savedPrintForCouple(doc: TreeDocument, centerId: string, partnerId: string | null | undefined): PrintSettings | undefined {
+  const saved = doc.savedPrints ?? [];
+  const key = coupleKey(centerId, partnerId);
+  return (
+    saved.find((s) => s.partnerId !== undefined && coupleKey(s.centerId, s.partnerId) === key) ??
+    saved.find((s) => s.partnerId === undefined && (s.centerId === centerId || (!!partnerId && s.centerId === partnerId)))
+  );
+}
+
+/**
+ * The print settings kept for the couple in the middle (centerId, and partnerId when it names one): either of
+ * them brings it back. Each couple keeps its own, so someone married twice has one for each marriage; only what
+ * was kept for this couple before is replaced.
  */
 export function savePrintFor(doc: TreeDocument, settings: PrintSettings): TreeDocument {
-  const id = settings.centerId;
-  if (!id) return doc;
-  const partner = settings.partnerId ?? '';
-  const rest = (doc.savedPrints ?? []).filter((s) => !keptFor(s, id) && !(partner && keptFor(s, partner)));
+  if (!settings.centerId) return doc;
+  const key = coupleKey(settings.centerId, settings.partnerId);
+  const same = (s: PrintSettings) => coupleKey(s.centerId, s.partnerId) === key || (s.partnerId === undefined && s.centerId === settings.centerId);
+  const rest = (doc.savedPrints ?? []).filter((s) => !same(s));
   return { ...doc, savedPrints: [...rest, { ...settings }] };
 }
 
-/** The print settings kept for a person (or the couple they are one of) forgotten. */
-export function forgetPrintFor(doc: TreeDocument, personId: string): TreeDocument {
-  const kept = savedPrintOf(doc, personId);
-  if (!kept) return doc;
-  const rest = (doc.savedPrints ?? []).filter((s) => s !== kept);
+/** The print settings kept for a couple (as savedPrintForCouple found them) forgotten. */
+export function forgetPrintFor(doc: TreeDocument, kept: PrintSettings): TreeDocument {
+  const key = coupleKey(kept.centerId, kept.partnerId);
+  const all = doc.savedPrints ?? [];
+  const rest = all.filter((s) => s !== kept && !(s.partnerId === kept.partnerId && coupleKey(s.centerId, s.partnerId) === key));
+  if (rest.length === all.length) return doc;
   const next: TreeDocument = { ...doc, savedPrints: rest };
   if (!rest.length) delete next.savedPrints;
   return next;
 }
 
-/** The print settings kept for a person, made the print's settings. */
-export function useSavedPrint(doc: TreeDocument, personId: string): TreeDocument {
-  const saved = savedPrintOf(doc, personId);
-  return saved ? { ...doc, print: { ...saved } } : doc;
+/** Print settings kept for a couple, made the print's settings. */
+export function useSavedPrint(doc: TreeDocument, kept: PrintSettings): TreeDocument {
+  return { ...doc, print: { ...kept } };
 }
 
 /**

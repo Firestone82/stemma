@@ -93,6 +93,11 @@ export interface PosterResult {
   title?: { x: number; y: number; w: number; h: number; free: boolean };
   /** The page inside its margin, as shares of its width and height: what the title and the names are lined up with when moved. */
   inner: { x: number; y: number; w: number; h: number };
+  /**
+   * How far inside the margin something held in a corner of the page stands, clear of the frame's flourishes, as
+   * shares of the page's width and height (none without a frame): where the names held in a corner are put.
+   */
+  cornerClear: { x: number; y: number };
   /** Everyone on the page, by id. */
   shown: string[];
   /** The size of a card in the layout's units (what PrintSettings.moves is measured in). */
@@ -916,6 +921,7 @@ export function* posterSteps(input: PosterInput): Steps<PosterResult> {
     },
     title: titleRect && paper ? { x: titleRect.x / W, y: titleRect.y / H, w: titleRect.w / W, h: titleRect.h / H, free: titleFree } : undefined,
     inner: { x: margin / W, y: margin / H, w: 1 - (2 * margin) / W, h: 1 - (2 * margin) / H },
+    cornerClear: settings.showFrame ? { x: heritage.cornerClear(ctx) / W, y: heritage.cornerClear(ctx) / H } : { x: 0, y: 0 },
     shown: doc.people.map((p) => p.id),
     cardUnits: { w: design.width, h: design.height },
     gaps: { partner: options.partnerGap, sibling: options.siblingGap, family: options.familyGap, stack: options.stackGap },

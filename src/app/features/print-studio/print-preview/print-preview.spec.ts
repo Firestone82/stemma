@@ -1,5 +1,7 @@
 import { TestBed } from '@angular/core/testing';
-import { NamesStyle } from '../../../core/poster/poster';
+import { sampleDocument } from '../../../core/model/sample';
+import { DEFAULT_PRINT } from '../../../core/model/types';
+import { NamesStyle, renderPoster } from '../../../core/poster/poster';
 import { BoxesPlaced, PrintPreview, alignBox, anchorOf, distanceTo, movedBox, placedSettings, tidied } from './print-preview';
 
 describe('movedBox', () => {
@@ -45,6 +47,21 @@ describe('alignBox', () => {
     // From the box's bottom left corner: one line to the left margin, one down to the foot.
     expect(guides[0]).toMatchObject({ x1: box.x, y1: y + size.h, x2: inner.x, y2: y + size.h });
     expect(guides[1]).toMatchObject({ x1: box.x, y1: y + size.h, x2: box.x, y2: inner.y + inner.h });
+  });
+
+  it('pulls a box into a corner where the page holds it there, clear of the frame, from the margin or from near that place', () => {
+    const clear = { x: 0.02 / ratio, y: 0.02 };
+    const right = inner.x + inner.w - size.w - clear.x;
+    const foot = inner.y + inner.h - size.h - clear.y;
+    // On the margin at the foot, nearly on it at the right.
+    expect(alignBox({ ...size, x: inner.x + inner.w - size.w - 0.003, y: inner.y + inner.h - size.h }, inner, ratio, true, clear).box).toMatchObject({
+      x: right,
+      y: foot,
+    });
+    // Nearly where the corner holds it.
+    expect(alignBox({ ...size, x: right - 0.004, y: foot + 0.005 }, inner, ratio, true, clear).box).toMatchObject({ x: right, y: foot });
+    // Along a side there is no flourish to keep clear of: on the margin, as ever.
+    expect(alignBox({ ...size, x: inner.x + 0.004, y: 0.4 }, inner, ratio, true, clear).box.x).toBeCloseTo(inner.x, 6);
   });
 
   it('leaves the box where it is put when not snapping, and still shows how far it is from the margin', () => {
@@ -252,6 +269,17 @@ describe('anchorOf', () => {
     expect(anchorOf({ x: 0.4, y: 0.45, w: 0.2, h: 0.1 }, inner)).toBe('center');
   });
 
+  it('names a corner only where the page holds a box there, clear of the frame', () => {
+    const clear = { x: 0.02, y: 0.03 };
+    expect(anchorOf({ x: 0.07, y: 0.08, w: 0.2, h: 0.1 }, inner, clear)).toBe('top-left');
+    expect(anchorOf({ x: 0.73, y: 0.82, w: 0.2, h: 0.1 }, inner, clear)).toBe('bottom-right');
+    // On the margin in the corner (put there with Alt): not held.
+    expect(anchorOf({ x: 0.05, y: 0.05, w: 0.2, h: 0.1 }, inner, clear)).toBeUndefined();
+    // Along a side: on the margin, as ever.
+    expect(anchorOf({ x: 0.4, y: 0.05, w: 0.2, h: 0.1 }, inner, clear)).toBe('top');
+    expect(anchorOf({ x: 0.05, y: 0.45, w: 0.2, h: 0.1 }, inner, clear)).toBe('left');
+  });
+
   it('names none for a box anywhere else', () => {
     expect(anchorOf({ x: 0.2, y: 0.05, w: 0.2, h: 0.1 }, inner)).toBeUndefined();
     expect(anchorOf({ x: 0.05, y: 0.3, w: 0.2, h: 0.1 }, inner)).toBeUndefined();
@@ -267,5 +295,33 @@ describe('tidied', () => {
     const twice = { x: 0, y: 40 };
     const d = { x: 80, y: 40 };
     expect(tidied([a, bend, stub, c, twice, d], new Set([bend, c]))).toEqual([a, bend, c, d]);
+  });
+});
+
+describe("the families' names snapped into a corner and applied", () => {
+  const measure = (t: string, font: string) => t.length * Number(/(\d+(?:\.\d+)?)px/.exec(font)?.[1] ?? 12) * 0.5;
+  const render = (settings = {}) =>
+    renderPoster({
+      doc: sampleDocument(),
+      settings: { ...DEFAULT_PRINT, paper: 'A3', orientation: 'landscape', ...settings },
+      measure,
+      now: new Date('2026-01-01T00:00:00Z'),
+    });
+
+  it('stay where they snapped, on a page with a frame and without', () => {
+    for (const showFrame of [true, false]) {
+      const page = render({ showFrame });
+      const { inner, cornerClear } = page;
+      const l = page.legend!;
+      expect(cornerClear.x > 0).toBe(showFrame);
+      // Dragged onto the margin in the bottom right corner.
+      const dropped = { x: inner.x + inner.w - l.w, y: inner.y + inner.h - l.h, w: l.w, h: l.h };
+      const snapped = alignBox(dropped, inner, page.width / page.height, true, cornerClear).box;
+      const legendAnchor = anchorOf(snapped, inner, cornerClear);
+      expect(legendAnchor).toBe('bottom-right');
+      const applied = render({ showFrame, ...placedSettings({ legendBox: snapped, legendAnchor }) }).legend!;
+      expect(applied.x).toBeCloseTo(snapped.x, 4);
+      expect(applied.y).toBeCloseTo(snapped.y, 4);
+    }
   });
 });
