@@ -21,7 +21,7 @@ const CLOSED = '@file';
  * does not fit there (a background picture can be several megabytes) goes to
  * IndexedDB instead, which holds much more but is read asynchronously.
  *
- * A tree opened from or saved to a file is not kept: that file is its copy, and
+ * A tree opened from or saved to a file (on the computer or in Google Drive) is not kept: that file is its copy, and
  * reopening a browser copy of it on the next visit could mean editing an older version than the file holds. For such
  * a tree only a marker is left (`CLOSED`), and the next visit starts on the start page with the recent files.
  */

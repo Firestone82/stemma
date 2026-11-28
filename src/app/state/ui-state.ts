@@ -1,5 +1,6 @@
 import { Injectable, computed, inject, signal } from '@angular/core';
 import { Notice } from '../core/model/notice';
+import { DriveListing } from '../core/services/google-drive';
 import { TreeStore } from '../core/store/tree-store';
 
 export type Relation = 'parent' | 'partner' | 'child' | 'sibling';
@@ -19,7 +20,9 @@ export type DialogRequest =
   | { kind: 'xml'; xml: string; filename: string }
   | { kind: 'about' }
   | { kind: 'family-export' }
-  | { kind: 'unsaved'; proceed: () => unknown };
+  | { kind: 'unsaved'; proceed: () => unknown }
+  | { kind: 'drive-setup' }
+  | { kind: 'drive-open'; files: DriveListing[] };
 
 export type MenuName = 'file' | 'appearance' | 'relatives';
 

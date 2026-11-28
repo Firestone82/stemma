@@ -1,0 +1,22 @@
+<div class="dialog-body">
+  <h2>{{ t('dialog.driveOpen.title') }}</h2>
+  @if (files().length) {
+    <ul class="files">
+      @for (file of files(); track file.id) {
+        <li>
+          <button type="button" class="open" (click)="documents.openDriveFile(file)">
+            <stemma-icon name="cloud" [size]="16" />
+            <span class="name">{{ file.name }}</span>
+            <span class="meta">{{ when(file.modified) }}</span>
+          </button>
+        </li>
+      }
+    </ul>
+  } @else {
+    <p>{{ t('dialog.driveOpen.empty') }}</p>
+  }
+  <p class="note">{{ t('dialog.driveOpen.note') }}</p>
+</div>
+<div class="dialog-actions">
+  <button type="button" class="btn" (click)="done.emit()">{{ t('common.cancel') }}</button>
+</div>

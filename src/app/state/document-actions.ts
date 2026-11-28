@@ -9,6 +9,7 @@ import { LegendEntry, familyDocument } from '../core/family-document/family-docu
 import { ChartLanguage } from '../core/lang/language';
 import { familyOutline, linkedFamilies } from '../core/family-document/outline';
 import { FileIo, PickerType, SaveOutcome, datedFilename } from '../core/services/file-io';
+import { DriveFile, DriveOutcome, GoogleDrive } from '../core/services/google-drive';
 import { RecentFile, RecentFiles } from '../core/services/recent-files';
 import { ToastService } from '../core/services/toast';
 import { TreeStore } from '../core/store/tree-store';
@@ -34,19 +35,15 @@ const XML_TYPE: PickerType = { description: 'Stemma family tree (XML)', accept: 
 
 /**
  * Where the tree on screen was opened from or last saved to, so Save writes back there: a file on the computer
- * the browser gave a handle for. None for a new tree, the example family, the copy kept in the browser, or a file
- * opened where the browser cannot write back.
+ * the browser gave a handle for, or a file in Google Drive. None for a new tree, the example family, the copy kept
+ * in the browser, or a file opened where the browser cannot write back.
  */
-export interface TreeSource {
-  kind: 'local';
-  handle: FileSystemFileHandle;
-  name: string;
-}
+export type TreeSource = { kind: 'local'; handle: FileSystemFileHandle; name: string } | { kind: 'drive'; file: DriveFile };
 
 /** A file being opened: where Save will write (if anywhere) and what the recent files list keeps of it. */
 interface PendingOpen {
   source: TreeSource | null;
-  recent: { kind: 'local'; name: string; handle?: FileSystemFileHandle };
+  recent: { kind: 'local'; name: string; handle?: FileSystemFileHandle } | { kind: 'drive'; file: DriveFile };
 }
 
 /** Whole trees: starting, opening, saving, the example family and the print studio. */
@@ -55,6 +52,7 @@ export class DocumentActions {
   private readonly store = inject(TreeStore);
   private readonly ui = inject(UiState);
   private readonly files = inject(FileIo);
+  private readonly drive = inject(GoogleDrive);
   private readonly toast = inject(ToastService);
   private readonly autosave = inject(Autosave);
   private readonly prefs = inject(Preferences);
@@ -65,7 +63,7 @@ export class DocumentActions {
   /** Where Save writes the tree (see TreeSource). */
   readonly source = signal<TreeSource | null>(null);
   /**
-   * The tree belongs to a file: it was opened from one or saved to one, even where
+   * The tree belongs to a file: it was opened from one or saved to one, on the computer or in Google Drive, even where
    * the browser cannot write back to it. Such a tree is not kept in the browser for the next visit (see Autosave).
    */
   readonly fileBacked = signal(false);
@@ -226,15 +224,74 @@ export class DocumentActions {
   }
 
   /**
-   * Opens a file from the recent files, read afresh from the computer (the browser asks again for permission to the
-   * file). Where the browser kept no handle, the file is picked again.
+   * True where the Google Drive items are offered: everywhere but inside a viewer, which runs the page in a frame
+   * where Google's sign-in does not work. Without a Google Cloud project set up they explain what is missing.
+   */
+  offersDrive(): boolean {
+    return !this.files.hosted;
+  }
+
+  /** True when a Google Cloud project is set up, so the Drive items open Google's sign-in (see google-config.ts). */
+  driveReady(): boolean {
+    return this.drive.configured;
+  }
+
+  /** Loads the Google scripts ahead of a click on a Drive item, so the click opens the sign-in at once. */
+  prepareDrive(): void {
+    if (this.offersDrive() && this.drive.configured) this.drive.prepare();
+  }
+
+  /**
+   * Signs in to Google Drive (straight from the click, so the pop-up is not blocked) and lists the trees saved there
+   * by Stemma, to pick one from (`openDriveFile`).
+   */
+  async openFromDrive(): Promise<void> {
+    this.ui.closeMenu();
+    if (!this.drive.configured) {
+      this.ui.dialog.set({ kind: 'drive-setup' });
+      return;
+    }
+    const outcome = await this.drive.list();
+    if (outcome.status === 'done') this.ui.dialog.set({ kind: 'drive-open', files: outcome.value });
+    else this.driveProblem(outcome);
+  }
+
+  /** Opens a tree picked from the Google Drive list. Save then writes back to that file. */
+  async openDriveFile(file: DriveFile): Promise<void> {
+    this.ui.dialog.set(null);
+    await this.whenSaved(async () => {
+      const outcome = await this.drive.read(file);
+      if (outcome.status === 'done') this.openFromText(outcome.value.text, outcome.value.file);
+      else this.driveProblem(outcome);
+    });
+  }
+
+  private openFromText(text: string, file: DriveFile): void {
+    this.pending = { source: { kind: 'drive', file }, recent: { kind: 'drive', file } };
+    this.openXml(text, file.name);
+  }
+
+  /**
+   * Opens a file from the recent files, read afresh from where it is: the computer (the browser asks again for
+   * permission to the file) or Google Drive. Where the browser kept no handle, the file is picked again.
    */
   async openRecent(entry: RecentFile): Promise<void> {
     this.ui.closeMenu();
+    if (entry.kind === 'drive' && !this.drive.configured) {
+      this.ui.dialog.set({ kind: 'drive-setup' });
+      return;
+    }
     await this.whenSaved(() => this.readRecent(entry));
   }
 
   private async readRecent(entry: RecentFile): Promise<void> {
+    if (entry.kind === 'drive') {
+      const outcome = await this.drive.read(entry.file);
+      if (outcome.status === 'done') this.openFromText(outcome.value.text, outcome.value.file);
+      else if (outcome.status === 'missing') this.recentMissing(entry);
+      else this.driveProblem(outcome);
+      return;
+    }
     if (!entry.handle) {
       await this.pickFile();
       return;
@@ -308,15 +365,23 @@ export class DocumentActions {
     return serializeTree(updateView(this.store.doc(), { language: this.i18n.code() }));
   }
 
-  /** Saves back to the file the tree came from, or else as a new file (`saveXmlAs`). */
+  /** Saves back to the file the tree came from (on the computer or in Google Drive), or else as a new file (`saveXmlAs`). */
   async saveXml(): Promise<void> {
     this.ui.closeMenu();
     const source = this.source();
     const revision = this.store.revision();
-    if (source) {
+    if (source?.kind === 'local') {
       const outcome = await this.files.writeTo(source.handle, new Blob([this.xml()], { type: 'application/xml' }));
       if (outcome === 'saved') this.saved({ kind: 'local', handle: source.handle, name: source.name }, revision);
       this.reportSave(outcome, source.name);
+    } else if (source?.kind === 'drive') {
+      const outcome = await this.drive.update(source.file, this.xml());
+      if (outcome.status === 'done') {
+        this.saved({ kind: 'drive', file: outcome.value }, revision);
+        this.toast.show(this.i18n.t('file.savedToDrive', { name: outcome.value.name }));
+      } else {
+        this.driveProblem(outcome);
+      }
     } else {
       await this.saveXmlAs();
     }
@@ -345,16 +410,42 @@ export class DocumentActions {
     else this.reportSave(saved.outcome, saved.name);
   }
 
+  /** Saves the tree as a new file in Google Drive. Save then writes there. */
+  async saveToDrive(): Promise<void> {
+    this.ui.closeMenu();
+    if (!this.drive.configured) {
+      this.ui.dialog.set({ kind: 'drive-setup' });
+      return;
+    }
+    const revision = this.store.revision();
+    const outcome = await this.drive.create(datedFilename(this.store.doc().meta.title, 'xml'), this.xml());
+    if (outcome.status === 'done') {
+      this.saved({ kind: 'drive', file: outcome.value }, revision);
+      this.toast.show(this.i18n.t('file.savedToDrive', { name: outcome.value.name }));
+    } else {
+      this.driveProblem(outcome);
+    }
+  }
+
   /** The tree was written to `source` as it stood at `revision`; the recent files put it on top, with its title now. */
   private saved(source: TreeSource, revision: number): void {
     this.takeFile(source, revision);
     const title = this.store.doc().meta.title;
-    void this.recent.remember({ kind: 'local', name: source.name, handle: source.handle, title });
+    void this.recent.remember(
+      source.kind === 'drive' ? { kind: 'drive', file: source.file, title } : { kind: 'local', name: source.name, handle: source.handle, title },
+    );
   }
 
   private reportSave(outcome: SaveOutcome, name: string): void {
     if (outcome === 'saved') this.toast.show(this.i18n.t('file.saved', { name }));
     else if (outcome === 'failed' || outcome === 'unsupported') this.toast.error(this.i18n.t('file.saveFailed'));
+  }
+
+  /** Nothing to say when the person closed the sign-in themselves. */
+  private driveProblem(outcome: DriveOutcome<unknown>): void {
+    if (outcome.status === 'blocked') this.toast.error(this.i18n.t('file.driveBlocked'));
+    else if (outcome.status === 'missing') this.toast.error(this.i18n.t('file.driveMissing'));
+    else if (outcome.status === 'failed') this.toast.error(this.i18n.t('file.driveFailed'));
   }
 
   async saveXmlAsText(xml: string, filename: string): Promise<void> {
