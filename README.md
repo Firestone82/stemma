@@ -87,12 +87,14 @@ Trees can also be opened from and saved to Google Drive (Open from Google Drive 
 
 With an API key set, Open from Google Drive shows the Google Picker, where any tree you can see is picked (in My Drive, shared with you, or in a shared drive), and Save a copy to Google Drive asks for the folder to save in. A tree shared with you for viewing only is opened, and kept with Save a copy. Without an API key, Open from Google Drive lists only the trees Stemma saved itself, and new trees go to the top folder of My Drive.
 
+A tree in Google Drive can be shared by a link (File, Share a link): Stemma's address with `?drive=<file id>`. Whoever opens it sees the tree at once, with no sign-in, as long as the file is shared in Drive as "Anyone with the link" (the dialog checks, and can set that for a file of yours). A tree opened this way can be explored and changed, but nothing is written back to the shared file: Save keeps your own copy, and closing it brings back the tree you had in the browser. Reading it needs the API key, allowed for the Google Drive API too.
+
 Until a client ID is set, the Drive items show the steps below instead of Google's sign-in. The values go in [src/app/core/services/google-config.ts](src/app/core/services/google-config.ts):
 
 1. In the [Google Cloud console](https://console.cloud.google.com/), create a project and enable the **Google Drive API** and the **Google Picker API**.
 2. Under **Google Auth Platform**, set up the consent screen (External), add the scope `https://www.googleapis.com/auth/drive.file`, and add yourself (and anyone else who will use it) as a test user, or publish the app.
 3. Create an **OAuth client ID** of type _Web application_, with `http://localhost:4200` and `https://firestone82.github.io` as authorised JavaScript origins (no redirect URIs). Copy it to `clientId`.
-4. Optional, for the Picker: create an **API key** (APIs & Services, Credentials), restricted to the Google Picker API and to the websites `http://localhost:4200/*` and `https://firestone82.github.io/*`. Copy it to `apiKey`. The app ID (the project number) is taken from the start of the client ID.
+4. Optional, for the Picker: create an **API key** (APIs & Services, Credentials), restricted to the Google Picker API and the Google Drive API (for shared links), and to the websites `http://localhost:4200/*` and `https://firestone82.github.io/*`. Copy it to `apiKey`. The app ID (the project number) is taken from the start of the client ID.
 
 None of these is a secret: they are part of the page, and Google accepts them only from the listed origins.
 

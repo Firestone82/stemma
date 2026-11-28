@@ -1,0 +1,47 @@
+:host {
+  display: block;
+}
+
+.link-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+
+  .input {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .btn {
+    flex: none;
+  }
+}
+
+.status {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  max-width: 62ch;
+  color: var(--ink-2);
+
+  stemma-icon {
+    flex: none;
+    color: var(--kin);
+  }
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+a.btn {
+  text-decoration: none;
+}
+
+.note {
+  max-width: 62ch;
+  color: var(--ink-3);
+  font-size: var(--text-sm);
+}

@@ -33,8 +33,15 @@ export class Autosave {
   private timer: ReturnType<typeof setTimeout> | undefined;
   private warned = false;
   private enabled = false;
-  /** False while the open tree belongs to a file (see `setFileBacked`). */
-  private keep = true;
+  /**
+   * `keep` while copies are kept; `file` while the open tree belongs to a file (see `setFileBacked`); `aside` while it
+   * came from a shared link (see `setAside`).
+   */
+  private mode: 'keep' | 'file' | 'aside' = 'keep';
+
+  private get keep(): boolean {
+    return this.mode === 'keep';
+  }
 
   constructor() {
     effect(() => {
@@ -70,17 +77,29 @@ export class Autosave {
    * replaced by the marker; once it does not (a new tree, the example family), copies are kept again.
    */
   setFileBacked(fileBacked: boolean): void {
-    if (fileBacked === !this.keep) return;
-    this.keep = !fileBacked;
+    this.setMode(fileBacked ? 'file' : 'keep');
+  }
+
+  /**
+   * The open tree came from someone else's link (a tree shared in Google Drive): it is not kept in the browser, and
+   * the copy already there (this person's own tree) is left as it is, to come back to when they close the shared one.
+   */
+  setAside(): void {
+    this.setMode('aside');
+  }
+
+  private setMode(mode: 'keep' | 'file' | 'aside'): void {
+    if (mode === this.mode) return;
+    this.mode = mode;
     clearTimeout(this.timer);
-    if (fileBacked) {
+    if (mode === 'file') {
       try {
         localStorage.setItem(TREE_KEY, CLOSED);
       } catch {
-        // Nothing to do: the next visit then shows whatever was kept before, as it always did.
+        // Nothing to replace where storage is blocked.
       }
       void idbDelete().catch(() => undefined);
-    } else if (this.enabled) {
+    } else if (mode === 'keep' && this.enabled) {
       this.write();
     }
   }

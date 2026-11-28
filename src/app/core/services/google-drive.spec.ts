@@ -1,5 +1,5 @@
 import { TestBed } from '@angular/core/testing';
-import { GoogleDrive, pinPickerAccount } from './google-drive';
+import { GoogleDrive, pinPickerAccount, shareLink, sharedFileId } from './google-drive';
 
 describe('pinPickerAccount', () => {
   afterEach(() => document.querySelectorAll('iframe').forEach((f) => f.remove()));
@@ -78,5 +78,49 @@ describe('GoogleDrive.details', () => {
     TestBed.resetTestingModule();
     expect(await TestBed.inject(GoogleDrive).details({ id: 'f', name: 'x' })).toBeNull();
     expect(drive).toBeDefined();
+  });
+});
+
+describe('shared links', () => {
+  const id = '1AbCdEfGhIjKlMnOp_q-r';
+
+  it('puts the file id on the page address', () => {
+    expect(shareLink(id, { origin: 'https://firestone82.github.io', pathname: '/stemma/' })).toBe(`https://firestone82.github.io/stemma/?drive=${id}`);
+  });
+
+  it('reads the file id from the address, or from a Drive link pasted there', () => {
+    expect(sharedFileId(`?drive=${id}`)).toBe(id);
+    expect(sharedFileId(`?drive=${encodeURIComponent(`https://drive.google.com/file/d/${id}/view?usp=sharing`)}`)).toBe(id);
+    expect(sharedFileId(`?drive=${encodeURIComponent(`https://drive.google.com/open?id=${id}`)}`)).toBe(id);
+    expect(sharedFileId('?drive=')).toBeNull();
+    expect(sharedFileId('?drive=<script>')).toBeNull();
+    expect(sharedFileId('')).toBeNull();
+  });
+});
+
+describe('GoogleDrive.readShared', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('reads a public file with only the API key, no sign-in', async () => {
+    const fetched: { url: string; init?: RequestInit }[] = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string, init?: RequestInit) => {
+        fetched.push({ url, init });
+        return url.includes('alt=media') ? new Response('<tree/>') : new Response(JSON.stringify({ id: 'f1234567890', name: 'tree.xml', size: '7' }));
+      }),
+    );
+    const outcome = await TestBed.inject(GoogleDrive).readShared('f1234567890');
+    expect(outcome).toEqual({ status: 'done', value: { file: { id: 'f1234567890', name: 'tree.xml' }, text: '<tree/>' } });
+    expect(fetched.every(({ url, init }) => url.includes('key=') && !init?.headers)).toBe(true);
+  });
+
+  it('calls a file Drive does not show to strangers missing', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response('', { status: 404 })),
+    );
+    expect(await TestBed.inject(GoogleDrive).readShared('f1234567890')).toEqual({ status: 'missing' });
+    expect(await TestBed.inject(GoogleDrive).sharing('f1234567890')).toBe('private');
   });
 });

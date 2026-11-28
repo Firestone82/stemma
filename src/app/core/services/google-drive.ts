@@ -34,6 +34,11 @@ const FOLDER_TYPE = 'application/vnd.google-apps.folder';
 const FILES = 'https://www.googleapis.com/drive/v3/files';
 const ABOUT = 'https://www.googleapis.com/drive/v3/about';
 const UPLOAD = 'https://www.googleapis.com/upload/drive/v3/files';
+/** The address parameter that carries a shared tree's Drive file id (see `shareLink`). */
+export const SHARE_PARAM = 'drive';
+
+/** Whether a Drive file can be opened by anyone with its link: `null` when Drive could not be asked. */
+export type DriveSharing = 'public' | 'private' | null;
 
 // The parts of Google Identity Services and the Google Picker used here.
 interface TokenResponse {
@@ -255,6 +260,67 @@ export class GoogleDrive {
     }
   }
 
+  /**
+   * Reads a tree shared as "anyone with the link" in Drive, with no sign-in: only the API key goes with the request,
+   * so Drive answers just for files anyone may see. `missing` when the file is not shared that way (Drive then says it
+   * does not know it) or is gone; `failed` without an API key or when Drive cannot be reached.
+   */
+  async readShared(
+    id: string,
+    progress?: (file: DriveFile, loaded: number, total: number | null) => void,
+  ): Promise<DriveOutcome<{ file: DriveFile; text: string }>> {
+    if (!GOOGLE_CONFIG.apiKey) return { status: 'failed' };
+    try {
+      const key = encodeURIComponent(GOOGLE_CONFIG.apiKey);
+      const path = `${FILES}/${encodeURIComponent(id)}`;
+      const meta = await fetch(`${path}?fields=id,name,trashed,size&supportsAllDrives=true&key=${key}`);
+      if (!meta.ok) return this.failedShared(meta);
+      const info = (await meta.json()) as DriveFile & { trashed?: boolean; size?: string };
+      if (info.trashed) return { status: 'missing' };
+      const file = { id: info.id, name: info.name };
+      const total = info.size ? Number(info.size) : null;
+      progress?.(file, 0, total);
+      const response = await fetch(`${path}?alt=media&supportsAllDrives=true&key=${key}`);
+      if (!response.ok) return this.failedShared(response);
+      const text = await readText(response, (loaded) => progress?.(file, loaded, total));
+      return { status: 'done', value: { file, text } };
+    } catch {
+      return { status: 'failed' };
+    }
+  }
+
+  /** Whether anyone with the link can open the file now (asked as a stranger would, with only the API key). */
+  async sharing(id: string): Promise<DriveSharing> {
+    if (!GOOGLE_CONFIG.apiKey) return null;
+    try {
+      const response = await fetch(`${FILES}/${encodeURIComponent(id)}?fields=id&supportsAllDrives=true&key=${encodeURIComponent(GOOGLE_CONFIG.apiKey)}`);
+      if (response.ok) return 'public';
+      return response.status === 404 ? 'private' : null;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Lets anyone with the link view the file (Drive's "Anyone with the link: Viewer"), signing in if needed. `denied`
+   * when the person may not change who the file is shared with (not theirs, or their organisation does not allow it).
+   */
+  async sharePublicly(file: DriveFile): Promise<DriveOutcome<true>> {
+    const auth = await this.authorize();
+    if (auth.status !== 'done') return auth;
+    try {
+      const response = await fetch(`${FILES}/${encodeURIComponent(file.id)}/permissions?supportsAllDrives=true`, {
+        method: 'POST',
+        headers: { ...this.headers(auth.value.token), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ role: 'reader', type: 'anyone', allowFileDiscovery: false }),
+      });
+      if (!response.ok) return this.failed(response);
+      return { status: 'done', value: true };
+    } catch {
+      return { status: 'failed' };
+    }
+  }
+
   /** Writes the tree over a file opened from or saved to Drive earlier. */
   async update(file: DriveFile, xml: string): Promise<DriveOutcome<DriveFile>> {
     const auth = await this.authorize();
@@ -362,6 +428,11 @@ export class GoogleDrive {
     return { status: 'failed' };
   }
 
+  /** Without a sign-in, Drive says it does not know a file that is not shared with anyone who has the link. */
+  private failedShared(response: Response): DriveOutcome<never> {
+    return response.status === 404 ? { status: 'missing' } : { status: 'failed' };
+  }
+
   /** The e-mail of the account the token belongs to, asked from Drive once and kept for the next sign-in. */
   private async account(token: string): Promise<string | undefined> {
     if (this.email && this.emailChecked === token) return this.email;
@@ -436,6 +507,27 @@ export class GoogleDrive {
     );
     return this.ready;
   }
+}
+
+/** The Stemma address that opens a tree in Drive for anyone with the link: this page with `?drive=<file id>`. */
+export function shareLink(id: string, at: { origin: string; pathname: string } = location): string {
+  return `${at.origin}${at.pathname}?${SHARE_PARAM}=${encodeURIComponent(id)}`;
+}
+
+/**
+ * The Drive file id a page address asks to open (`?drive=`), or `null`. Besides a bare id it takes a Drive link
+ * pasted in its place (…/file/d/<id>/view, …?id=<id>), so a link copied from Drive's own Share button works too.
+ */
+export function sharedFileId(search: string): string | null {
+  const value = new URLSearchParams(search).get(SHARE_PARAM)?.trim();
+  if (!value) return null;
+  const id = /\/d\/([\w-]+)/.exec(value)?.[1] ?? /[?&]id=([\w-]+)/.exec(value)?.[1] ?? value;
+  return /^[\w-]{10,}$/.test(id) ? id : null;
+}
+
+/** The file's page in Google Drive, where its Share button is. */
+export function driveFilePage(id: string): string {
+  return `https://drive.google.com/file/d/${encodeURIComponent(id)}/view`;
 }
 
 function localStorageOrNull(): Storage | null {

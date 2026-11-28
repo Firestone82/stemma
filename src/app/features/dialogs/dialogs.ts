@@ -11,6 +11,8 @@ import { PartMerge } from './part-merge/part-merge';
 import { XmlExport } from './xml-export/xml-export';
 import { DriveOpen } from './drive-open/drive-open';
 import { DriveSetup } from './drive-setup/drive-setup';
+import { DriveShare } from './drive-share/drive-share';
+import { SharedFailed } from './shared-failed/shared-failed';
 import { UnsavedChanges } from './unsaved-changes/unsaved-changes';
 
 /** The one modal dialog of the app; what it shows comes from UiState.dialog. */
@@ -29,6 +31,8 @@ import { UnsavedChanges } from './unsaved-changes/unsaved-changes';
     UnsavedChanges,
     DriveSetup,
     DriveOpen,
+    DriveShare,
+    SharedFailed,
   ],
   templateUrl: './dialogs.html',
   styleUrl: './dialogs.scss',

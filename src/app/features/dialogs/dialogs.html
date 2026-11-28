@@ -36,6 +36,12 @@
       @case ('drive-open') {
         <stemma-drive-open [files]="r.files" (done)="close()" />
       }
+      @case ('drive-share') {
+        <stemma-drive-share [file]="r.file" [own]="r.own" (done)="close()" />
+      }
+      @case ('shared-failed') {
+        <stemma-shared-failed [reason]="r.reason" (done)="close()" />
+      }
       @case ('about') {
         <stemma-about-format (done)="close()" />
       }

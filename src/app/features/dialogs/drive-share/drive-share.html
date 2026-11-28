@@ -1,0 +1,36 @@
+<div class="dialog-body">
+  <h2>{{ t('dialog.share.title') }}</h2>
+  <p>{{ t('dialog.share.text', { name: file().name }) }}</p>
+  <div class="link-row">
+    <label class="visually-hidden" for="share-link">{{ t('dialog.share.label') }}</label>
+    <input id="share-link" #field class="input" type="text" readonly [value]="link()" (focus)="field.select()" />
+    <button type="button" class="btn primary" (click)="copy(field)"><stemma-icon name="copy" [size]="16" />{{ t('dialog.share.copy') }}</button>
+  </div>
+  @switch (sharing()) {
+    @case ('checking') {
+      <p class="status">{{ t('dialog.share.checking') }}</p>
+    }
+    @case ('public') {
+      <p class="status ok"><stemma-icon name="check" [size]="16" />{{ t('dialog.share.public') }}</p>
+    }
+    @case ('private') {
+      <p class="status warn">{{ t('dialog.share.private') }}</p>
+      <div class="actions">
+        @if (own()) {
+          <button type="button" class="btn" [disabled]="changing()" (click)="makePublic()">
+            <stemma-icon name="link" [size]="16" />{{ t('dialog.share.makePublic') }}
+          </button>
+        }
+        <a class="btn" [href]="drivePage()" target="_blank" rel="noopener">{{ t('dialog.share.inDrive') }}</a>
+        <button type="button" class="btn" (click)="check()">{{ t('dialog.share.checkAgain') }}</button>
+      </div>
+    }
+    @default {
+      <p class="status">{{ t('dialog.share.unknown') }}</p>
+    }
+  }
+  <p class="note">{{ t('dialog.share.note') }}</p>
+</div>
+<div class="dialog-actions">
+  <button type="button" class="btn" (click)="done.emit()">{{ t('common.close') }}</button>
+</div>
