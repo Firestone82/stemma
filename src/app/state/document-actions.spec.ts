@@ -62,6 +62,9 @@ class FakeDrive {
     this.created.push(name);
     return { status: 'done', value: { id: 'new-id', name } };
   }
+  async details(): Promise<{ saved: number; folders: string[] } | null> {
+    return { saved: 1234, folders: ['Family'] };
+  }
 }
 
 /** Puts a file in the fake Drive, opens the Drive list and picks that file from it. */
@@ -236,6 +239,31 @@ describe('DocumentActions recent files and reopening', () => {
       ['drive', 'drive.xml', 'Dvořák'],
       ['local', 'novak.xml', 'Novák'],
     ]);
+  });
+
+  it('remembers when a local file was last saved, and when it is saved again', async () => {
+    files.picked = { file: new File([novak], 'novak.xml', { lastModified: 1000 }), handle };
+    await actions.openFile();
+    await recent.settled();
+    expect(recent.list()[0]).toMatchObject({ saved: 1000 });
+
+    const before = Date.now();
+    await actions.saveXml();
+    await recent.settled();
+    expect(recent.list()[0].saved).toBeGreaterThanOrEqual(before);
+  });
+
+  it('remembers a downloaded file as being in the downloads folder', async () => {
+    await actions.saveXmlAs();
+    await recent.settled();
+    expect(recent.list()[0]).toMatchObject({ kind: 'local', downloaded: true });
+  });
+
+  it('adds when a Drive file was changed and its folders, as Drive says', async () => {
+    await openFromDrive(actions, drive, ui, { id: 'abc', name: 'drive.xml' }, novak);
+    await new Promise((resolve) => setTimeout(resolve));
+    await recent.settled();
+    expect(recent.list()[0]).toMatchObject({ kind: 'drive', saved: 1234, folders: ['Family'] });
   });
 
   it('keeps one entry for a file opened twice', async () => {

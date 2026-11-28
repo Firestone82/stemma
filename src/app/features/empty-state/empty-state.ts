@@ -1,4 +1,5 @@
 import { ChangeDetectionStrategy, Component, computed, inject } from '@angular/core';
+import { RecentFile } from '../../core/services/recent-files';
 import { I18n } from '../../i18n/i18n';
 import { Icon } from '../../shared/icon/icon';
 import { DocumentActions } from '../../state/document-actions';
@@ -25,9 +26,21 @@ export class EmptyState {
   protected readonly recent = this.documents.recentFiles;
   private readonly dateFormat = computed(() => new Intl.DateTimeFormat(this.i18n.locale().intl, { dateStyle: 'medium', timeStyle: 'short' }));
 
-  /** When the file was last opened or saved here. */
+  /** When the file was last saved (for a file in Drive, last changed there); for older entries, when it was last opened. */
   protected when(at: number): string {
     return this.dateFormat().format(at);
+  }
+
+  /**
+   * Where the file is. In Drive, the folders down from My Drive. On the computer the browser never tells the page
+   * which folder a file is in, so only a downloaded file is known to be in the downloads folder.
+   */
+  protected where(entry: RecentFile): string {
+    if (entry.kind === 'local') return this.t(entry.downloaded ? 'recent.downloads' : 'recent.computer');
+    if (!entry.folders) return this.t('recent.drive');
+    const folders = entry.folders;
+    const top = folders[0] === '…' ? [] : [this.t('recent.myDrive')];
+    return [this.t('recent.drive'), ...top, ...folders].join(' / ');
   }
 
   protected addFirst(): void {

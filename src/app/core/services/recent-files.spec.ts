@@ -62,6 +62,25 @@ describe('RecentFiles', () => {
     expect(recent.list()[0].name).toBe(`f${RECENT_LIMIT + 2}.xml`);
   });
 
+  it('keeps when a file was saved and whether it was downloaded', async () => {
+    await recent.remember({ kind: 'local', name: 'a.xml', title: 'A', saved: 5, downloaded: true }, 6);
+    expect(recent.list()[0]).toMatchObject({ saved: 5, downloaded: true, at: 6 });
+  });
+
+  it('adds what Drive says of a file without moving it', async () => {
+    await recent.remember({ kind: 'drive', title: 'B', file: { id: 'b', name: 'b.xml' } }, 1);
+    await recent.remember({ kind: 'local', name: 'a.xml', title: 'A' }, 2);
+    await recent.describeDrive('b', { saved: 9, folders: ['Family', 'Trees'] });
+    expect(recent.list().map((e) => e.name)).toEqual(['a.xml', 'b.xml']);
+    expect(recent.list()[1]).toMatchObject({ saved: 9, folders: ['Family', 'Trees'] });
+  });
+
+  it('keeps the folders of a Drive file opened again until Drive is asked', async () => {
+    await recent.remember({ kind: 'drive', title: 'B', file: { id: 'b', name: 'b.xml' }, saved: 3, folders: ['Family'] }, 1);
+    await recent.remember({ kind: 'drive', title: 'B', file: { id: 'b', name: 'b.xml' } }, 4);
+    expect(recent.list()[0]).toMatchObject({ saved: 3, folders: ['Family'], at: 4 });
+  });
+
   it('forgets a file', async () => {
     await recent.remember({ kind: 'drive', title: 'B', file: { id: 'b', name: 'b.xml' } });
     await recent.forget(recent.list()[0].key);
