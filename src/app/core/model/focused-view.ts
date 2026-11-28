@@ -1,16 +1,20 @@
 /**
- * The focused view: on a big tree, only the family in the middle and its
- * nearest relatives are on the chart, and everything further off is folded
- * into the balloons of the family view (see family-view), which a press opens.
+ * The focused view: on a big tree, only the family of the person in the middle
+ * and their nearest relatives are on the chart; where the tree branches off
+ * into another family it is folded into the balloons of the family view (see
+ * family-view), which a press opens.
  *
- * Around the person in the middle: their partners, brothers and sisters with
- * everyone below them, children and grandchildren, parents and grandparents,
- * each with their partners, and aunts and uncles on their own. The partner's
- * parents are behind a balloon, which lets the line of ancestors go up their
- * side instead. Above that, only one line of ancestors
- * goes on up (the "lead"): by default the father's father's line, or the line
- * through an ancestor picked instead. Every other ancestor's parents are
- * folded away, and opening one of them swaps the line that goes up.
+ * The family: everyone joined to the person in the middle by parents and
+ * children who was born into their family (by surnameKey), so the brothers and
+ * sisters of a grandfather and their children, up and down the family's line.
+ * The nearest relatives: partners, brothers and sisters with everyone below
+ * them, children and grandchildren, parents and grandparents, each with their
+ * partners, and aunts and uncles. Partners are always shown; their parents
+ * (the family beyond a marriage) wait behind a balloon.
+ *
+ * A balloon over an ancestor swaps the family shown for that ancestor's: the
+ * way up to them and their family come in, and the family shown before is
+ * folded away again beyond the nearest relatives.
  */
 import { Scope } from '../poster/scope';
 import { scopeOf, withPartners } from './family-view';
@@ -20,7 +24,9 @@ import { TreeDocument } from './types';
 export interface FocusedOptions {
   centerId: string;
   partnerId?: string;
-  /** The ancestor whose line goes on up; none for the father's father's line of the person in the middle. */
+  /** The family each person was born into (a surnameKey); empty when not known. */
+  keyOf: (personId: string) => string;
+  /** The ancestor (of the person in the middle or their partner) whose family is shown; none for the person in the middle's. */
   through?: string;
   /** People opened from balloons, shown with their partners. */
   opened?: ReadonlySet<string>;
@@ -62,17 +68,21 @@ export function focusedScope(doc: TreeDocument, index: TreeIndex, options: Focus
   // Ancestors near the person in the middle, on all their lines. The partner's side waits behind a balloon.
   for (const id of ancestorsWithin(index, centerId, UP)) base.add(id);
 
-  // The line that goes on up.
-  for (const id of leadLine(index, centerId, partnerId, options.through)) base.add(id);
+  // The family: the person in the middle's, or the one of the ancestor picked instead, with the way up to them.
+  const path = (options.through && (pathUp(index, centerId, options.through) ?? (partnerId ? pathUp(index, partnerId, options.through) : undefined))) || [
+    centerId,
+  ];
+  for (const id of path) base.add(id);
+  for (const id of familyOf(index, path[path.length - 1], options.keyOf)) base.add(id);
+
+  // Aunts and uncles, with their partners; their children wait behind a balloon.
+  for (const parent of index.parentFamilies(centerId).flatMap((f) => f.partners)) {
+    for (const f of index.parentFamilies(parent)) for (const c of f.children) base.add(c.personId);
+  }
 
   for (const id of options.opened ?? []) if (index.person(id)) base.add(id);
-  const shown = withPartners(index, base);
-
-  // Aunts and uncles: on their own, their partners and children behind balloons.
-  for (const parent of index.parentFamilies(centerId).flatMap((f) => f.partners)) {
-    for (const f of index.parentFamilies(parent)) for (const c of f.children) shown.add(c.personId);
-  }
-  return scopeOf(doc, index, shown, centerId);
+  // Everyone's partners are always there; what lies beyond a marriage (the partner's family) waits behind balloons.
+  return scopeOf(doc, index, withPartners(index, base), centerId);
 }
 
 /**
@@ -105,22 +115,23 @@ function ancestorsWithin(index: TreeIndex, personId: string, generations: number
   return out;
 }
 
-/**
- * The line of ancestors that goes on up: from the person in the middle (or their partner) to `through`,
- * then on through the fathers (a mother where no father is known), with both parents at each step.
- */
-function leadLine(index: TreeIndex, centerId: string, partnerId: string | undefined, through: string | undefined): string[] {
-  const path = (through && (pathUp(index, centerId, through) ?? (partnerId ? pathUp(index, partnerId, through) : undefined))) || [centerId];
-  const out = [...path];
-  const seen = new Set(out);
-  let at = path[path.length - 1];
-  for (;;) {
-    const parents = parentsOf(index, at).filter((p) => !seen.has(p));
-    if (!parents.length) return out;
-    for (const p of parents) seen.add(p);
-    out.push(...parents);
-    at = parents[0];
+/** Everyone joined to `start` by parents and children who was born into the same family. */
+function familyOf(index: TreeIndex, start: string, keyOf: (personId: string) => string): Set<string> {
+  const key = keyOf(start);
+  const out = new Set([start]);
+  if (!key) return out;
+  const queue = [start];
+  while (queue.length) {
+    const id = queue.pop()!;
+    const parents = index.parentFamilies(id).flatMap((f) => f.partners);
+    const children = index.partnerFamilies(id).flatMap((f) => f.children.map((c) => c.personId));
+    for (const next of [...parents, ...children]) {
+      if (out.has(next) || keyOf(next) !== key) continue;
+      out.add(next);
+      queue.push(next);
+    }
   }
+  return out;
 }
 
 /** The way up from a person to one of their ancestors, both ends included; undefined when they are not one. */
@@ -141,16 +152,4 @@ function pathUp(index: TreeIndex, from: string, to: string): string[] | undefine
     }
   }
   return undefined;
-}
-
-/** A person's parents, from their first family (by blood, where there is one); fathers first. */
-function parentsOf(index: TreeIndex, personId: string): string[] {
-  const families = index.parentFamilies(personId);
-  const family = families.find((f) => index.childRelation(f, personId) === 'biological') ?? families[0];
-  if (!family) return [];
-  const rank = (id: string) => {
-    const sex = index.person(id)?.sex;
-    return sex === 'male' ? 0 : sex === 'female' ? 1 : 2;
-  };
-  return [...family.partners].sort((a, b) => rank(a) - rank(b));
 }

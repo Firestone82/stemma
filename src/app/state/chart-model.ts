@@ -199,8 +199,10 @@ export class ChartModel {
   private readonly focusedScope = computed<Scope | undefined>(() => {
     if (!this.focusedActive()) return undefined;
     const centerId = this.focusId()!;
+    const keyOf = this.familyKeyOf();
     return focusedScope(this.store.doc(), this.store.index(), {
       centerId,
+      keyOf: (id) => keyOf.get(id) ?? '',
       partnerId: this.focusPartnerId(),
       through: this.focusedView.through(),
       opened: this.focusedView.people(),
