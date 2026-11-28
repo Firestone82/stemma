@@ -7,10 +7,11 @@
  * The family: everyone joined to the person in the middle by parents and
  * children who was born into their family (by surnameKey), so the brothers and
  * sisters of a grandfather and their children, up and down the family's line.
- * The nearest relatives: partners, brothers and sisters with everyone below
- * them, children and grandchildren, parents and grandparents, each with their
- * partners, and aunts and uncles. Partners are always shown; their parents
- * (the family beyond a marriage) wait behind a balloon.
+ * The nearest relatives: partners, parents, brothers and sisters with everyone
+ * below them, and children and grandchildren. Partners are always shown, but
+ * not the family they were born into: a mother who married into the family
+ * brings neither her parents nor her brothers and sisters, who wait behind a
+ * balloon.
  *
  * A balloon over an ancestor swaps the family shown for that ancestor's: the
  * way up to them and their family come in, and the family shown before is
@@ -32,8 +33,6 @@ export interface FocusedOptions {
   opened?: ReadonlySet<string>;
 }
 
-/** Generations shown above the person in the middle for all their lines. */
-const UP = 2;
 /** Generations of descendants shown below the couple. */
 const DOWN = 2;
 
@@ -65,8 +64,8 @@ export function focusedScope(doc: TreeDocument, index: TreeIndex, options: Focus
     row = [...new Set(next.flatMap((id) => [id, ...index.partners(id).map((p) => p.id)]))];
   }
 
-  // Ancestors near the person in the middle, on all their lines. The partner's side waits behind a balloon.
-  for (const id of ancestorsWithin(index, centerId, UP)) base.add(id);
+  // Parents; further up only the family's line.
+  for (const f of index.parentFamilies(centerId)) for (const id of f.partners) base.add(id);
 
   // The family: the person in the middle's, or the one of the ancestor picked instead, with the way up to them.
   const path = (options.through && (pathUp(index, centerId, options.through) ?? (partnerId ? pathUp(index, partnerId, options.through) : undefined))) || [
@@ -74,11 +73,6 @@ export function focusedScope(doc: TreeDocument, index: TreeIndex, options: Focus
   ];
   for (const id of path) base.add(id);
   for (const id of familyOf(index, path[path.length - 1], options.keyOf)) base.add(id);
-
-  // Aunts and uncles, with their partners; their children wait behind a balloon.
-  for (const parent of index.parentFamilies(centerId).flatMap((f) => f.partners)) {
-    for (const f of index.parentFamilies(parent)) for (const c of f.children) base.add(c.personId);
-  }
 
   for (const id of options.opened ?? []) if (index.person(id)) base.add(id);
   // Everyone's partners are always there; what lies beyond a marriage (the partner's family) waits behind balloons.
@@ -92,26 +86,6 @@ export function focusedScope(doc: TreeDocument, index: TreeIndex, options: Focus
 export function ancestorSide(index: TreeIndex, centerId: string, partnerId?: string): Set<string> {
   const out = new Set([centerId, ...index.ancestors(centerId)]);
   if (partnerId) for (const id of [partnerId, ...index.ancestors(partnerId)]) out.add(id);
-  return out;
-}
-
-/** Everyone up to `generations` above a person, on all lines. */
-function ancestorsWithin(index: TreeIndex, personId: string, generations: number): string[] {
-  const out: string[] = [];
-  let row = [personId];
-  const seen = new Set(row);
-  for (let g = 0; g < generations; g++) {
-    const next: string[] = [];
-    for (const id of row) {
-      for (const p of index.parentFamilies(id).flatMap((f) => f.partners)) {
-        if (seen.has(p)) continue;
-        seen.add(p);
-        next.push(p);
-      }
-    }
-    out.push(...next);
-    row = next;
-  }
   return out;
 }
 
