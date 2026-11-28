@@ -14,5 +14,5 @@
  */
 export const GOOGLE_CONFIG = {
   /** OAuth client ID, "….apps.googleusercontent.com". */
-  clientId: '',
+  clientId: '422957047741-f7mbdrgi6g3vtsnkmvu2tmla67pmoks7.apps.googleusercontent.com',
 };
