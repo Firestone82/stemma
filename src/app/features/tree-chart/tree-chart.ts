@@ -22,6 +22,9 @@ import { FamilyView } from '../../state/family-view';
 import { TreeStore } from '../../core/store/tree-store';
 import { I18n } from '../../i18n/i18n';
 import { balloonIdOf, isPortal } from '../../core/model/family-view';
+import { ancestorSide } from '../../core/model/focused-view';
+import { FocusedView } from '../../state/focused-view';
+import { FocusedToggle } from './focused-toggle/focused-toggle';
 import { ChartModel } from '../../state/chart-model';
 import { ChartBusy } from '../../state/chart-busy';
 import { PersonActions } from '../../state/person-actions';
@@ -51,7 +54,7 @@ import { ZoomControls } from './zoom-controls/zoom-controls';
  */
 @Component({
   selector: 'stemma-chart',
-  imports: [FamilyLines, Unions, Placeholders, PersonCard, QuickAdd, ZoomControls, RelativesFilter, ContextMenu, FamilyBalloons, FamilyBar],
+  imports: [FamilyLines, Unions, Placeholders, PersonCard, QuickAdd, ZoomControls, RelativesFilter, FocusedToggle, ContextMenu, FamilyBalloons, FamilyBar],
   templateUrl: './tree-chart.html',
   styleUrl: './tree-chart.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -70,6 +73,7 @@ export class TreeChart {
   private readonly i18n = inject(I18n);
   private readonly measure = inject(TextMeasurer);
   protected readonly familyView = inject(FamilyView);
+  private readonly focusedView = inject(FocusedView);
   protected readonly chartBusy = inject(ChartBusy);
   protected readonly t = this.i18n.t;
 
@@ -185,26 +189,50 @@ export class TreeChart {
   protected readonly balloonLabels = computed<ReadonlyMap<string, string>>(() => {
     const index = this.store.index();
     const names = this.model.familyNames();
+    const focused = this.model.focusedActive();
+    const swaps = this.swapBalloons();
     return new Map(
       this.model.balloons().map((b) => {
         const families = this.i18n.list(b.keys.map((k) => names.get(k)?.label ?? k));
         const name = this.i18n.name(index.person(b.personId));
-        return [b.id, this.t(`familyView.balloon.${b.kind}`, { name, families })];
+        const key = swaps.has(b.id)
+          ? ('focusedView.balloon.swap' as const)
+          : focused
+            ? (`focusedView.balloon.${b.kind}` as const)
+            : (`familyView.balloon.${b.kind}` as const);
+        return [b.id, this.t(key, { name, families })];
       }),
     );
   });
 
-  protected readonly showFamilies = (count: number) => this.t('familyView.show', { count });
+  protected readonly showFamilies = (count: number) => this.t(this.model.focusedActive() ? 'focusedView.show' : 'familyView.show', { count });
+  protected readonly swapHint = computed(() => this.t('focusedView.swap'));
+
+  /** Balloons are drawn: in the family view, or in the focused view of the whole tree. */
+  protected readonly balloonsShown = computed(() => this.familyActive() || this.model.focusedActive());
+
+  /** In the focused view, the balloons over ancestors: a press lets the line go on up through them instead. */
+  private readonly swapBalloons = computed<ReadonlySet<string>>(() => {
+    if (!this.model.focusedActive()) return new Set();
+    const side = ancestorSide(this.store.index(), this.model.focusId()!, this.model.focusPartnerId());
+    return new Set(
+      this.model
+        .balloons()
+        .filter((b) => b.kind === 'parents' && side.has(b.personId))
+        .map((b) => b.id),
+    );
+  });
 
   /** The families left off, each where the layout put its stand-in: the place its first card would have. */
   protected readonly familySlots = computed<FamilySlot[]>(() => {
     const balloons = new Map(this.model.balloons().map((b) => [b.id, b]));
     const texts = this.balloonTexts();
+    const swaps = this.swapBalloons();
     return this.shown().placeholders.flatMap((p) => {
       if (!isPortal(p.familyId)) return [];
       const b = balloons.get(balloonIdOf(p.familyId));
       const text = b && texts.get(b.id);
-      return b && text ? [{ id: b.id, kind: b.kind, x: p.x, y: p.y, w: p.w, h: p.h, ...text }] : [];
+      return b && text ? [{ id: b.id, kind: b.kind, swap: swaps.has(b.id), x: p.x, y: p.y, w: p.w, h: p.h, ...text }] : [];
     });
   });
 
@@ -212,7 +240,10 @@ export class TreeChart {
   protected onBalloonPick(id: string): void {
     if (this.gestures.swallowClick()) return;
     const balloon = this.model.balloons().find((b) => b.id === id);
-    if (balloon) this.familyView.add(balloon.keys, balloon.people[0]);
+    if (!balloon) return;
+    if (!this.model.focusedActive()) this.familyView.add(balloon.keys, balloon.people[0]);
+    else if (this.swapBalloons().has(id)) this.focusedView.swap(balloon.personId, balloon.people[0]);
+    else this.focusedView.open(balloon.people, balloon.people[0]);
   }
 
   /** What a click on each line takes out of the family view, as its tooltip (by family id). */

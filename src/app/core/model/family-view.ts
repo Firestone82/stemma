@@ -37,10 +37,22 @@ export interface FamilyBalloon {
 export function familyViewScope(doc: TreeDocument, index: TreeIndex, keys: ReadonlySet<string>, keyOf: (personId: string) => string, centerId?: string): Scope {
   const included = new Set<string>();
   for (const p of doc.people) if (keys.has(keyOf(p.id))) included.add(p.id);
-  for (const id of [...included]) {
-    for (const f of index.partnerFamilies(id)) for (const p of f.partners) included.add(p);
-  }
+  return scopeOf(doc, index, withPartners(index, included), centerId);
+}
 
+/** `ids` with everyone's partners, so couples stay together. */
+export function withPartners(index: TreeIndex, ids: ReadonlySet<string>): Set<string> {
+  const out = new Set(ids);
+  for (const id of ids) for (const f of index.partnerFamilies(id)) for (const p of f.partners) out.add(p);
+  return out;
+}
+
+/**
+ * The part of a tree with just the people of `included`: their couples, single parents with their
+ * children, and brothers and sisters whose parents nobody knows. Laid out around `centerId` when it is
+ * among them, otherwise around the first of them.
+ */
+export function scopeOf(doc: TreeDocument, index: TreeIndex, included: ReadonlySet<string>, centerId?: string): Scope {
   const families: Family[] = [];
   for (const f of doc.families) {
     const partners = f.partners.filter((p) => included.has(p));

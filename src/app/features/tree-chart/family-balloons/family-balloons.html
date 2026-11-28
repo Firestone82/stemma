@@ -4,6 +4,7 @@
     role="button"
     tabindex="0"
     [attr.data-kind]="s.kind"
+    [class.swap]="s.swap"
     [attr.aria-label]="labels().get(s.id)"
     [attr.transform]="'translate(' + s.x + ',' + s.y + ')'"
     (click)="onPick(s.id, $event)"
@@ -21,7 +22,9 @@
       />
     }
     <svg:text class="name" [attr.x]="startOf(s) + s.shields.length * pitch" [attr.y]="s.h / 2 - 10" dominant-baseline="central">{{ s.text }}</svg:text>
-    <svg:text class="more" [attr.x]="s.w / 2" [attr.y]="s.h / 2 + 12" text-anchor="middle" dominant-baseline="central">{{ hint()(s.shields.length) }}</svg:text>
+    <svg:text class="more" [attr.x]="s.w / 2" [attr.y]="s.h / 2 + 12" text-anchor="middle" dominant-baseline="central">
+      {{ s.swap ? swapHint() : hint()(s.shields.length) }}
+    </svg:text>
     <svg:title>{{ labels().get(s.id) }}</svg:title>
   </svg:g>
 }

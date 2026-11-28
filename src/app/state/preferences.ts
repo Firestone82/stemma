@@ -10,6 +10,8 @@ export interface Prefs {
   language?: string;
   /** Light or dark look of the app and the chart: 'auto' (follows the device), 'light' or 'dark'. */
   theme?: string;
+  /** The chart shows only the family in the middle and its nearest relatives (see state/focused-view). */
+  focusedView?: boolean;
 }
 
 /**
