@@ -24,6 +24,8 @@ export type DriveOutcome<T> =
 const SCOPE = 'https://www.googleapis.com/auth/drive.file';
 const GIS_SCRIPT = 'https://accounts.google.com/gsi/client';
 const GAPI_SCRIPT = 'https://apis.google.com/js/api.js';
+/** Where the access token is kept for this tab (see `GoogleDrive.token`). */
+const TOKEN_KEY = 'stemma.drive-token';
 const XML_TYPES = 'application/xml,text/xml';
 const FOLDER_TYPE = 'application/vnd.google-apps.folder';
 const FILES = 'https://www.googleapis.com/drive/v3/files';
@@ -105,7 +107,25 @@ interface GoogleWindow {
 @Injectable({ providedIn: 'root' })
 export class GoogleDrive {
   private ready: Promise<GoogleGlobal> | undefined;
-  private token: { value: string; expires: number } | undefined;
+  private kept: { value: string; expires: number } | undefined = readToken();
+
+  /**
+   * The access token, kept for this tab in sessionStorage until shortly before it runs out, so reloading the page or
+   * opening another tree does not ask to sign in again within the hour.
+   */
+  private get token(): { value: string; expires: number } | undefined {
+    return this.kept && this.kept.expires > Date.now() ? this.kept : undefined;
+  }
+
+  private set token(token: { value: string; expires: number } | undefined) {
+    this.kept = token;
+    try {
+      if (token) sessionStorage.setItem(TOKEN_KEY, JSON.stringify(token));
+      else sessionStorage.removeItem(TOKEN_KEY);
+    } catch {
+      // Storage may be blocked; the token is then kept only until the page is left.
+    }
+  }
 
   /** True when a Google Cloud project is set up (see google-config.ts). */
   get configured(): boolean {
@@ -352,6 +372,20 @@ export class GoogleDrive {
     );
     return this.ready;
   }
+}
+
+/** The access token kept for this tab by an earlier page load, if it has not run out. */
+function readToken(): { value: string; expires: number } | undefined {
+  try {
+    const raw = typeof sessionStorage === 'undefined' ? null : sessionStorage.getItem(TOKEN_KEY);
+    const token = raw ? (JSON.parse(raw) as { value?: unknown; expires?: unknown }) : null;
+    if (token && typeof token.value === 'string' && typeof token.expires === 'number' && token.expires > Date.now()) {
+      return { value: token.value, expires: token.expires };
+    }
+  } catch {
+    // Unreadable or blocked storage: sign in again.
+  }
+  return undefined;
 }
 
 /** Adds a script to the page once and waits for it. */
