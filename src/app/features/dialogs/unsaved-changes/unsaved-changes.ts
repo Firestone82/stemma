@@ -23,6 +23,6 @@ export class UnsavedChanges {
   protected readonly fileName = computed(() => {
     const source = this.documents.source();
     if (!source) return null;
-    return source.name;
+    return source.kind === 'local' ? source.name : source.file.name;
   });
 }

@@ -1,0 +1,60 @@
+:host {
+  display: block;
+}
+
+.files {
+  display: grid;
+  gap: 2px;
+  max-height: 50vh;
+  margin: 0;
+  padding: 4px;
+  overflow-y: auto;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-md);
+  list-style: none;
+}
+
+.open {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-width: 0;
+  padding: 7px 8px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+
+  &:hover,
+  &:focus-visible {
+    background: var(--sheet-2);
+  }
+
+  stemma-icon {
+    flex: none;
+    color: var(--ink-3);
+  }
+}
+
+.name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.meta {
+  flex: none;
+  color: var(--ink-3);
+  font-size: var(--text-sm);
+}
+
+.note {
+  color: var(--ink-3);
+  font-size: var(--text-sm);
+}
