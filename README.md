@@ -83,15 +83,18 @@ A tree opened from or saved to a file (on the computer or in Google Drive) is no
 
 ## Google Drive
 
-Trees can also be opened from and saved to Google Drive (Open from Google Drive on the start page, or in the File menu). The browser talks to Google directly, and the app only gets the `drive.file` permission: it sees the trees it saved to Drive itself, nothing else there. Open from Google Drive lists those trees; a tree that got into Drive some other way is downloaded, opened from the computer and saved to Drive once with Save a copy to Google Drive.
+Trees can also be opened from and saved to Google Drive (Open from Google Drive on the start page, or in the File menu). The browser talks to Google directly, and the app only gets the `drive.file` permission: it sees the trees it saved to Drive itself and the files and folders picked in the Google Picker, nothing else there.
 
-Until it is set up, the Drive items show the steps below instead of Google's sign-in. Only an OAuth client ID is needed (no API key), in [src/app/core/services/google-config.ts](src/app/core/services/google-config.ts):
+With an API key set, Open from Google Drive shows the Google Picker, where any tree you can see is picked (in My Drive, shared with you, or in a shared drive), and Save a copy to Google Drive asks for the folder to save in. A tree shared with you for viewing only is opened, and kept with Save a copy. Without an API key, Open from Google Drive lists only the trees Stemma saved itself, and new trees go to the top folder of My Drive.
 
-1. In the [Google Cloud console](https://console.cloud.google.com/), create a project and enable the **Google Drive API**.
+Until a client ID is set, the Drive items show the steps below instead of Google's sign-in. The values go in [src/app/core/services/google-config.ts](src/app/core/services/google-config.ts):
+
+1. In the [Google Cloud console](https://console.cloud.google.com/), create a project and enable the **Google Drive API** and the **Google Picker API**.
 2. Under **Google Auth Platform**, set up the consent screen (External), add the scope `https://www.googleapis.com/auth/drive.file`, and add yourself (and anyone else who will use it) as a test user, or publish the app.
 3. Create an **OAuth client ID** of type _Web application_, with `http://localhost:4200` and `https://firestone82.github.io` as authorised JavaScript origins (no redirect URIs). Copy it to `clientId`.
+4. Optional, for the Picker: create an **API key** (APIs & Services, Credentials), restricted to the Google Picker API and to the websites `http://localhost:4200/*` and `https://firestone82.github.io/*`. Copy it to `apiKey`. The app ID (the project number) is taken from the start of the client ID.
 
-The client ID is not a secret: it is part of the page, and Google accepts it only from the listed origins.
+None of these is a secret: they are part of the page, and Google accepts them only from the listed origins.
 
 ## License
 

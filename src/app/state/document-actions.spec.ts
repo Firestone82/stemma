@@ -43,12 +43,20 @@ class FakeDrive {
   configured = true;
   updated: DriveFile[] = [];
   created: string[] = [];
+  picks = false;
   inDrive = new Map<string, { file: DriveFile; text: string }>();
   listed = 0;
+  picked: { target: string; file: DriveFile | null }[] = [];
+  toPick: DriveFile | null = null;
+  createdIn: (DriveFile | undefined)[] = [];
 
   async read(file: DriveFile): Promise<DriveOutcome<{ file: DriveFile; text: string }>> {
     const found = this.inDrive.get(file.id);
     return found === undefined ? { status: 'missing' } : { status: 'done', value: found };
+  }
+  async pick(target: string): Promise<DriveOutcome<DriveFile>> {
+    this.picked.push({ target, file: this.toPick });
+    return this.toPick ? { status: 'done', value: this.toPick } : { status: 'declined' };
   }
   async list(): Promise<DriveOutcome<DriveListing[]>> {
     this.listed++;
@@ -58,8 +66,9 @@ class FakeDrive {
     this.updated.push(file);
     return { status: 'done', value: file };
   }
-  async create(name: string): Promise<DriveOutcome<DriveFile>> {
+  async create(name: string, _xml: string, folder?: DriveFile): Promise<DriveOutcome<DriveFile>> {
     this.created.push(name);
+    this.createdIn.push(folder);
     return { status: 'done', value: { id: 'new-id', name } };
   }
 }
@@ -168,6 +177,30 @@ describe('DocumentActions saving', () => {
     expect(drive.listed).toBe(1);
     expect(ui.dialog()).toBeNull();
     expect(TestBed.inject(TreeStore).doc().meta.title).toBe('Novák');
+  });
+
+  it('opens a tree picked in the Google Picker, shared ones too, and writes back to it', async () => {
+    drive.picks = true;
+    const shared = { id: 'shared', name: 'from-cousin.xml' };
+    drive.inDrive.set(shared.id, { file: shared, text: xml });
+    drive.toPick = shared;
+    await actions.openFromDrive();
+    expect(drive.picked.map((p) => p.target)).toEqual(['file']);
+    expect(drive.listed).toBe(0);
+    expect(actions.source()).toEqual({ kind: 'drive', file: shared });
+    await actions.saveXml();
+    expect(drive.updated).toEqual([shared]);
+  });
+
+  it('saves a copy into the folder picked in the Google Picker, and nothing when none is picked', async () => {
+    drive.picks = true;
+    await actions.saveToDrive();
+    expect(drive.created).toEqual([]);
+
+    drive.toPick = { id: 'folder-1', name: 'Rodokmen' };
+    await actions.saveToDrive();
+    expect(drive.picked.map((p) => p.target)).toEqual(['folder', 'folder']);
+    expect(drive.createdIn).toEqual([{ id: 'folder-1', name: 'Rodokmen' }]);
   });
 
   it('saves to the copy made in Google Drive from then on', async () => {

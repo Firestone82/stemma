@@ -242,13 +242,20 @@ export class DocumentActions {
   }
 
   /**
-   * Signs in to Google Drive (straight from the click, so the pop-up is not blocked) and lists the trees saved there
-   * by Stemma, to pick one from (`openDriveFile`).
+   * Signs in to Google Drive (straight from the click, so the pop-up is not blocked) and shows the Google Picker, where
+   * any tree the person can see is picked, shared ones too. Without the Picker (no API key) it lists the trees saved
+   * there by Stemma instead, to pick one from (`openDriveFile`).
    */
   async openFromDrive(): Promise<void> {
     this.ui.closeMenu();
     if (!this.drive.configured) {
       this.ui.dialog.set({ kind: 'drive-setup' });
+      return;
+    }
+    if (this.drive.picks) {
+      const picked = await this.drive.pick('file', this.i18n.code(), this.i18n.t('drive.pickTree'));
+      if (picked.status === 'done') await this.openDriveFile(picked.value);
+      else this.driveProblem(picked);
       return;
     }
     const outcome = await this.drive.list();
@@ -410,15 +417,24 @@ export class DocumentActions {
     else this.reportSave(saved.outcome, saved.name);
   }
 
-  /** Saves the tree as a new file in Google Drive. Save then writes there. */
+  /** Saves the tree as a new file in Google Drive, in a folder picked in the Google Picker where there is one. Save then writes there. */
   async saveToDrive(): Promise<void> {
     this.ui.closeMenu();
     if (!this.drive.configured) {
       this.ui.dialog.set({ kind: 'drive-setup' });
       return;
     }
+    let folder: DriveFile | undefined;
+    if (this.drive.picks) {
+      const picked = await this.drive.pick('folder', this.i18n.code(), this.i18n.t('drive.pickFolder'));
+      if (picked.status !== 'done') {
+        this.driveProblem(picked);
+        return;
+      }
+      folder = picked.value;
+    }
     const revision = this.store.revision();
-    const outcome = await this.drive.create(datedFilename(this.store.doc().meta.title, 'xml'), this.xml());
+    const outcome = await this.drive.create(datedFilename(this.store.doc().meta.title, 'xml'), this.xml(), folder);
     if (outcome.status === 'done') {
       this.saved({ kind: 'drive', file: outcome.value }, revision);
       this.toast.show(this.i18n.t('file.savedToDrive', { name: outcome.value.name }));
@@ -445,6 +461,7 @@ export class DocumentActions {
   private driveProblem(outcome: DriveOutcome<unknown>): void {
     if (outcome.status === 'blocked') this.toast.error(this.i18n.t('file.driveBlocked'));
     else if (outcome.status === 'missing') this.toast.error(this.i18n.t('file.driveMissing'));
+    else if (outcome.status === 'denied') this.toast.error(this.i18n.t('file.driveDenied'));
     else if (outcome.status === 'failed') this.toast.error(this.i18n.t('file.driveFailed'));
   }
 

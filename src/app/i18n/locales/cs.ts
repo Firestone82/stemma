@@ -189,6 +189,7 @@ export const cs: Catalogue = {
   'file.driveFailed': 'Disk Google se nepodařilo zastihnout. Zkuste to znovu.',
   'file.driveBlocked': 'Prohlížeč zablokoval okno přihlášení Google. Povolte pro tento web vyskakovací okna a zkuste to znovu.',
   'file.driveMissing': 'Ten soubor už na Disku Google není, nebo ho Stemma už nesmí otevřít.',
+  'file.driveDenied': 'Tento soubor na Disku Google smíte jen číst. Změny si uložte příkazem Uložit kopii na Disk Google.',
   'file.driveNotSetUp': 'Disk Google zatím pro tuto kopii Stemmy není nastavený.',
   'file.recentMissing': 'Soubor {name} už není tam, kde býval. Byl odebrán z nedávných souborů.',
   'file.close': 'Zavřít strom',
@@ -598,11 +599,15 @@ export const cs: Catalogue = {
   'dialog.drive.title': 'Disk Google zatím není nastavený',
   'dialog.drive.text':
     'Aby šlo stromy otevírat a ukládat na Disku Google, potřebuje tato kopie Stemmy vlastní projekt Google Cloud. Ten, kdo ji provozuje, ho jednou nastaví:',
-  'dialog.drive.step1': 'V konzoli Google Cloud (console.cloud.google.com) založte projekt a zapněte Google Drive API.',
+  'dialog.drive.step1': 'V konzoli Google Cloud (console.cloud.google.com) založte projekt a zapněte Google Drive API a Google Picker API.',
   'dialog.drive.step2':
     'V sekci Google Auth Platform nastavte obrazovku souhlasu (External), přidejte rozsah …/auth/drive.file a sebe jako testovacího uživatele.',
   'dialog.drive.step3': 'Vytvořte ID klienta OAuth typu Web application s povoleným zdrojem JavaScriptu {origin}. Patří do clientId.',
-  'dialog.drive.note': 'ID klienta se vloží do src/app/core/services/google-config.ts a aplikace se znovu zveřejní. Není tajné a klíč API není potřeba.',
+  'dialog.drive.note': 'Hodnoty se vloží do src/app/core/services/google-config.ts a aplikace se znovu zveřejní. Žádná z nich není tajná.',
+  'dialog.drive.step4':
+    'Volitelně: vytvořte klíč API omezený na Google Picker API a na stejný web. Patří do apiKey a umožní otevírat stromy, které vám někdo nasdílel, a vybrat složku pro uložení.',
+  'drive.pickTree': 'Otevřít rodokmen',
+  'drive.pickFolder': 'Vyberte složku, kam se strom uloží',
   'dialog.driveOpen.title': 'Otevřít z Disku Google',
   'dialog.driveOpen.empty': 'Na vašem Disku Google zatím nejsou žádné stromy uložené ze Stemmy.',
   'dialog.driveOpen.note':
