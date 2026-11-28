@@ -801,6 +801,7 @@ export class PrintModel {
             row('print.sp.ribbons', on(s.showRibbons)),
             row('print.sp.sexColors', on(s.sexColors)),
             row('print.sp.frame', on(s.showFrame)),
+            row('print.showDecorations', on(s.showDecorations)),
           ],
         },
         {

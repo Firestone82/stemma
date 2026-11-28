@@ -168,10 +168,12 @@ describe('XML format', () => {
         sexColors: false,
         showRibbons: false,
       };
-      doc.print = { ...DEFAULT_PRINT, dates: 'none', showTitle: false, showLegend: false, showFrame: false };
+      doc.print = { ...DEFAULT_PRINT, dates: 'none', showTitle: false, showLegend: false, showFrame: false, showDecorations: true };
       const xml = serializeTree(doc);
       expect(xml).toMatch(/<view showEmblems="false" showBirthNames="false" dates="full" emblemAlign="top" sexColors="false" showRibbons="false"/);
       expect(xml).toMatch(/<print [^>]*showTitle="false" showLegend="false" showFrame="false" [^>]*dates="none"/);
+      expect(xml).toContain('showDecorations="true"');
+      expect(roundTrip({ ...doc, print: { ...doc.print, showDecorations: false } }).print?.showDecorations).toBe(false);
       expect(roundTrip(doc)).toEqual(doc);
     });
 

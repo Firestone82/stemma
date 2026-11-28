@@ -24,6 +24,7 @@ describe("the print studio's address", () => {
       orientation: 'landscape',
       descendants: 3,
       branches: 'all',
+      showDecorations: true,
       title: 'The Novák family & friends',
       subtitle: '1990',
       cardGap: 12,

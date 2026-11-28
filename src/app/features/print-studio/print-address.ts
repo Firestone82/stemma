@@ -53,6 +53,7 @@ const IN_ADDRESS: { readonly [K in keyof PrintSettings]-?: boolean } = {
   settingsPage: true,
   layoutChoice: true,
   showFrame: true,
+  showDecorations: true,
   showHidden: true,
   legendBox: true,
   legendAnchor: true,

@@ -210,6 +210,7 @@ function writePrint(w: XmlWriter, p: PrintSettings): void {
     ['showTitle', p.showTitle],
     ['showLegend', p.showLegend],
     ['showFrame', p.showFrame],
+    ['showDecorations', p.showDecorations ? 'true' : undefined],
     ...cardAttrs(p),
     ['showHidden', p.showHidden ? 'true' : undefined],
     ['tight', p.tight ? 'true' : undefined],

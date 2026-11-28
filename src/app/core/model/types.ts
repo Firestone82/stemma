@@ -317,6 +317,8 @@ export interface PrintSettings extends CardSettings {
   layoutChoice?: number;
   /** The frame round the page with its corner flourishes. */
   showFrame: boolean;
+  /** Botanical ornaments in the open areas of the printed page. */
+  showDecorations: boolean;
   /** People hidden from prints are printed all the same. */
   showHidden: boolean;
   /**
@@ -498,6 +500,7 @@ export const DEFAULT_PRINT: PrintSettings = {
   legendBlocks: false,
   settingsPage: true,
   showFrame: true,
+  showDecorations: false,
   showHidden: false,
 };
 
