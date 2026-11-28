@@ -2,19 +2,36 @@
   <stemma-print-studio />
 } @else {
   <stemma-top-bar />
-  <main class="workspace">
-    <stemma-chart [insetBottom]="ui.chartInsetBottom()" tabindex="-1" />
-    @if (isEmpty() && !ui.restoring()) {
-      <stemma-empty-state />
-    } @else if (ui.showSampleNote()) {
-      <stemma-sample-note />
+  @if (documents.readOnly() && !ui.home()) {
+    <div class="read-only-banner">
+      <span role="status">{{ t('drive.readOnly') }}</span>
+      @if (documents.canEditShared()) {
+        <button type="button" class="btn small" [disabled]="documents.connecting()" (click)="documents.editShared()">{{ t('drive.editShared') }}</button>
+      }
+    </div>
+  }
+  <main class="workspace" [class.read-only]="documents.readOnly() && !ui.home()">
+    @if (ui.home()) {
+      <stemma-empty-state class="home" [canResume]="!isEmpty()" />
+    } @else {
+      <stemma-chart [insetBottom]="ui.chartInsetBottom()" tabindex="-1" />
+      @if (isEmpty() && !ui.restoring()) {
+        <stemma-empty-state />
+      } @else if (ui.showSampleNote()) {
+        <stemma-sample-note />
+      }
+      <stemma-side-panel />
     }
-    <stemma-side-panel />
     @if (ui.driveLoading(); as loading) {
       <stemma-drive-loading [loading]="loading" />
     }
   </main>
-  <stemma-review-bar />
+  @if (!ui.home()) {
+    <stemma-review-bar />
+  }
+}
+@if (ui.driveSaving(); as saving) {
+  <stemma-drive-loading class="drive-saving" [saving]="true" [loading]="saving" />
 }
 <stemma-toasts />
 <stemma-dialogs />

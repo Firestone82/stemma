@@ -17,3 +17,27 @@ stemma-chart {
   flex: 1 1 auto;
   min-width: 0;
 }
+
+.read-only-banner {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  padding: 7px 12px;
+  background: var(--sheet-2);
+  color: var(--ink);
+  border-block: 1px solid var(--rule);
+}
+
+.workspace.read-only {
+  border: 2px solid var(--ink-3);
+}
+
+.drive-saving {
+  position: fixed;
+  z-index: 12;
+  inset: auto auto 18px 50%;
+  translate: -50% 0;
+  pointer-events: none;
+}

@@ -124,3 +124,50 @@ describe('GoogleDrive.readShared', () => {
     expect(await TestBed.inject(GoogleDrive).sharing('f1234567890')).toBe('private');
   });
 });
+
+describe('Google Drive write requests', () => {
+  beforeEach(() => {
+    sessionStorage.setItem('stemma.drive-token', JSON.stringify({ value: 't', expires: Date.now() + 60_000 }));
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    sessionStorage.clear();
+  });
+
+  it('upgrades an existing anyone-with-the-link permission to editor', async () => {
+    const fetch = vi.fn(async (_url: string, init?: RequestInit) =>
+      init?.method === 'PATCH' ? new Response('{}') : Response.json({ permissions: [{ id: 'public', type: 'anyone', role: 'reader' }] }),
+    );
+    vi.stubGlobal('fetch', fetch);
+    const result = await TestBed.inject(GoogleDrive).sharePublicly({ id: 'file', name: 'tree.xml' }, 'writer');
+
+    expect(result).toEqual({ status: 'done', value: true });
+    expect(fetch.mock.calls[1][0]).toContain('/files/file/permissions/public?');
+    expect(JSON.parse(fetch.mock.calls[1][1]?.body as string)).toEqual({ role: 'writer', allowFileDiscovery: false });
+  });
+
+  it('reports uploaded bytes when replacing an existing Drive file', async () => {
+    class Request {
+      status = 200;
+      response = { id: 'file', name: 'tree.xml' };
+      upload: { onprogress?: (event: Partial<ProgressEvent>) => void } = {};
+      onload?: () => void;
+      open = vi.fn();
+      setRequestHeader = vi.fn();
+      send(body: Blob): void {
+        this.upload.onprogress?.({ loaded: body.size, total: body.size, lengthComputable: true });
+        this.onload?.();
+      }
+    }
+    vi.stubGlobal('XMLHttpRequest', Request);
+    const progress = vi.fn();
+    const file = { id: 'file', name: 'tree.xml' };
+
+    expect(await TestBed.inject(GoogleDrive).update(file, '<tree/>', progress)).toEqual({ status: 'done', value: file });
+    expect(progress.mock.calls).toEqual([
+      [0, 7],
+      [7, 7],
+    ]);
+  });
+});

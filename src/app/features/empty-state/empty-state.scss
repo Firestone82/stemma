@@ -155,3 +155,7 @@ p {
     font-size: var(--text-xs);
   }
 }
+
+:host(.home) {
+  left: 50%;
+}

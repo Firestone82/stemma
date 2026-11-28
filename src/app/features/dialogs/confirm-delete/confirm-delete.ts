@@ -18,12 +18,12 @@ export class ConfirmDelete {
   private readonly i18n = inject(I18n);
   protected readonly t = this.i18n.t;
 
-  readonly personId = input.required<string>();
+  readonly ids = input.required<ReadonlySet<string>>();
   readonly done = output<void>();
 
   private readonly confirmButton = viewChild.required<ElementRef<HTMLButtonElement>>('confirmButton');
 
-  protected readonly name = computed(() => this.i18n.name(this.store.index().person(this.personId())));
+  protected readonly name = computed(() => this.i18n.name(this.store.index().person(this.ids().values().next().value ?? '')));
 
   constructor() {
     // The dialog opens before its content is drawn, so it cannot pick the button itself.
@@ -31,6 +31,6 @@ export class ConfirmDelete {
   }
 
   protected confirm(): void {
-    this.people.confirmDelete(this.personId());
+    this.people.confirmDelete(this.ids());
   }
 }

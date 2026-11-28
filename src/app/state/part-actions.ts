@@ -22,13 +22,13 @@ export class PartActions {
   private readonly i18n = inject(I18n);
 
   /** Asks which part to take out (the part-export dialog), then savePart. */
-  exportPart(): void {
+  exportPart(personId?: string): void {
     this.ui.closeMenu();
     if (!this.store.doc().people.length) {
       this.toast.show(this.i18n.t('file.gedcomEmpty'));
       return;
     }
-    this.ui.dialog.set({ kind: 'part-export' });
+    this.ui.dialog.set({ kind: 'part-export', personId });
   }
 
   /** Saves the part around `scope.centerId` as a tree file of its own. The tree on screen stays tied to its own file. */
@@ -51,6 +51,7 @@ export class PartActions {
 
   /** Picks a tree file (a part taken out earlier, or any other) and shows what merging it in would do (the part-merge dialog). */
   async importPart(): Promise<void> {
+    if (this.store.readOnly()) return;
     this.ui.closeMenu();
     let text: string;
     let name: string;
@@ -83,7 +84,7 @@ export class PartActions {
   /** Takes the merged tree on as one step to undo. */
   merge(plan: MergePlan): void {
     this.ui.dialog.set(null);
-    if (plan.unchanged) return;
+    if (plan.unchanged || this.store.readOnly()) return;
     this.store.commit(plan.doc);
     const s = plan.summary;
     this.toast.show(

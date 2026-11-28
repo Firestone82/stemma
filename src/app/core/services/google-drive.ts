@@ -6,6 +6,7 @@ import type { DriveDetails } from './recent-files';
 export interface DriveFile {
   id: string;
   name: string;
+  canEdit?: boolean;
 }
 
 /** A tree in the list of files Stemma may open in Drive, with when it was last changed. */
@@ -38,7 +39,9 @@ const UPLOAD = 'https://www.googleapis.com/upload/drive/v3/files';
 export const SHARE_PARAM = 'drive';
 
 /** Whether a Drive file can be opened by anyone with its link: `null` when Drive could not be asked. */
-export type DriveSharing = 'public' | 'private' | null;
+export type DriveSharing = 'public' | 'editable' | 'private' | null;
+export type DriveRole = 'reader' | 'writer';
+export type DriveProgress = (loaded: number, total: number | null) => void;
 
 // The parts of Google Identity Services and the Google Picker used here.
 interface TokenResponse {
@@ -57,6 +60,7 @@ interface PickerResult {
 }
 
 interface DocsView {
+  setFileIds(ids: string): DocsView;
   setMimeTypes(types: string): DocsView;
   setIncludeFolders(include: boolean): DocsView;
   setSelectFolderEnabled(enabled: boolean): DocsView;
@@ -162,7 +166,7 @@ export class GoogleDrive {
    * Signs in if needed and shows the Google Picker: for a tree to open (in My Drive, shared with the person, or in a
    * shared drive), or for the folder to save a new tree in. Picking grants the app access to just that file or folder.
    */
-  async pick(target: DriveTarget, locale: string, title: string): Promise<DriveOutcome<DriveFile>> {
+  async pick(target: DriveTarget, locale: string, title: string, fileId?: string): Promise<DriveOutcome<DriveFile>> {
     const auth = await this.authorize();
     if (auth.status !== 'done') return auth;
     let google: GoogleGlobal;
@@ -187,7 +191,9 @@ export class GoogleDrive {
     // not documented, so it is used only where the library has it; otherwise the frame's address gets `authuser`.
     const withUser = builder as PickerBuilder & { setAuthUser?(user: string): PickerBuilder };
     if (account && typeof withUser.setAuthUser === 'function') withUser.setAuthUser(account);
-    if (target === 'file') {
+    if (fileId) {
+      builder.addView(new picker.DocsView('all').setFileIds(fileId).setMode('list'));
+    } else if (target === 'file') {
       builder
         .addView(new picker.DocsView('all').setMimeTypes(XML_TYPES).setIncludeFolders(true).setOwnedByMe(true).setMode('list'))
         .addView(new picker.DocsView('all').setMimeTypes(XML_TYPES).setOwnedByMe(false).setMode('list'))
@@ -208,7 +214,7 @@ export class GoogleDrive {
         .setVisible(true);
     }).finally(release);
     const doc = picked.action === 'picked' ? picked.docs?.[0] : undefined;
-    return doc ? { status: 'done', value: { id: doc.id, name: doc.name } } : { status: 'declined' };
+    return doc && (!fileId || doc.id === fileId) ? { status: 'done', value: { id: doc.id, name: doc.name } } : { status: 'declined' };
   }
 
   /** Signs in if needed and lists the trees Stemma may open in Drive (the XML files it saved there), newest first. */
@@ -245,16 +251,19 @@ export class GoogleDrive {
     try {
       const headers = this.headers(auth.value.token);
       const id = encodeURIComponent(file.id);
-      const meta = await fetch(`${FILES}/${id}?fields=id,name,trashed,size&supportsAllDrives=true`, { headers });
+      const meta = await fetch(`${FILES}/${id}?fields=id,name,trashed,size,capabilities(canEdit,canModifyContent)&supportsAllDrives=true`, { headers });
       if (!meta.ok) return this.failed(meta);
-      const info = (await meta.json()) as DriveFile & { trashed?: boolean; size?: string };
+      const info = (await meta.json()) as DriveFile & { trashed?: boolean; size?: string; capabilities?: { canEdit?: boolean; canModifyContent?: boolean } };
       if (info.trashed) return { status: 'missing' };
       const total = info.size ? Number(info.size) : null;
       progress?.(0, total);
       const response = await fetch(`${FILES}/${id}?alt=media&supportsAllDrives=true`, { headers });
       if (!response.ok) return this.failed(response);
       const text = await readText(response, (loaded) => progress?.(loaded, total));
-      return { status: 'done', value: { file: { id: info.id, name: info.name }, text } };
+      return {
+        status: 'done',
+        value: { file: { id: info.id, name: info.name, canEdit: info.capabilities?.canEdit === true && info.capabilities.canModifyContent !== false }, text },
+      };
     } catch {
       return { status: 'failed' };
     }
@@ -291,8 +300,16 @@ export class GoogleDrive {
 
   /** Whether anyone with the link can open the file now (asked as a stranger would, with only the API key). */
   async sharing(id: string): Promise<DriveSharing> {
-    if (!GOOGLE_CONFIG.apiKey) return null;
     try {
+      const token = this.token;
+      if (token) {
+        const response = await fetch(this.permissionsUrl(id), { headers: this.headers(token.value) });
+        if (response.ok) {
+          const permission = await this.anyonePermission(id, this.headers(token.value), response);
+          if (permission) return permission.role === 'writer' ? 'editable' : 'public';
+        }
+      }
+      if (!GOOGLE_CONFIG.apiKey) return null;
       const response = await fetch(`${FILES}/${encodeURIComponent(id)}?fields=id&supportsAllDrives=true&key=${encodeURIComponent(GOOGLE_CONFIG.apiKey)}`);
       if (response.ok) return 'public';
       return response.status === 404 ? 'private' : null;
@@ -301,18 +318,20 @@ export class GoogleDrive {
     }
   }
 
-  /**
-   * Lets anyone with the link view the file (Drive's "Anyone with the link: Viewer"), signing in if needed. `denied`
-   * when the person may not change who the file is shared with (not theirs, or their organisation does not allow it).
-   */
-  async sharePublicly(file: DriveFile): Promise<DriveOutcome<true>> {
+  async sharePublicly(file: DriveFile, role: DriveRole = 'reader'): Promise<DriveOutcome<true>> {
     const auth = await this.authorize();
     if (auth.status !== 'done') return auth;
     try {
-      const response = await fetch(`${FILES}/${encodeURIComponent(file.id)}/permissions?supportsAllDrives=true`, {
-        method: 'POST',
-        headers: { ...this.headers(auth.value.token), 'Content-Type': 'application/json' },
-        body: JSON.stringify({ role: 'reader', type: 'anyone', allowFileDiscovery: false }),
+      const headers = this.headers(auth.value.token);
+      const existing = await fetch(this.permissionsUrl(file.id), { headers });
+      if (!existing.ok) return this.failed(existing);
+      const permission = await this.anyonePermission(file.id, headers, existing);
+      const path = `${FILES}/${encodeURIComponent(file.id)}/permissions`;
+      const url = permission ? `${path}/${encodeURIComponent(permission.id)}` : path;
+      const response = await fetch(`${url}?supportsAllDrives=true`, {
+        method: permission ? 'PATCH' : 'POST',
+        headers: { ...headers, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ role, ...(permission ? {} : { type: 'anyone' }), allowFileDiscovery: false }),
       });
       if (!response.ok) return this.failed(response);
       return { status: 'done', value: true };
@@ -321,25 +340,38 @@ export class GoogleDrive {
     }
   }
 
-  /** Writes the tree over a file opened from or saved to Drive earlier. */
-  async update(file: DriveFile, xml: string): Promise<DriveOutcome<DriveFile>> {
-    const auth = await this.authorize();
-    if (auth.status !== 'done') return auth;
-    try {
-      const response = await fetch(`${UPLOAD}/${encodeURIComponent(file.id)}?uploadType=media&fields=id,name&supportsAllDrives=true`, {
-        method: 'PATCH',
-        headers: { ...this.headers(auth.value.token), 'Content-Type': 'application/xml' },
-        body: xml,
-      });
-      if (!response.ok) return this.failed(response);
-      return { status: 'done', value: (await response.json()) as DriveFile };
-    } catch {
-      return { status: 'failed' };
+  private permissionsUrl(id: string, pageToken?: string): string {
+    const query = new URLSearchParams({ fields: 'nextPageToken,permissions(id,type,role)', supportsAllDrives: 'true' });
+    if (pageToken) query.set('pageToken', pageToken);
+    return `${FILES}/${encodeURIComponent(id)}/permissions?${query}`;
+  }
+
+  private async anyonePermission(id: string, headers: Record<string, string>, response: Response): Promise<{ id: string; role: string } | undefined> {
+    for (;;) {
+      const data = (await response.json()) as { nextPageToken?: string; permissions?: { id: string; type: string; role: string }[] };
+      const permission = data.permissions?.find((p) => p.type === 'anyone');
+      if (permission || !data.nextPageToken) return permission;
+      response = await fetch(this.permissionsUrl(id, data.nextPageToken), { headers });
+      if (!response.ok) throw new Error('Could not read Drive permissions');
     }
   }
 
+  /** Writes the tree over a file opened from or saved to Drive earlier. */
+  async update(file: DriveFile, xml: string, progress?: DriveProgress): Promise<DriveOutcome<DriveFile>> {
+    const auth = await this.authorize();
+    if (auth.status !== 'done') return auth;
+    return this.upload(
+      `${UPLOAD}/${encodeURIComponent(file.id)}?uploadType=media&fields=id,name&supportsAllDrives=true`,
+      'PATCH',
+      auth.value.token,
+      new Blob([xml], { type: 'application/xml' }),
+      'application/xml',
+      progress,
+    );
+  }
+
   /** Saves the tree as a new file in `folder` (picked in the Picker), or else in the top folder of the person's Drive. */
-  async create(name: string, xml: string, folder?: DriveFile): Promise<DriveOutcome<DriveFile>> {
+  async create(name: string, xml: string, folder?: DriveFile, progress?: DriveProgress): Promise<DriveOutcome<DriveFile>> {
     const auth = await this.authorize();
     if (auth.status !== 'done') return auth;
     const boundary = `stemma-${crypto.randomUUID()}`;
@@ -350,14 +382,34 @@ export class GoogleDrive {
       xml,
       `\r\n--${boundary}--`,
     ]);
+    return this.upload(
+      `${UPLOAD}?uploadType=multipart&fields=id,name&supportsAllDrives=true`,
+      'POST',
+      auth.value.token,
+      body,
+      `multipart/related; boundary=${boundary}`,
+      progress,
+    );
+  }
+
+  private async upload(url: string, method: string, token: string, body: Blob, type: string, progress?: DriveProgress): Promise<DriveOutcome<DriveFile>> {
     try {
-      const response = await fetch(`${UPLOAD}?uploadType=multipart&fields=id,name&supportsAllDrives=true`, {
-        method: 'POST',
-        headers: { ...this.headers(auth.value.token), 'Content-Type': `multipart/related; boundary=${boundary}` },
-        body,
+      return await new Promise((resolve) => {
+        const request = new XMLHttpRequest();
+        request.open(method, url);
+        request.responseType = 'json';
+        request.setRequestHeader('Authorization', `Bearer ${token}`);
+        request.setRequestHeader('Content-Type', type);
+        request.upload.onprogress = (event) => progress?.(event.loaded, event.lengthComputable ? event.total : body.size);
+        request.onload = () => {
+          if (request.status < 200 || request.status >= 300) resolve(this.failed(request));
+          else if (request.response?.id && request.response?.name) resolve({ status: 'done', value: request.response as DriveFile });
+          else resolve({ status: 'failed' });
+        };
+        request.onerror = request.onabort = request.ontimeout = () => resolve({ status: 'failed' });
+        progress?.(0, body.size);
+        request.send(body);
       });
-      if (!response.ok) return this.failed(response);
-      return { status: 'done', value: (await response.json()) as DriveFile };
     } catch {
       return { status: 'failed' };
     }
@@ -421,7 +473,7 @@ export class GoogleDrive {
   }
 
   /** A refused token is forgotten, so the next try signs in again. A file Drive does not know (or no longer lets the app see) is missing. */
-  private failed(response: Response): DriveOutcome<never> {
+  private failed(response: { status: number }): DriveOutcome<never> {
     if (response.status === 401) this.token = undefined;
     if (response.status === 404) return { status: 'missing' };
     if (response.status === 403) return { status: 'denied' };
@@ -458,6 +510,8 @@ export class GoogleDrive {
 
   /** An access token for the `drive.file` scope, kept until shortly before it runs out. */
   private async authorize(): Promise<DriveOutcome<{ token: string }>> {
+    const token = this.token;
+    if (token && token.expires > Date.now()) return { status: 'done', value: { token: token.value } };
     let google: GoogleGlobal;
     try {
       google = await this.load();
@@ -465,7 +519,6 @@ export class GoogleDrive {
       this.ready = undefined;
       return { status: 'failed' };
     }
-    if (this.token && this.token.expires > Date.now()) return { status: 'done', value: { token: this.token.value } };
     return new Promise((resolve) => {
       const client = google.accounts.oauth2.initTokenClient({
         client_id: GOOGLE_CONFIG.clientId,

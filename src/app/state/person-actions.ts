@@ -12,7 +12,7 @@ import {
   addPartner,
   addPerson,
   addSibling,
-  deletePerson,
+  deletePeople,
   moveChildToFamily,
   removeChild,
   removePartner,
@@ -63,6 +63,7 @@ export class PersonActions {
   }
 
   startAdd(relation: Relation, personId: string, otherParentId?: string | null): void {
+    if (this.store.readOnly()) return;
     this.store.selectPerson(personId);
     this.ui.adding.set({ relation, personId, otherParentId });
     this.ui.sheetExpanded.set(true);
@@ -74,6 +75,7 @@ export class PersonActions {
 
   /** Runs an add operation, reports problems in plain words, and highlights the result. */
   addRelative(relation: Relation, personId: string, source: PersonSource, options: AddRelativeOptions = {}): OpResult | null {
+    if (this.store.readOnly()) return null;
     try {
       const result = this.store.apply((doc) => {
         switch (relation) {
@@ -160,16 +162,21 @@ export class PersonActions {
     }, `person:${personId}:${field}`);
   }
 
-  askDelete(personId: string): void {
-    this.ui.dialog.set({ kind: 'confirm-delete', personId });
+  askDelete(person: string | ReadonlySet<string>): void {
+    if (this.store.readOnly()) return;
+    this.ui.dialog.set({ kind: 'confirm-delete', ids: typeof person === 'string' ? new Set([person]) : person });
   }
 
-  confirmDelete(personId: string): void {
-    const person = this.store.index().person(personId);
-    this.store.update((doc) => deletePerson(doc, personId));
+  confirmDelete(ids: ReadonlySet<string>): void {
+    if (this.store.readOnly()) return;
+    const person = this.store.index().person(ids.values().next().value ?? '');
+    this.store.update((doc) => deletePeople(doc, ids));
     this.ui.dialog.set(null);
     this.ui.adding.set(null);
-    this.toast.show(this.i18n.t('person.deleted', { name: this.name(person) }), this.undoAction());
+    this.toast.show(
+      ids.size === 1 ? this.i18n.t('person.deleted', { name: this.name(person) }) : this.i18n.t('person.deletedMany', { count: ids.size }),
+      this.undoAction(),
+    );
   }
 
   /** Puts the person under another couple of their parent (another marriage, or the parent alone). */

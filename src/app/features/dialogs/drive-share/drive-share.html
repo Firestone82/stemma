@@ -13,21 +13,29 @@
     @case ('public') {
       <p class="status ok"><stemma-icon name="check" [size]="16" />{{ t('dialog.share.public') }}</p>
     }
+    @case ('editable') {
+      <p class="status ok"><stemma-icon name="check" [size]="16" />{{ t('dialog.share.editable') }}</p>
+    }
     @case ('private') {
       <p class="status warn">{{ t('dialog.share.private') }}</p>
-      <div class="actions">
-        @if (own()) {
-          <button type="button" class="btn" [disabled]="changing()" (click)="makePublic()">
-            <stemma-icon name="link" [size]="16" />{{ t('dialog.share.makePublic') }}
-          </button>
-        }
-        <a class="btn" [href]="drivePage()" target="_blank" rel="noopener">{{ t('dialog.share.inDrive') }}</a>
-        <button type="button" class="btn" (click)="check()">{{ t('dialog.share.checkAgain') }}</button>
-      </div>
     }
     @default {
       <p class="status">{{ t('dialog.share.unknown') }}</p>
     }
+  }
+  @if (sharing() !== 'checking') {
+    <div class="actions">
+      @if (own()) {
+        @if (sharing() === 'private' || sharing() === 'editable' || sharing() === null) {
+          <button type="button" class="btn" [disabled]="changing()" (click)="makePublic('reader')">{{ t('dialog.share.makePublic') }}</button>
+        }
+        @if (sharing() !== 'editable') {
+          <button type="button" class="btn" [disabled]="changing()" (click)="makePublic('writer')">{{ t('dialog.share.makeEditable') }}</button>
+        }
+      }
+      <a class="btn" [href]="drivePage()" target="_blank" rel="noopener">{{ t('dialog.share.inDrive') }}</a>
+      <button type="button" class="btn" [disabled]="changing()" (click)="check()">{{ t('dialog.share.checkAgain') }}</button>
+    </div>
   }
   <p class="note">{{ t('dialog.share.note') }}</p>
 </div>

@@ -1,6 +1,7 @@
 import { ChangeDetectionStrategy, Component, computed, inject, input } from '@angular/core';
 import { Person } from '../../../core/model/types';
 import { relativesOf } from '../../../core/poster/scope';
+import { TreeStore } from '../../../core/store/tree-store';
 import { I18n } from '../../../i18n/i18n';
 import { Icon } from '../../../shared/icon/icon';
 import { Switch } from '../../../shared/switch/switch';
@@ -24,6 +25,7 @@ import { PersonSummary } from './person-summary/person-summary';
 })
 export class PersonPanel {
   private readonly model = inject(ChartModel);
+  protected readonly readOnly = inject(TreeStore).readOnly;
   protected readonly people = inject(PersonActions);
   protected readonly t = inject(I18n).t;
 

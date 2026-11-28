@@ -146,3 +146,10 @@
 .clusters.gliding {
   visibility: hidden;
 }
+
+.marquee {
+  position: absolute;
+  border: 1px solid var(--t-select);
+  background: color-mix(in srgb, var(--t-select) 16%, transparent);
+  pointer-events: none;
+}

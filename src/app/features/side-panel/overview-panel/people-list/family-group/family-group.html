@@ -17,18 +17,22 @@
   <ul class="members">
     @for (m of members(); track m.id) {
       <li>
-        <button
-          type="button"
-          stemmaPersonRow
-          [class.off-chart]="m.offChart"
-          [name]="m.name"
-          [dates]="m.dates"
-          [tincture]="m.tincture"
-          [missing]="m.missing ?? ''"
-          [problem]="m.problem ?? ''"
-          [attr.title]="m.offChart ? offChartHint() : null"
-          (click)="pick.emit(m.id)"
-        ></button>
+        @if (preview()) {
+          <span stemmaPersonRow [name]="m.name" [dates]="m.dates" [tincture]="m.tincture"></span>
+        } @else {
+          <button
+            type="button"
+            stemmaPersonRow
+            [class.off-chart]="m.offChart"
+            [name]="m.name"
+            [dates]="m.dates"
+            [tincture]="m.tincture"
+            [missing]="m.missing ?? ''"
+            [problem]="m.problem ?? ''"
+            [attr.title]="m.offChart ? offChartHint() : null"
+            (click)="pick.emit(m.id)"
+          ></button>
+        }
       </li>
     }
   </ul>

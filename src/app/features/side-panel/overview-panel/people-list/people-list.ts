@@ -28,7 +28,7 @@ const OPEN_UP_TO = 15;
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class PeopleList {
-  private readonly store = inject(TreeStore);
+  protected readonly store = inject(TreeStore);
   private readonly model = inject(ChartModel);
   private readonly ui = inject(UiState);
   private readonly i18n = inject(I18n);

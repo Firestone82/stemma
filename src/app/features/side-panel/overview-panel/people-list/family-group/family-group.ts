@@ -28,6 +28,7 @@ export class FamilyGroupItem {
   readonly tincture = input('argent');
   readonly members = input.required<readonly FamilyRow[]>();
   readonly open = input(false);
+  readonly preview = input(false);
   /** Accessible name of the member count, such as "5 people". */
   readonly countLabel = input('');
   /** Says why a member is greyed out: the chart leaves them out. */

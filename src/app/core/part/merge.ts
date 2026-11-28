@@ -7,6 +7,7 @@
 import { newId } from '../model/ids';
 import { normalizeQuery, surnameKey } from '../model/names';
 import { cleanupFamilies, deletePerson } from '../model/operations';
+import { TreeIndex } from '../model/tree-index';
 import { Family, FamilyChild, PartInfo, Person, TreeDocument } from '../model/types';
 import {
   FAMILY_FIELDS,
@@ -77,6 +78,7 @@ export interface MergePlan {
   /** People of the file the tree has by id. */
   matched: number;
   conflicts: Conflict[];
+  changes: Conflict[];
   removals: Removal[];
   /** The tree with the file merged in, as decided (and as preferred where nothing was decided). */
   doc: TreeDocument;
@@ -115,27 +117,71 @@ function surnames(p: Person): Set<string> {
 interface Candidate {
   id: string;
   score: number;
-  /** Same names and the same full date of birth: taken as the same person without asking. */
   strong: boolean;
 }
 
-/** People of `pool` who may be `p`: the same given name, a surname in common, nothing that rules it out. */
-function likelySame(p: Person, pool: readonly Person[]): Candidate[] {
-  const given = normalizeQuery(p.name.given);
-  if (!given) return [];
-  const names = surnames(p);
+function sameGiven(a: Person, b: Person): boolean {
+  const given = normalizeQuery(a.name.given);
+  return !!given && given === normalizeQuery(b.name.given);
+}
+
+function sameSurname(a: Person, b: Person): boolean {
+  const names = surnames(b);
+  return [...surnames(a)].some((name) => names.has(name));
+}
+
+function sameDate(a?: string, b?: string): boolean {
+  return !!a && a === b;
+}
+
+function related(index: TreeIndex, id: string): Map<string, Set<string>> {
+  const out = new Map<string, Set<string>>();
+  const add = (other: string, role: string) => {
+    if (other === id) return;
+    const roles = out.get(other) ?? new Set<string>();
+    roles.add(role);
+    out.set(other, roles);
+  };
+  for (const family of index.parentFamilies(id)) {
+    for (const parent of family.partners) add(parent, 'parent');
+    for (const child of family.children) add(child.personId, 'sibling');
+  }
+  for (const family of index.partnerFamilies(id)) {
+    for (const partner of family.partners) add(partner, 'partner');
+    for (const child of family.children) add(child.personId, 'child');
+  }
+  return out;
+}
+
+function likelySame(
+  p: Person,
+  pool: readonly Person[],
+  connections: ReadonlyMap<string, Set<string>>,
+  localConnections: ReadonlyMap<string, Map<string, Set<string>>>,
+  standalone: boolean,
+): Candidate[] {
   const y = year(p);
+  const birth = p.birth?.date?.value;
+  const death = p.death?.date?.value;
   const out: Candidate[] = [];
   for (const l of pool) {
-    if (normalizeQuery(l.name.given) !== given) continue;
+    const given = sameGiven(p, l);
+    const surname = sameSurname(p, l);
+    const birthMatches = sameDate(birth, l.birth?.date?.value);
+    const deathMatches = sameDate(death, l.death?.date?.value);
+    const dated = (birthMatches && birth!.length === 10) || (deathMatches && death!.length === 10) || (birthMatches && deathMatches);
+    if (!given && !surname && !dated && !connections.size) continue;
     if (p.sex !== 'unknown' && l.sex !== 'unknown' && p.sex !== l.sex) continue;
-    const theirs = surnames(l);
-    if ((names.size || theirs.size) && ![...names].some((n) => theirs.has(n))) continue;
+    const relatives = localConnections.get(l.id);
+    const links = [...connections].filter(([id, roles]) => [...roles].some((role) => relatives?.get(id)?.has(role))).length;
     const ly = year(l);
-    if (y !== undefined && ly !== undefined && Math.abs(y - ly) > 2) continue;
-    const date = p.birth?.date?.value ?? '';
-    const sameDate = date.length >= 4 && date === l.birth?.date?.value;
-    out.push({ id: l.id, score: 1 + (sameDate ? 2 : 0) + (y !== undefined && y === ly ? 1 : 0), strong: sameDate && date.length === 10 });
+    const distant = y !== undefined && ly !== undefined && Math.abs(y - ly) > 2;
+    if (!(given && surname) && !((given || surname) && (dated || links)) && !(dated && links) && !(birthMatches && deathMatches) && links < 2) continue;
+    const matchingYear = standalone && birthMatches && (!death || !l.death?.date?.value || deathMatches);
+    const strong =
+      (given && surname && (dated || matchingYear || (links > 0 && !distant))) || ((given || surname) && dated && links > 0) || (dated && links >= 2);
+    const score = Number(given) * 3 + Number(surname) * 3 + Number(birthMatches) * 3 + Number(deathMatches) * 3 + links * 4;
+    out.push({ id: l.id, score, strong });
   }
   return out.sort((a, b) => b.score - a.score);
 }
@@ -187,8 +233,19 @@ function meaningful(f: Pick<Family, 'partners' | 'children'>): boolean {
 
 /** Merges the tree file `part` into `local` as `decisions` say (see the module comment). */
 export function planMerge(local: TreeDocument, part: TreeDocument, decisions: MergeDecisions = {}): MergePlan {
-  const base: PartInfo | undefined = part.part;
+  const sameTree = !!local.meta.created && local.meta.created === part.meta.created;
+  const sharedIdentity = (a: Person, b: Person) =>
+    (sameGiven(a, b) && sameSurname(a, b)) || (sameGiven(a, b) && sameDate(a.birth?.date?.value, b.birth?.date?.value));
   const localPeople = new Map(local.people.map((p) => [p.id, p]));
+  const partBase = part.part;
+  const relatedPart =
+    partBase &&
+    part.people.some((p) => {
+      const match = localPeople.get(p.id);
+      const original = partBase.people[p.id];
+      return match && original !== undefined && (original === personFingerprints(match) || sharedIdentity(p, match));
+    });
+  const base: PartInfo | undefined = relatedPart ? partBase : undefined;
   const localFamilies = new Map(local.families.map((f) => [f.id, f]));
   const inFile = new Set(part.people.map((p) => p.id));
 
@@ -200,29 +257,59 @@ export function planMerge(local: TreeDocument, part: TreeDocument, decisions: Me
   const target = new Map<string, string | null>();
   const byId = new Set<string>();
   for (const p of people) {
-    if (localPeople.has(p.id)) {
+    const match = localPeople.get(p.id);
+    if (match && (sameTree || base?.people[p.id] !== undefined || sharedIdentity(p, match))) {
       target.set(p.id, p.id);
       byId.add(p.id);
     }
   }
   const taken = new Set(byId);
   const pool = local.people.filter((l) => !byId.has(l.id));
-  const newPeople: NewPerson[] = [];
-  for (const p of people) {
-    if (target.has(p.id)) continue;
-    const candidates = likelySame(p, pool);
-    const decided = decisions.assign?.has(p.id);
-    let chosen: string | null;
-    if (decided) chosen = decisions.assign!.get(p.id) ?? null;
-    else {
-      const strong = candidates.filter((c) => c.strong && !taken.has(c.id));
-      chosen = strong.length === 1 ? strong[0].id : null;
-    }
-    const to = chosen && localPeople.has(chosen) && !taken.has(chosen) ? chosen : null;
-    if (to) taken.add(to);
-    target.set(p.id, to);
-    newPeople.push({ person: p, candidates: candidates.map((c) => c.id), target: to, auto: !decided && !!to });
+  const unmatched = people.filter((p) => !byId.has(p.id));
+  for (const p of unmatched) {
+    if (!decisions.assign?.has(p.id)) continue;
+    const chosen = decisions.assign.get(p.id);
+    if (chosen && localPeople.has(chosen) && !taken.has(chosen)) {
+      target.set(p.id, chosen);
+      taken.add(chosen);
+    } else target.set(p.id, null);
   }
+  const localIndex = new TreeIndex(local);
+  const partIndex = new TreeIndex(part);
+  const localConnections = new Map(pool.map((p) => [p.id, related(localIndex, p.id)]));
+  const partConnections = new Map(unmatched.map((p) => [p.id, related(partIndex, p.id)]));
+  const candidatesFor = (p: Person) => {
+    const connections = new Map<string, Set<string>>();
+    for (const [id, roles] of partConnections.get(p.id) ?? []) {
+      const mapped = target.get(id);
+      if (mapped) connections.set(mapped, roles);
+    }
+    return likelySame(p, pool, connections, localConnections, !base);
+  };
+  // Resolve unambiguous matches together, then use those links as evidence for their relatives.
+  for (;;) {
+    const proposals = new Map<string, string[]>();
+    for (const p of unmatched) {
+      if (target.has(p.id)) continue;
+      const [first, second] = candidatesFor(p).filter((c) => !taken.has(c.id));
+      if (!first?.strong || (second && second.score >= first.score)) continue;
+      const claims = proposals.get(first.id) ?? [];
+      claims.push(p.id);
+      proposals.set(first.id, claims);
+    }
+    const unique = [...proposals].filter(([, claims]) => claims.length === 1);
+    if (!unique.length) break;
+    for (const [id, [from]] of unique) {
+      target.set(from, id);
+      taken.add(id);
+    }
+  }
+  const newPeople: NewPerson[] = unmatched.map((p) => ({
+    person: p,
+    candidates: candidatesFor(p).map((c) => c.id),
+    target: target.get(p.id) ?? null,
+    auto: !decisions.assign?.has(p.id) && !!target.get(p.id),
+  }));
 
   // People.
   const ids = new Set<string>([...local.people.map((p) => p.id), ...local.families.map((f) => f.id)]);
@@ -230,6 +317,7 @@ export function planMerge(local: TreeDocument, part: TreeDocument, decisions: Me
   const changedPeople = new Map<string, Person>();
   const addedPeople: Person[] = [];
   const conflicts: Conflict[] = [];
+  const changes: Conflict[] = [];
   const decide = (key: string, preferred: Side) => decisions.take?.get(key) ?? preferred;
 
   for (const p of people) {
@@ -262,7 +350,10 @@ export function planMerge(local: TreeDocument, part: TreeDocument, decisions: Me
         conflicts.push({ key, kind: 'person', localId: to, field, local: lp, imported: p, preferred });
         side = decide(key, preferred);
       }
-      if (side === 'imported') next = withPersonField(next, p, field);
+      if (side === 'imported') {
+        next = withPersonField(next, p, field);
+        changes.push({ key: `p:${to}:${field}`, kind: 'person', localId: to, field, local: lp, imported: p, preferred: 'imported' });
+      }
     }
     if (next !== lp) changedPeople.set(to, next);
   }
@@ -305,13 +396,9 @@ export function planMerge(local: TreeDocument, part: TreeDocument, decisions: Me
       // Deleted from the tree since, and not changed in the file.
       continue;
     }
-    const here = localFamilies.has(f.id)
-      ? families.get(f.id)
-      : findFamily(
-          [...families.values()],
-          partners,
-          children.map((c) => c.personId),
-        );
+    const sameId = families.get(f.id);
+    const sameRelationship = sameId && sameSet(sameId.partners, partners) && (partners.length === 2 || sameId.children.some((c) => seen.has(c.personId)));
+    const here = (sameTree || bf || sameRelationship ? sameId : undefined) ?? findFamily(families.values(), partners, [...seen]);
     if (!here) {
       const fam: Family = { ...f, partners: partners.slice(0, 2), children };
       if (!meaningful(fam)) continue;
@@ -363,7 +450,13 @@ export function planMerge(local: TreeDocument, part: TreeDocument, decisions: Me
         conflicts.push({ key, kind: 'family', localId: here.id, field, local: here, imported: f, preferred });
         side = decide(key, preferred);
       }
-      if (side === 'imported') next = withFamilyField(next, f, field);
+      if (side === 'imported') {
+        next = withFamilyField(next, f, field);
+        changes.push({ key: `f:${here.id}:${field}`, kind: 'family', localId: here.id, field, local: here, imported: next, preferred: 'imported' });
+      }
+    }
+    if (childrenChanged || next.partners !== here.partners) {
+      changes.push({ key: `f:${here.id}:kids`, kind: 'family', localId: here.id, field: 'kids', local: here, imported: next, preferred: 'imported' });
     }
     if (next !== here) {
       families.set(here.id, next);
@@ -385,7 +478,9 @@ export function planMerge(local: TreeDocument, part: TreeDocument, decisions: Me
         canRemove,
       );
       if (partnersOut.length === here.partners.length && kept.length === here.children.length) continue;
-      families.set(id, { ...here, partners: partnersOut, children: here.children.filter((c) => kept.includes(c.personId)) });
+      const next = { ...here, partners: partnersOut, children: here.children.filter((c) => kept.includes(c.personId)) };
+      families.set(id, next);
+      changes.push({ key: `f:${id}:kids`, kind: 'family', localId: id, field: 'kids', local: here, imported: next, preferred: 'imported' });
       touched.add(id);
     }
   }
@@ -415,5 +510,5 @@ export function planMerge(local: TreeDocument, part: TreeDocument, decisions: Me
   const familiesUpdated = [...touched].filter((id) => localFamilies.has(id)).length;
   const summary: MergeSummary = { added: addedPeople.length, updated: changedPeople.size, familiesAdded, familiesUpdated, removed };
   const unchanged = !summary.added && !summary.updated && !familiesAdded && !familiesUpdated && !removals.length && !conflicts.length;
-  return { newPeople, matched: byId.size, conflicts, removals, doc: unchanged ? local : doc, summary, unchanged };
+  return { newPeople, matched: byId.size, conflicts, changes, removals, doc: unchanged ? local : doc, summary, unchanged };
 }

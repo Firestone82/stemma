@@ -1,49 +1,73 @@
 @let c = center();
 <div class="dialog-body">
-  <h2>{{ t('part.export.title') }}</h2>
+  <h2>{{ t(familyPersonId() ? 'part.export.family' : 'part.export.title') }}</h2>
   <p>{{ t('part.export.text') }}</p>
-  <div class="field">
-    <span class="field-label">{{ t('part.export.around') }}</span>
-    <div class="center">
-      <span class="name">{{ c ? name(c) : '—' }}</span>
-      <button type="button" class="btn small" [attr.aria-expanded]="choosing()" (click)="choosing.set(!choosing())">
-        {{ t('part.export.change') }}
-      </button>
-    </div>
-    @if (choosing()) {
-      <stemma-person-picker inputId="part-center" [selected]="centerId()" (selectedChange)="choose($event)" />
-    }
-  </div>
-  <div class="grid-2">
-    <div class="field">
-      <label for="part-up">{{ t('part.export.up') }}</label>
-      <select class="select" id="part-up" (change)="setReach('up', $event)">
-        @for (r of reaches; track r) {
-          <option [value]="r" [selected]="r === up()">{{ reachLabel(r) }}</option>
+  <div class="export-layout">
+    <div>
+      <div class="field">
+        <span class="field-label">{{ t('part.export.around') }}</span>
+        <div class="center">
+          <span class="name">{{ c ? name(c) : '—' }}</span>
+          @if (!familyPersonId()) {
+            <button type="button" class="btn small" [attr.aria-expanded]="choosing()" (click)="choosing.set(!choosing())">
+              {{ t('part.export.change') }}
+            </button>
+          }
+        </div>
+        @if (choosing()) {
+          <stemma-person-picker inputId="part-center" [selected]="centerId()" (selectedChange)="choose($event)" />
         }
-      </select>
+      </div>
+      <div class="grid-2">
+        <div class="field">
+          <label for="part-up">{{ t('part.export.up') }}</label>
+          <select class="select" id="part-up" (change)="setReach('up', $event)">
+            @for (r of reaches; track r) {
+              <option [value]="r" [selected]="r === up()">{{ reachLabel(r) }}</option>
+            }
+          </select>
+        </div>
+        <div class="field">
+          <label for="part-down">{{ t('part.export.down') }}</label>
+          <select class="select" id="part-down" (change)="setReach('down', $event)">
+            @for (r of reaches; track r) {
+              <option [value]="r" [selected]="r === down()">{{ reachLabel(r) }}</option>
+            }
+          </select>
+        </div>
+      </div>
+      <div class="field">
+        <label for="part-sideways">{{ t('part.export.sideways') }}</label>
+        <select class="select" id="part-sideways" (change)="setRelatives($event)">
+          @for (r of relativesSteps; track r) {
+            <option [value]="r" [selected]="r === relatives()">{{ relativesLabel(r) }}</option>
+          }
+        </select>
+        <span class="hint">{{ relativesHint(relatives()) }}</span>
+      </div>
+      <p class="summary">
+        {{
+          t('part.export.size', {
+            people: t('part.people', { count: preview()?.people?.length ?? 0 }),
+            families: t('part.families', { count: preview()?.families?.length ?? 0 }),
+          })
+        }}
+      </p>
     </div>
-    <div class="field">
-      <label for="part-down">{{ t('part.export.down') }}</label>
-      <select class="select" id="part-down" (change)="setReach('down', $event)">
-        @for (r of reaches; track r) {
-          <option [value]="r" [selected]="r === down()">{{ reachLabel(r) }}</option>
-        }
-      </select>
-    </div>
-  </div>
-  <div class="field">
-    <label for="part-sideways">{{ t('part.export.sideways') }}</label>
-    <select class="select" id="part-sideways" (change)="setRelatives($event)">
-      @for (r of relativesSteps; track r) {
-        <option [value]="r" [selected]="r === relatives()">{{ relativesLabel(r) }}</option>
+    <section class="export-preview" aria-labelledby="export-preview-title">
+      <h3 id="export-preview-title">{{ t('part.export.preview') }}</h3>
+      @for (group of groups(); track group.key) {
+        <stemma-family-group
+          [label]="group.label"
+          [tincture]="group.tincture"
+          [members]="group.members"
+          [open]="!collapsed().has(group.key)"
+          [preview]="true"
+          (toggleOpen)="toggle(group.key)"
+        />
       }
-    </select>
-    <span class="hint">{{ relativesHint(relatives()) }}</span>
+    </section>
   </div>
-  <p class="summary">
-    {{ t('part.export.size', { people: t('part.people', { count: size().people }), families: t('part.families', { count: size().families }) }) }}
-  </p>
 </div>
 <div class="dialog-actions">
   <button type="button" class="btn" (click)="done.emit()">{{ t('common.cancel') }}</button>

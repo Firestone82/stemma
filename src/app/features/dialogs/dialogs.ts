@@ -43,7 +43,7 @@ export class Dialogs {
   private readonly dialog = viewChild.required<ElementRef<HTMLDialogElement>>('dialog');
 
   protected readonly request = this.ui.dialog;
-  protected readonly wide = computed(() => ['xml', 'about', 'drive-setup', 'part-merge'].includes(this.request()?.kind ?? ''));
+  protected readonly wide = computed(() => ['xml', 'about', 'drive-setup', 'part-merge', 'part-export'].includes(this.request()?.kind ?? ''));
 
   constructor() {
     effect(() => {

@@ -36,7 +36,7 @@
   }
 
   @if (plainNew().length) {
-    <details>
+    <details open>
       <summary>{{ t('part.merge.newPeople', { count: plainNew().length }) }}</summary>
       <ul class="rows">
         @for (n of plainNew(); track n.person.id) {
@@ -51,6 +51,30 @@
         }
       </ul>
     </details>
+  }
+
+  @if (p.changes.length) {
+    <section>
+      <h3>{{ t('part.merge.changes') }}</h3>
+      <ul class="rows">
+        @for (c of p.changes; track c.key) {
+          <li class="group">
+            <strong>{{ changeTitle(c) }} · {{ fieldLabel(c) }}</strong>
+            <div class="conflict">
+              @for (s of sides; track s) {
+                <div>
+                  <div class="where">{{ s === 'local' ? t('part.merge.inTree') : t('part.merge.inFile') }}</div>
+                  @if (photo(c, s); as src) {
+                    <img class="photo" [src]="src" alt="" />
+                  }
+                  <div class="value">{{ value(c, s) }}</div>
+                </div>
+              }
+            </div>
+          </li>
+        }
+      </ul>
+    </section>
   }
 
   @if (groups().length) {

@@ -1,5 +1,5 @@
 import { ChangeDetectionStrategy, Component, OnInit, computed, inject, input, output, signal } from '@angular/core';
-import { DriveFile, DriveSharing, GoogleDrive, driveFilePage, shareLink } from '../../../core/services/google-drive';
+import { DriveFile, DriveRole, DriveSharing, GoogleDrive, driveFilePage, shareLink } from '../../../core/services/google-drive';
 import { ToastService } from '../../../core/services/toast';
 import { I18n } from '../../../i18n/i18n';
 import { Icon } from '../../../shared/icon/icon';
@@ -41,14 +41,13 @@ export class DriveShare implements OnInit {
     this.sharing.set(await this.drive.sharing(this.file().id));
   }
 
-  /** Lets anyone with the link view the file, after which Drive is asked again. */
-  protected async makePublic(): Promise<void> {
+  protected async makePublic(role: DriveRole): Promise<void> {
     this.changing.set(true);
     try {
-      const outcome = await this.drive.sharePublicly(this.file());
+      const outcome = await this.drive.sharePublicly(this.file(), role);
       if (outcome.status === 'done') {
-        this.sharing.set('public');
-        this.toast.show(this.t('dialog.share.madePublic'));
+        this.sharing.set(role === 'writer' ? 'editable' : 'public');
+        this.toast.show(this.t(role === 'writer' ? 'dialog.share.editable' : 'dialog.share.madePublic'));
       } else if (outcome.status === 'denied' || outcome.status === 'missing') {
         this.toast.error(this.t('dialog.share.cannotChange'));
       } else if (outcome.status === 'blocked') {

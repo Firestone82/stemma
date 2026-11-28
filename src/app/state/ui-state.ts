@@ -14,7 +14,7 @@ export interface AddRequest {
 }
 
 export type DialogRequest =
-  | { kind: 'confirm-delete'; personId: string }
+  | { kind: 'confirm-delete'; ids: ReadonlySet<string> }
   | { kind: 'confirm-new' }
   | { kind: 'import-report'; title: string; notes: Notice[]; upgrades: Notice[] }
   | { kind: 'newer-version'; notice: Notice; xml: string; name: string }
@@ -22,7 +22,7 @@ export type DialogRequest =
   | { kind: 'about' }
   | { kind: 'family-export' }
   | { kind: 'unsaved'; proceed: () => unknown }
-  | { kind: 'part-export' }
+  | { kind: 'part-export'; personId?: string }
   | { kind: 'part-merge'; part: TreeDocument; name: string }
   | { kind: 'drive-setup' }
   | { kind: 'drive-open'; files: DriveListing[] }
@@ -145,7 +145,10 @@ export class UiState {
   readonly peopleOpen = signal(false);
   /** On small screens: whether the person sheet is pulled up. */
   readonly sheetExpanded = signal(false);
-  /** A tree being read from Google Drive: its name, and how much of it has come (`total` null where Drive gave no size). */
+  /** The home page is showing, with the current tree available to resume. */
+  readonly home = signal(false);
+  readonly driveSaving = signal<{ name: string; loaded: number; total: number | null } | null>(null);
+  /** A tree being read from Google Drive. The total is null when Drive gives no size. */
   readonly driveLoading = signal<{ name: string; loaded: number; total: number | null } | null>(null);
   /** The tree from the last visit is still being read (a big one, from IndexedDB). */
   readonly restoring = signal(false);
