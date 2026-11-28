@@ -20,7 +20,7 @@ export const GOOGLE_CONFIG = {
   /** OAuth client ID, "….apps.googleusercontent.com". */
   clientId: CLIENT_ID,
   /** API key for the Google Picker. Without it Stemma lists only the trees it saved and saves to the top folder. */
-  apiKey: '',
+  apiKey: 'AIzaSyCjTTOLiYjyPKxl4cTbnAx-FJrVLMc83K8',
   /** The project number (the client ID starts with it), so files picked in the Picker can be opened with `drive.file`. */
   appId: CLIENT_ID.split('-')[0],
 };
