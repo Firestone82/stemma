@@ -105,6 +105,14 @@ p {
 
   .names {
     display: grid;
+    flex: 1;
+    min-width: 0;
+  }
+
+  .first {
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
     min-width: 0;
   }
 
@@ -113,6 +121,22 @@ p {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+
+  .title {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .file {
+    color: var(--ink-2);
+  }
+
+  .when {
+    flex: none;
+    color: var(--ink-3);
+    font-size: var(--text-sm);
+    font-variant-numeric: tabular-nums;
   }
 
   .meta {

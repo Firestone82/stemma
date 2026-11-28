@@ -253,6 +253,43 @@ export class GoogleDrive {
     }
   }
 
+  /**
+   * When a file was last changed and the folders it is in, from the top (My Drive) down, for the recent files. Asked
+   * only with the sign-in already given (after the file was read or written), so it never opens a pop-up. Folders the
+   * app may not see (with the `drive.file` scope, those it did not make) end the path, shown as "…" in their place;
+   * `null` when Drive cannot be asked.
+   */
+  async details(file: DriveFile): Promise<{ saved: number; folders: string[] } | null> {
+    if (!this.token || this.token.expires <= Date.now()) return null;
+    const headers = this.headers(this.token.value);
+    const get = async (id: string) => {
+      const response = await fetch(`${FILES}/${encodeURIComponent(id)}?fields=id,name,parents,modifiedTime`, { headers });
+      if (!response.ok) return null;
+      return (await response.json()) as { id: string; name: string; parents?: string[]; modifiedTime?: string };
+    };
+    try {
+      const info = await get(file.id);
+      if (!info) return null;
+      const folders: string[] = [];
+      let parent = info.parents?.[0];
+      let complete = !parent;
+      for (let depth = 0; parent && depth < 20; depth++) {
+        const folder = await get(parent);
+        if (!folder) break;
+        // The top folder has no parents; Drive calls it "My Drive" in the person's own language, so it is left out here.
+        if (!folder.parents?.length) {
+          complete = true;
+          break;
+        }
+        folders.unshift(folder.name);
+        parent = folder.parents[0];
+      }
+      return { saved: info.modifiedTime ? Date.parse(info.modifiedTime) : Date.now(), folders: complete ? folders : ['…', ...folders] };
+    } catch {
+      return null;
+    }
+  }
+
   private headers(token: string): Record<string, string> {
     return { Authorization: `Bearer ${token}` };
   }

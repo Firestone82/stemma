@@ -10,7 +10,7 @@ import { ChartLanguage } from '../core/lang/language';
 import { familyOutline, linkedFamilies } from '../core/family-document/outline';
 import { FileIo, PickerType, SaveOutcome, datedFilename } from '../core/services/file-io';
 import { DriveFile, DriveOutcome, GoogleDrive } from '../core/services/google-drive';
-import { RecentFile, RecentFiles } from '../core/services/recent-files';
+import { LocalDetails, RecentFile, RecentFiles } from '../core/services/recent-files';
 import { ToastService } from '../core/services/toast';
 import { TreeStore } from '../core/store/tree-store';
 import { XmlFormatError, parseTree } from '../core/xml/parser';
@@ -43,7 +43,7 @@ export type TreeSource = { kind: 'local'; handle: FileSystemFileHandle; name: st
 /** A file being opened: where Save will write (if anywhere) and what the recent files list keeps of it. */
 interface PendingOpen {
   source: TreeSource | null;
-  recent: { kind: 'local'; name: string; handle?: FileSystemFileHandle } | { kind: 'drive'; file: DriveFile };
+  recent: ({ kind: 'local'; name: string; handle?: FileSystemFileHandle } & LocalDetails) | { kind: 'drive'; file: DriveFile };
 }
 
 /** Whole trees: starting, opening, saving, the example family and the print studio. */
@@ -209,17 +209,19 @@ export class DocumentActions {
     let text: string;
     let name: string;
     let handle: FileSystemFileHandle | undefined;
+    let saved: number;
     try {
       const picked = await this.files.pickWithHandle(XML_TYPE, XML_ACCEPT);
       if (!picked) return;
       text = await picked.file.text();
       name = picked.file.name;
       handle = picked.handle;
+      saved = picked.file.lastModified;
     } catch {
       this.toast.error(this.i18n.t('file.unreadable'));
       return;
     }
-    this.pending = { source: handle ? { kind: 'local', handle, name } : null, recent: { kind: 'local', name, handle } };
+    this.pending = { source: handle ? { kind: 'local', handle, name } : null, recent: { kind: 'local', name, handle, saved } };
     this.openXml(text, name);
   }
 
@@ -318,7 +320,10 @@ export class DocumentActions {
       return;
     }
     const name = outcome.file.name;
-    this.pending = { source: { kind: 'local', handle: entry.handle, name }, recent: { kind: 'local', name, handle: entry.handle } };
+    this.pending = {
+      source: { kind: 'local', handle: entry.handle, name },
+      recent: { kind: 'local', name, handle: entry.handle, saved: outcome.file.lastModified },
+    };
     this.openXml(text, name);
   }
 
@@ -343,6 +348,7 @@ export class DocumentActions {
       if (pending) {
         this.takeFile(pending.source);
         void this.recent.remember({ ...pending.recent, title: this.store.doc().meta.title });
+        if (pending.recent.kind === 'drive') this.describeDrive(pending.recent.file);
       } else {
         this.forgetFile();
       }
@@ -411,7 +417,14 @@ export class DocumentActions {
     if (saved.outcome === 'saved') {
       // A download (no handle) belongs to its file too: the next visit offers it in the recent files, to pick again.
       this.takeFile(saved.handle ? { kind: 'local', handle: saved.handle, name: saved.name } : null, revision);
-      void this.recent.remember({ kind: 'local', name: saved.name, handle: saved.handle, title: this.store.doc().meta.title });
+      void this.recent.remember({
+        kind: 'local',
+        name: saved.name,
+        handle: saved.handle,
+        title: this.store.doc().meta.title,
+        saved: Date.now(),
+        downloaded: !saved.handle,
+      });
     }
     if (saved.outcome === 'unsupported') this.ui.dialog.set({ kind: 'xml', xml, filename });
     else this.reportSave(saved.outcome, saved.name);
@@ -448,8 +461,16 @@ export class DocumentActions {
     this.takeFile(source, revision);
     const title = this.store.doc().meta.title;
     void this.recent.remember(
-      source.kind === 'drive' ? { kind: 'drive', file: source.file, title } : { kind: 'local', name: source.name, handle: source.handle, title },
+      source.kind === 'drive'
+        ? { kind: 'drive', file: source.file, title }
+        : { kind: 'local', name: source.name, handle: source.handle, title, saved: Date.now() },
     );
+    if (source.kind === 'drive') this.describeDrive(source.file);
+  }
+
+  /** Asks Drive when a file in the recent files was last changed and which folder it is in, without signing in again. */
+  private describeDrive(file: DriveFile): void {
+    void this.drive.details(file).then((details) => (details ? this.recent.describeDrive(file.id, details) : undefined));
   }
 
   private reportSave(outcome: SaveOutcome, name: string): void {

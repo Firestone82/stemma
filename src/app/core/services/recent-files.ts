@@ -7,11 +7,33 @@ import { DriveFile } from './google-drive';
  * one (Chrome, Edge), or a file in Google Drive. Only what is needed to find the file again is kept, never the tree.
  */
 export type RecentFile =
-  | { kind: 'local'; key: string; name: string; title: string; at: number; handle?: FileSystemFileHandle }
-  | { kind: 'drive'; key: string; name: string; title: string; at: number; file: DriveFile };
+  | ({ kind: 'local'; key: string; name: string; title: string; at: number; handle?: FileSystemFileHandle } & LocalDetails)
+  | ({ kind: 'drive'; key: string; name: string; title: string; at: number; file: DriveFile } & DriveDetails);
+
+/**
+ * What is known of a file on the computer: when it was last saved, and whether it was downloaded (so it is in the
+ * downloads folder). Browsers never tell a web page the folder a picked file is in.
+ */
+export interface LocalDetails {
+  saved?: number;
+  downloaded?: boolean;
+}
+
+/** What Drive says of a file: when it was last changed, and the folders it is in, from the top (My Drive) down. */
+export interface DriveDetails {
+  saved?: number;
+  folders?: string[];
+}
 
 /** What to remember about a file just opened or saved; the key and the time are filled in. */
-export type RecentFileInput = { kind: 'local'; name: string; title: string; handle?: FileSystemFileHandle } | { kind: 'drive'; title: string; file: DriveFile };
+export type RecentFileInput =
+  | ({ kind: 'local'; name: string; title: string; handle?: FileSystemFileHandle } & LocalDetails)
+  | ({ kind: 'drive'; title: string; file: DriveFile } & DriveDetails);
+
+/** The key of a Drive file in the list. */
+export function driveKey(id: string): string {
+  return `drive:${id}`;
+}
 
 /** How many files the list keeps. */
 export const RECENT_LIMIT = 8;
@@ -66,6 +88,12 @@ export class RecentFiles {
     });
   }
 
+  /** Adds what Drive said of a file on the list (learnt after it was opened or saved), leaving the order as it is. */
+  describeDrive(id: string, details: DriveDetails): Promise<void> {
+    const key = driveKey(id);
+    return this.change(async (list) => list.map((e) => (e.key === key && e.kind === 'drive' ? { ...e, ...details } : e)));
+  }
+
   /** Takes a file off the list. */
   forget(key: string): Promise<void> {
     return this.change(async (list) => list.filter((e) => e.key !== key));
@@ -97,18 +125,34 @@ export class RecentFiles {
   /** The entry for a file, with the key of an older entry for the same file so it replaces that one. */
   private async entry(input: RecentFileInput, list: readonly RecentFile[], at: number): Promise<RecentFile> {
     if (input.kind === 'drive') {
+      const key = driveKey(input.file.id);
+      // Until Drive has been asked again, the file is taken to be where it was and as old as it was.
+      const before = list.find((e): e is Extract<RecentFile, { kind: 'drive' }> => e.key === key && e.kind === 'drive');
+      const saved = input.saved ?? before?.saved;
+      const folders = input.folders ?? before?.folders;
       return {
         kind: 'drive',
-        key: `drive:${input.file.id}`,
+        key,
         name: input.file.name,
         title: input.title,
         at,
         file: { id: input.file.id, name: input.file.name },
+        ...(saved !== undefined ? { saved } : {}),
+        ...(folders ? { folders } : {}),
       };
     }
     const same = await sameLocalFile(input, list);
     const key = same?.key ?? `local:${input.handle ? crypto.randomUUID() : input.name}`;
-    return { kind: 'local', key, name: input.name, title: input.title, at, ...(input.handle ? { handle: input.handle } : {}) };
+    return {
+      kind: 'local',
+      key,
+      name: input.name,
+      title: input.title,
+      at,
+      ...(input.handle ? { handle: input.handle } : {}),
+      ...(input.saved !== undefined ? { saved: input.saved } : {}),
+      ...(input.downloaded ? { downloaded: true } : {}),
+    };
   }
 }
 
