@@ -263,7 +263,7 @@ export class GoogleDrive {
     if (!this.token || this.token.expires <= Date.now()) return null;
     const headers = this.headers(this.token.value);
     const get = async (id: string) => {
-      const response = await fetch(`${FILES}/${encodeURIComponent(id)}?fields=id,name,parents,modifiedTime`, { headers });
+      const response = await fetch(`${FILES}/${encodeURIComponent(id)}?fields=id,name,parents,modifiedTime&supportsAllDrives=true`, { headers });
       if (!response.ok) return null;
       return (await response.json()) as { id: string; name: string; parents?: string[]; modifiedTime?: string };
     };
