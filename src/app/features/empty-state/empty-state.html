@@ -22,8 +22,16 @@
           <button type="button" class="open" (pointerenter)="entry.kind === 'drive' && documents.prepareDrive()" (click)="documents.openRecent(entry)">
             <stemma-icon [name]="entry.kind === 'drive' ? 'cloud' : 'folder'" [size]="16" />
             <span class="names">
-              <span class="title">{{ entry.title || entry.name }}</span>
-              <span class="meta">{{ entry.kind === 'drive' ? t('recent.inDrive', { name: entry.name }) : entry.name }} · {{ when(entry.at) }}</span>
+              <span class="first">
+                <span class="title"
+                  >{{ entry.title || entry.name }}
+                  @if (entry.title) {
+                    <span class="file"> · {{ entry.name }}</span>
+                  }
+                </span>
+                <span class="when">{{ when(entry.saved ?? entry.at) }}</span>
+              </span>
+              <span class="meta">{{ where(entry) }}</span>
             </span>
           </button>
           <button

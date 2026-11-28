@@ -37,6 +37,13 @@ export class Shortcuts {
       // studio, nor over a dialog. (A browser tab may keep Ctrl+N for a new window; the installed app has it.)
       e.preventDefault();
       if (!this.ui.printOpen() && !this.ui.dialog()) this.documents.newTree();
+    } else if (mod && key === 'c' && !e.shiftKey && !e.altKey) {
+      // Closes the tree (back to the start page, asking first about unsaved changes), as File › Close tree does, and
+      // so only for a tree from a file. Copying still wins: with text selected or in a field, Ctrl+C copies as usual.
+      if (!typing && !hasSelectedText() && !this.ui.printOpen() && !this.ui.dialog() && this.documents.fileBacked()) {
+        e.preventDefault();
+        this.documents.closeTree();
+      }
     } else if (mod && key === 'o') {
       e.preventDefault();
       void this.documents.openFile();
@@ -88,4 +95,9 @@ export class Shortcuts {
     const target = e.target as HTMLElement | null;
     if (!target?.closest('.menu-anchor')) this.ui.closeMenu();
   }
+}
+
+/** True when the page has text selected, which Ctrl+C should copy. */
+function hasSelectedText(): boolean {
+  return !!document.getSelection()?.toString();
 }
