@@ -1,6 +1,7 @@
 import { ChangeDetectionStrategy, Component, computed, inject } from '@angular/core';
 import { TreeStore } from './core/store/tree-store';
 import { Dialogs } from './features/dialogs/dialogs';
+import { DriveLoading } from './features/drive-loading/drive-loading';
 import { EmptyState } from './features/empty-state/empty-state';
 import { PrintRoute } from './features/print-studio/print-route';
 import { PrintStudio } from './features/print-studio/print-studio';
@@ -20,7 +21,7 @@ import { UiState } from './state/ui-state';
 /** The app: a bar on top, the chart with the side panel, and the dialogs over them; or the print studio in their place. */
 @Component({
   selector: 'app-root',
-  imports: [TopBar, TreeChart, EmptyState, SampleNote, SidePanel, Toasts, Dialogs, PrintStudio, ReviewBar],
+  imports: [TopBar, TreeChart, EmptyState, SampleNote, SidePanel, Toasts, Dialogs, PrintStudio, ReviewBar, DriveLoading],
   templateUrl: './app.html',
   styleUrl: './app.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,

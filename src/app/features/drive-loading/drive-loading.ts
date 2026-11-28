@@ -1,0 +1,47 @@
+import { ChangeDetectionStrategy, Component, computed, inject, input } from '@angular/core';
+import { I18n } from '../../i18n/i18n';
+import { Icon } from '../../shared/icon/icon';
+
+/** How far along a tree being read from Google Drive is: a bar filling up, or moving to and fro where the size is not known. */
+@Component({
+  selector: 'stemma-drive-loading',
+  imports: [Icon],
+  template: `
+    <stemma-icon name="cloud" [size]="18" />
+    <div class="body">
+      <p>{{ t('drive.loading', { name: loading().name }) }}</p>
+      <div
+        class="bar"
+        role="progressbar"
+        [attr.aria-label]="t('drive.loading', { name: loading().name })"
+        [attr.aria-valuemin]="0"
+        [attr.aria-valuemax]="100"
+        [attr.aria-valuenow]="percent()"
+        [class.unknown]="percent() === null"
+      >
+        <span [style.width.%]="percent() ?? 30"></span>
+      </div>
+      <p class="amount">{{ amount() }}</p>
+    </div>
+  `,
+  styleUrl: './drive-loading.scss',
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  host: { role: 'status' },
+})
+export class DriveLoading {
+  private readonly i18n = inject(I18n);
+  protected readonly t = this.i18n.t;
+  readonly loading = input.required<{ name: string; loaded: number; total: number | null }>();
+
+  protected readonly percent = computed(() => {
+    const { loaded, total } = this.loading();
+    return total ? Math.min(100, Math.round((loaded / total) * 100)) : null;
+  });
+
+  protected readonly amount = computed(() => {
+    const { loaded, total } = this.loading();
+    const size = new Intl.NumberFormat(this.i18n.locale().intl, { maximumFractionDigits: 1 });
+    const kb = (bytes: number) => `${size.format(bytes / 1024)} kB`;
+    return total ? `${kb(loaded)} / ${kb(total)} · ${this.percent()} %` : kb(loaded);
+  });
+}

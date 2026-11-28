@@ -143,6 +143,8 @@ export class UiState {
   readonly peopleOpen = signal(false);
   /** On small screens: whether the person sheet is pulled up. */
   readonly sheetExpanded = signal(false);
+  /** A tree being read from Google Drive: its name, and how much of it has come (`total` null where Drive gave no size). */
+  readonly driveLoading = signal<{ name: string; loaded: number; total: number | null } | null>(null);
   /** The tree from the last visit is still being read (a big one, from IndexedDB). */
   readonly restoring = signal(false);
   /** The example family is showing and the note about it has not been dismissed. */

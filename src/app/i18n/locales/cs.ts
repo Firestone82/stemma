@@ -248,6 +248,8 @@ export const cs: Catalogue = {
   'recent.title': 'Nedávné soubory',
   'recent.drive': 'Disk Google',
   'recent.myDrive': 'Můj disk',
+  'recent.sharedWithMe': 'Sdíleno se mnou',
+  'drive.loading': 'Otevírám {name} z Disku Google…',
   'recent.computer': 'V tomto počítači',
   'recent.downloads': 'Ve složce se staženými soubory v tomto počítači',
   'recent.forget': 'Odebrat {name} ze seznamu',

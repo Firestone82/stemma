@@ -247,6 +247,8 @@ export const en = {
   'recent.title': 'Recent files',
   'recent.drive': 'Google Drive',
   'recent.myDrive': 'My Drive',
+  'recent.sharedWithMe': 'Shared with me',
+  'drive.loading': 'Opening {name} from Google Drive…',
   'recent.computer': 'On this computer',
   'recent.downloads': 'In the downloads folder on this computer',
   'recent.forget': 'Remove {name} from the list',

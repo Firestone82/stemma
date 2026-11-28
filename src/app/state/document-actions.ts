@@ -269,10 +269,19 @@ export class DocumentActions {
   async openDriveFile(file: DriveFile): Promise<void> {
     this.ui.dialog.set(null);
     await this.whenSaved(async () => {
-      const outcome = await this.drive.read(file);
+      const outcome = await this.readFromDrive(file);
       if (outcome.status === 'done') this.openFromText(outcome.value.text, outcome.value.file);
       else this.driveProblem(outcome);
     });
+  }
+
+  /** Reads a tree from Drive, showing how far along it is once the sign-in (if any) is done. */
+  private async readFromDrive(file: DriveFile): Promise<DriveOutcome<{ file: DriveFile; text: string }>> {
+    try {
+      return await this.drive.read(file, (loaded, total) => this.ui.driveLoading.set({ name: file.name, loaded, total }));
+    } finally {
+      this.ui.driveLoading.set(null);
+    }
   }
 
   private openFromText(text: string, file: DriveFile): void {
@@ -295,7 +304,7 @@ export class DocumentActions {
 
   private async readRecent(entry: RecentFile): Promise<void> {
     if (entry.kind === 'drive') {
-      const outcome = await this.drive.read(entry.file);
+      const outcome = await this.readFromDrive(entry.file);
       if (outcome.status === 'done') this.openFromText(outcome.value.text, outcome.value.file);
       else if (outcome.status === 'missing') this.recentMissing(entry);
       else this.driveProblem(outcome);
@@ -466,6 +475,12 @@ export class DocumentActions {
         : { kind: 'local', name: source.name, handle: source.handle, title, saved: Date.now() },
     );
     if (source.kind === 'drive') this.describeDrive(source.file);
+  }
+
+  /** Asks Drive again about each Drive file in the recent files, where the sign-in is still kept (no pop-up). */
+  refreshRecentDrive(): void {
+    if (!this.drive.configured) return;
+    for (const entry of this.recent.list()) if (entry.kind === 'drive') this.describeDrive(entry.file);
   }
 
   /** Asks Drive when a file in the recent files was last changed and which folder it is in, without signing in again. */
