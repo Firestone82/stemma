@@ -26,9 +26,12 @@ const GIS_SCRIPT = 'https://accounts.google.com/gsi/client';
 const GAPI_SCRIPT = 'https://apis.google.com/js/api.js';
 /** Where the access token is kept for this tab (see `GoogleDrive.token`). */
 const TOKEN_KEY = 'stemma.drive-token';
+/** The Google account last signed in with, so the next sign-in and the Picker use that same account. */
+const ACCOUNT_KEY = 'stemma.drive-account';
 const XML_TYPES = 'application/xml,text/xml';
 const FOLDER_TYPE = 'application/vnd.google-apps.folder';
 const FILES = 'https://www.googleapis.com/drive/v3/files';
+const ABOUT = 'https://www.googleapis.com/drive/v3/about';
 const UPLOAD = 'https://www.googleapis.com/upload/drive/v3/files';
 
 // The parts of Google Identity Services and the Google Picker used here.
@@ -79,6 +82,7 @@ interface GoogleGlobal {
       initTokenClient(config: {
         client_id: string;
         scope: string;
+        login_hint?: string;
         callback: (response: TokenResponse) => void;
         error_callback?: (error: { type?: string }) => void;
       }): TokenClient;
@@ -108,6 +112,10 @@ interface GoogleWindow {
 export class GoogleDrive {
   private ready: Promise<GoogleGlobal> | undefined;
   private kept: { value: string; expires: number } | undefined = readToken();
+  /** The e-mail of the account the token belongs to (see `account`). */
+  private email: string | undefined = readItem(localStorageOrNull(), ACCOUNT_KEY);
+  /** The token `email` was last checked with. */
+  private emailChecked: string | undefined;
 
   /**
    * The access token, kept for this tab in sessionStorage until shortly before it runs out, so reloading the page or
@@ -158,6 +166,7 @@ export class GoogleDrive {
     }
     const picker = google.picker;
     if (!picker) return { status: 'failed' };
+    const account = await this.account(auth.value.token);
     const builder = new picker.PickerBuilder()
       .enableFeature('sdr')
       .setOAuthToken(auth.value.token)
@@ -165,6 +174,11 @@ export class GoogleDrive {
       .setAppId(GOOGLE_CONFIG.appId)
       .setLocale(locale)
       .setTitle(title);
+    // The Picker otherwise uses the browser's default Google account, and when that is not the one the token belongs
+    // to it refuses to load (401) and falls back to a sign-in window that cannot hand the pick back. `setAuthUser` is
+    // not documented, so it is used only where the library has it.
+    const withUser = builder as PickerBuilder & { setAuthUser?(user: string): PickerBuilder };
+    if (account && typeof withUser.setAuthUser === 'function') withUser.setAuthUser(account);
     if (target === 'file') {
       builder
         .addView(new picker.DocsView('all').setMimeTypes(XML_TYPES).setIncludeFolders(true).setOwnedByMe(true).setMode('list'))
@@ -322,6 +336,29 @@ export class GoogleDrive {
     return { status: 'failed' };
   }
 
+  /** The e-mail of the account the token belongs to, asked from Drive once and kept for the next sign-in. */
+  private async account(token: string): Promise<string | undefined> {
+    if (this.email && this.emailChecked === token) return this.email;
+    try {
+      const response = await fetch(`${ABOUT}?fields=user(emailAddress)`, { headers: this.headers(token) });
+      if (!response.ok) return this.email;
+      const body = (await response.json()) as { user?: { emailAddress?: string } };
+      const email = body.user?.emailAddress;
+      if (email) {
+        this.email = email;
+        this.emailChecked = token;
+        try {
+          localStorage.setItem(ACCOUNT_KEY, email);
+        } catch {
+          // Blocked storage: the account is then remembered only for this page.
+        }
+      }
+    } catch {
+      // Without it the Picker uses the browser's default account.
+    }
+    return this.email;
+  }
+
   /** An access token for the `drive.file` scope, kept until shortly before it runs out. */
   private async authorize(): Promise<DriveOutcome<{ token: string }>> {
     let google: GoogleGlobal;
@@ -336,6 +373,7 @@ export class GoogleDrive {
       const client = google.accounts.oauth2.initTokenClient({
         client_id: GOOGLE_CONFIG.clientId,
         scope: SCOPE,
+        ...(this.email ? { login_hint: this.email } : {}),
         callback: (response) => {
           if (!response.access_token) {
             resolve({ status: response.error === 'access_denied' ? 'declined' : 'failed' });
@@ -371,6 +409,22 @@ export class GoogleDrive {
         }),
     );
     return this.ready;
+  }
+}
+
+function localStorageOrNull(): Storage | null {
+  try {
+    return typeof localStorage === 'undefined' ? null : localStorage;
+  } catch {
+    return null;
+  }
+}
+
+function readItem(storage: Storage | null, key: string): string | undefined {
+  try {
+    return storage?.getItem(key) ?? undefined;
+  } catch {
+    return undefined;
   }
 }
 
