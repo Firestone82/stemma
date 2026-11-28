@@ -176,7 +176,7 @@ export class GoogleDrive {
       .setTitle(title);
     // The Picker otherwise uses the browser's default Google account, and when that is not the one the token belongs
     // to it refuses to load (401) and falls back to a sign-in window that cannot hand the pick back. `setAuthUser` is
-    // not documented, so it is used only where the library has it.
+    // not documented, so it is used only where the library has it; otherwise the frame's address gets `authuser`.
     const withUser = builder as PickerBuilder & { setAuthUser?(user: string): PickerBuilder };
     if (account && typeof withUser.setAuthUser === 'function') withUser.setAuthUser(account);
     if (target === 'file') {
@@ -190,6 +190,7 @@ export class GoogleDrive {
         .addView(new picker.DocsView('folders').setMimeTypes(FOLDER_TYPE).setIncludeFolders(true).setSelectFolderEnabled(true).setOwnedByMe(false))
         .addView(new picker.DocsView('folders').setMimeTypes(FOLDER_TYPE).setIncludeFolders(true).setSelectFolderEnabled(true).setEnableDrives(true));
     }
+    const release = account && typeof withUser.setAuthUser !== 'function' ? pinPickerAccount(account) : () => undefined;
     const picked = await new Promise<PickerResult>((resolve) => {
       builder
         .setCallback((result) => {
@@ -197,7 +198,7 @@ export class GoogleDrive {
         })
         .build()
         .setVisible(true);
-    });
+    }).finally(release);
     const doc = picked.action === 'picked' ? picked.docs?.[0] : undefined;
     return doc ? { status: 'done', value: { id: doc.id, name: doc.name } } : { status: 'declined' };
   }
@@ -426,6 +427,38 @@ function readItem(storage: Storage | null, key: string): string | undefined {
   } catch {
     return undefined;
   }
+}
+
+/**
+ * Makes the Picker's frame open as `account`. The frame is docs.google.com, which picks the browser's default Google
+ * account from its cookies; with several accounts signed in, that may not be the one the token belongs to, and the
+ * Picker then refuses to load (401) and falls back to a separate sign-in window that cannot hand the pick back. Google
+ * pages take the account to use from an `authuser` parameter, which the Picker library has no documented way to set,
+ * so it is added to the frame's address as the frame appears (before the `#` part, which carries the frame's link back
+ * to this page). Returns a function that stops watching.
+ */
+export function pinPickerAccount(account: string): () => void {
+  const pin = (frame: HTMLIFrameElement): void => {
+    const src = frame.getAttribute('src') ?? '';
+    if (!src.startsWith('https://docs.google.com/picker') || /[?&]authuser=/.test(src)) return;
+    const hash = src.indexOf('#');
+    const base = hash < 0 ? src : src.slice(0, hash);
+    const fragment = hash < 0 ? '' : src.slice(hash);
+    frame.setAttribute('src', `${base}${base.includes('?') ? '&' : '?'}authuser=${encodeURIComponent(account)}${fragment}`);
+  };
+  const scan = (root: ParentNode): void => root.querySelectorAll('iframe').forEach(pin);
+  const observer = new MutationObserver((mutations) => {
+    for (const mutation of mutations) {
+      if (mutation.type === 'attributes' && mutation.target instanceof HTMLIFrameElement) pin(mutation.target);
+      mutation.addedNodes.forEach((node) => {
+        if (node instanceof HTMLIFrameElement) pin(node);
+        else if (node instanceof Element) scan(node);
+      });
+    }
+  });
+  observer.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['src'] });
+  scan(document);
+  return () => observer.disconnect();
 }
 
 /** The access token kept for this tab by an earlier page load, if it has not run out. */
