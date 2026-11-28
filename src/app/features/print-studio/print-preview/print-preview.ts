@@ -117,6 +117,8 @@ export class PrintPreview {
   readonly namesStyle = input<NamesStyle>({});
   /** The page inside its margin: what a box being moved is lined up with. */
   readonly inner = input<LegendBox | null>(null);
+  /** How far inside the margin the names held in a corner stand, clear of the frame (see PosterResult.cornerClear). */
+  readonly cornerClear = input<Clear>(NO_CLEAR);
 
   protected readonly corners = ['nw', 'ne', 'sw', 'se'] as const;
   /** The box being dragged, where it is now. */
@@ -786,7 +788,9 @@ export class PrintPreview {
     const inner = this.inner();
     if (d.what === 'move' && inner) {
       // Lined up with the margin and the middle of the page; with Alt held, wherever the pointer puts it.
-      const lined = alignBox(box, inner, this.ratio(), !event.altKey);
+      // The names pulled into a corner stand where the page holds them there: clear of the frame's flourishes.
+      const clear = d.which === 'legend' ? this.cornerClear() : NO_CLEAR;
+      const lined = alignBox(box, inner, this.ratio(), !event.altKey, clear);
       box = lined.box;
       this.guides.set(lined.guides);
       // Near the other box, a gap away from it: snapped there (Alt held: not).
@@ -861,7 +865,7 @@ export class PrintPreview {
     this.boxDraft.set(null);
     // Let go of at one of the places the settings offer (it snapped there): held there, so the settings show it.
     const inner = this.inner();
-    const anchor = !sized && inner ? anchorOf(box, inner) : undefined;
+    const anchor = !sized && inner ? anchorOf(box, inner, which === 'legend' ? this.cornerClear() : NO_CLEAR) : undefined;
     if (which === 'legend') this.boxesPlace.emit({ legendBox: box, legendSizedOnly: sized, ...(anchor ? { legendAnchor: anchor } : {}) });
     else this.boxesPlace.emit({ titleAt: { x: box.x + box.w / 2, y: box.y }, ...(anchor?.startsWith('top') ? { titleAnchor: anchor } : {}) });
   }
@@ -1057,12 +1061,23 @@ export function placedSettings(placed: BoxesPlaced): Partial<PrintSettings> {
 /** How near a box has to stand to one of the page's places to be taken as held there: about what snapping leaves. */
 const AT_ANCHOR = 0.002;
 
+/** How far inside the margin a box held in a corner stands, as shares of the page's width and height. */
+export interface Clear {
+  x: number;
+  y: number;
+}
+const NO_CLEAR: Clear = { x: 0, y: 0 };
+
 /**
  * The place of the page (a corner, the middle of a side, the middle) a box stands at inside the margin
- * (`inner`), lined up across and down as alignBox snaps it: none when it stands anywhere else.
+ * (`inner`), lined up across and down as alignBox snaps it: none when it stands anywhere else. In a corner it
+ * stands `clear` inside the margin, as the page holds it there.
  */
-export function anchorOf(box: LegendBox, inner: LegendBox): Anchor | undefined {
+export function anchorOf(box: LegendBox, inner: LegendBox, clear: Clear = NO_CLEAR): Anchor | undefined {
   const near = (a: number, b: number) => Math.abs(a - b) < AT_ANCHOR;
+  const cornerX = near(box.x, inner.x + clear.x) ? 'left' : near(box.x + box.w, inner.x + inner.w - clear.x) ? 'right' : undefined;
+  const cornerY = near(box.y, inner.y + clear.y) ? 'top' : near(box.y + box.h, inner.y + inner.h - clear.y) ? 'bottom' : undefined;
+  if (cornerX && cornerY) return `${cornerY}-${cornerX}` as Anchor;
   const across = near(box.x, inner.x)
     ? 'left'
     : near(box.x + box.w / 2, inner.x + inner.w / 2)
@@ -1079,6 +1094,8 @@ export function anchorOf(box: LegendBox, inner: LegendBox): Anchor | undefined {
         : undefined;
   if (!across || !down) return undefined;
   if (down === 'middle') return across === 'middle' ? 'center' : across;
+  // On the margin in a corner, where the page would not hold it (the frame's flourishes are there): not held.
+  if (across !== 'middle' && (clear.x || clear.y)) return undefined;
   return across === 'middle' ? down : (`${down}-${across}` as Anchor);
 }
 
@@ -1100,9 +1117,10 @@ const SNAP = 0.012;
  * there. With it, the lines to show: from the box's corner nearest a corner of the page to the two margins
  * there (marked when they are the same length), and through the middle of the page when the box is in it.
  * `ratio` is the page's width over its height; without `snap` the box stays where it is and only the lines
- * are worked out.
+ * are worked out. Pulled into a corner, it stands `clear` inside the margin there: where the page holds a box
+ * in that corner (clear of the frame's flourishes).
  */
-export function alignBox(box: LegendBox, inner: LegendBox, ratio: number, snap = true): { box: LegendBox; guides: Guide[] } {
+export function alignBox(box: LegendBox, inner: LegendBox, ratio: number, snap = true, clear: Clear = NO_CLEAR): { box: LegendBox; guides: Guide[] } {
   let { x, y } = box;
   // Margins in one unit, the page's height: a share across is `ratio` times a share down.
   const gaps = () => ({
@@ -1113,18 +1131,31 @@ export function alignBox(box: LegendBox, inner: LegendBox, ratio: number, snap =
   });
   if (snap) {
     let g = gaps();
-    if (Math.abs(g.left - g.right) < SNAP * 2) x = inner.x + (inner.w - box.w) / 2;
-    else if (Math.abs(g.left) < SNAP) x = inner.x;
-    else if (Math.abs(g.right) < SNAP) x = inner.x + inner.w - box.w;
-    if (Math.abs(g.top - g.foot) < SNAP * 2) y = inner.y + (inner.h - box.h) / 2;
-    else if (Math.abs(g.top) < SNAP) y = inner.y;
-    else if (Math.abs(g.foot) < SNAP) y = inner.y + inner.h - box.h;
-    // As far from the nearer side as from the top or the foot, whichever is nearer.
-    g = gaps();
-    const side = Math.min(g.left, g.right);
-    const end = Math.min(g.top, g.foot);
-    if (side > SNAP / 2 && end > SNAP / 2 && Math.abs(side - end) < SNAP)
-      x = g.left <= g.right ? inner.x + end / ratio : inner.x + inner.w - box.w - end / ratio;
+    // Near where a corner holds it (or on the margin there): in that corner, clear of the frame.
+    const [left, right] = [inner.x + clear.x, inner.x + inner.w - box.w - clear.x];
+    const [top, foot] = [inner.y + clear.y, inner.y + inner.h - box.h - clear.y];
+    const nearX = (to: number, edge: number) => Math.abs(x - to) * ratio < SNAP || Math.abs(x - edge) * ratio < SNAP;
+    const nearY = (to: number, edge: number) => Math.abs(y - to) < SNAP || Math.abs(y - edge) < SNAP;
+    const cornerX =
+      Math.abs(g.left - g.right) < SNAP * 2 ? undefined : nearX(left, inner.x) ? left : nearX(right, inner.x + inner.w - box.w) ? right : undefined;
+    const cornerY = Math.abs(g.top - g.foot) < SNAP * 2 ? undefined : nearY(top, inner.y) ? top : nearY(foot, inner.y + inner.h - box.h) ? foot : undefined;
+    if (cornerX !== undefined && cornerY !== undefined) {
+      x = cornerX;
+      y = cornerY;
+    } else {
+      if (Math.abs(g.left - g.right) < SNAP * 2) x = inner.x + (inner.w - box.w) / 2;
+      else if (Math.abs(g.left) < SNAP) x = inner.x;
+      else if (Math.abs(g.right) < SNAP) x = inner.x + inner.w - box.w;
+      if (Math.abs(g.top - g.foot) < SNAP * 2) y = inner.y + (inner.h - box.h) / 2;
+      else if (Math.abs(g.top) < SNAP) y = inner.y;
+      else if (Math.abs(g.foot) < SNAP) y = inner.y + inner.h - box.h;
+      // As far from the nearer side as from the top or the foot, whichever is nearer.
+      g = gaps();
+      const side = Math.min(g.left, g.right);
+      const end = Math.min(g.top, g.foot);
+      if (side > SNAP / 2 && end > SNAP / 2 && Math.abs(side - end) < SNAP)
+        x = g.left <= g.right ? inner.x + end / ratio : inner.x + inner.w - box.w - end / ratio;
+    }
   }
   const g = gaps();
   const same = (a: number, b: number) => Math.abs(a - b) < 0.0012;

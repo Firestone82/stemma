@@ -39,6 +39,7 @@
         [title]="model.poster()?.title ?? null"
         (boxesPlace)="placeBoxes($event)"
         [inner]="model.poster()?.inner ?? null"
+        [cornerClear]="model.poster()?.cornerClear ?? { x: 0, y: 0 }"
         [staged]="model.stagedBoxes()"
         [waiting]="model.waiting()"
         [boxGap]="model.boxGap()"
