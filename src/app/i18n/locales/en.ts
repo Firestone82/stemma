@@ -188,6 +188,7 @@ export const en = {
   'file.driveFailed': 'Google Drive could not be reached. Try again.',
   'file.driveBlocked': 'The browser blocked the Google sign-in window. Allow pop-ups for this site and try again.',
   'file.driveMissing': 'That file is no longer in Google Drive, or Stemma may no longer open it.',
+  'file.driveDenied': 'You may only read this file in Google Drive. Use Save a copy to Google Drive to keep your changes.',
   'file.driveNotSetUp': 'Google Drive is not set up for this copy of Stemma yet.',
   'file.recentMissing': '{name} is no longer where it was. It was taken off the recent files.',
   'file.close': 'Close tree',
@@ -591,11 +592,14 @@ export const en = {
   'dialog.unsaved.save': 'Save and continue',
   'dialog.drive.title': 'Google Drive is not set up yet',
   'dialog.drive.text': 'To open and save trees in Google Drive, this copy of Stemma needs its own Google Cloud project. Whoever runs it sets that up once:',
-  'dialog.drive.step1': 'In the Google Cloud console (console.cloud.google.com), create a project and enable the Google Drive API.',
+  'dialog.drive.step1': 'In the Google Cloud console (console.cloud.google.com), create a project and enable the Google Drive API and the Google Picker API.',
   'dialog.drive.step2': 'Under Google Auth Platform, set up the consent screen (External), add the scope …/auth/drive.file, and add yourself as a test user.',
   'dialog.drive.step3': 'Create an OAuth client ID of type Web application, with {origin} as an authorised JavaScript origin. It goes in clientId.',
-  'dialog.drive.note':
-    'The client ID goes in src/app/core/services/google-config.ts, and the app is published again. It is not a secret, and no API key is needed.',
+  'dialog.drive.note': 'The values go in src/app/core/services/google-config.ts, and the app is published again. None of them is a secret.',
+  'dialog.drive.step4':
+    'Optional: create an API key restricted to the Google Picker API and to the same website. It goes in apiKey, and lets you open trees shared with you and pick the folder to save in.',
+  'drive.pickTree': 'Open a family tree',
+  'drive.pickFolder': 'Choose the folder to save the tree in',
   'dialog.driveOpen.title': 'Open from Google Drive',
   'dialog.driveOpen.empty': 'There are no trees saved by Stemma in your Google Drive yet.',
   'dialog.driveOpen.note':

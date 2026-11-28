@@ -14,17 +14,22 @@ export interface DriveListing extends DriveFile {
 
 /**
  * How a Drive request ended: `declined` when the person closed the sign-in, `blocked` when the browser
- * stopped the sign-in pop-up, `missing` when the file is no longer there (deleted, or no longer shared with the app).
+ * stopped the sign-in pop-up, `missing` when the file is no longer there (deleted, or no longer shared with the app),
+ * `denied` when the person may only read the file (shared with them for viewing).
  */
-export type DriveOutcome<T> = { status: 'done'; value: T } | { status: 'declined' } | { status: 'blocked' } | { status: 'missing' } | { status: 'failed' };
+export type DriveOutcome<T> =
+  { status: 'done'; value: T } | { status: 'declined' } | { status: 'blocked' } | { status: 'missing' } | { status: 'denied' } | { status: 'failed' };
 
 /** Only files this app creates itself (or was given by the person); nothing else in the person's Drive. */
 const SCOPE = 'https://www.googleapis.com/auth/drive.file';
 const GIS_SCRIPT = 'https://accounts.google.com/gsi/client';
+const GAPI_SCRIPT = 'https://apis.google.com/js/api.js';
+const XML_TYPES = 'application/xml,text/xml';
+const FOLDER_TYPE = 'application/vnd.google-apps.folder';
 const FILES = 'https://www.googleapis.com/drive/v3/files';
 const UPLOAD = 'https://www.googleapis.com/upload/drive/v3/files';
 
-// The parts of Google Identity Services used here.
+// The parts of Google Identity Services and the Google Picker used here.
 interface TokenResponse {
   access_token?: string;
   expires_in?: number;
@@ -34,6 +39,37 @@ interface TokenResponse {
 interface TokenClient {
   requestAccessToken(options?: { prompt?: string }): void;
 }
+
+interface PickerResult {
+  action: string;
+  docs?: { id: string; name: string }[];
+}
+
+interface DocsView {
+  setMimeTypes(types: string): DocsView;
+  setIncludeFolders(include: boolean): DocsView;
+  setSelectFolderEnabled(enabled: boolean): DocsView;
+  setOwnedByMe(owned: boolean): DocsView;
+  setEnableDrives(enabled: boolean): DocsView;
+  setParent(id: string): DocsView;
+  setLabel(label: string): DocsView;
+  setMode(mode: string): DocsView;
+}
+
+interface PickerBuilder {
+  addView(view: unknown): PickerBuilder;
+  enableFeature(feature: string): PickerBuilder;
+  setOAuthToken(token: string): PickerBuilder;
+  setDeveloperKey(key: string): PickerBuilder;
+  setAppId(id: string): PickerBuilder;
+  setLocale(locale: string): PickerBuilder;
+  setTitle(title: string): PickerBuilder;
+  setCallback(callback: (result: PickerResult) => void): PickerBuilder;
+  build(): { setVisible(visible: boolean): void };
+}
+
+/** What the person picks in the Google Picker: a tree to open, or the folder to save a new one in. */
+export type DriveTarget = 'file' | 'folder';
 
 interface GoogleGlobal {
   accounts: {
@@ -46,19 +82,25 @@ interface GoogleGlobal {
       }): TokenClient;
     };
   };
+  picker?: {
+    DocsView: new (viewId?: string) => DocsView;
+    PickerBuilder: new () => PickerBuilder;
+  };
 }
 
 interface GoogleWindow {
   google?: GoogleGlobal;
+  gapi?: { load(name: string, callback: () => void): void };
 }
 
 /**
  * Opening and saving trees in Google Drive: the person signs in with Google in a pop-up, and the files are listed,
  * read and written through the Drive API, straight from the browser. Nothing goes through a server of Stemma's.
- * Only an OAuth client ID is needed (no API key): with the `drive.file` scope Drive lists just the files Stemma
- * saved there itself, so the app shows its own list instead of the Google Picker (which would need an API key).
- * The Google script is loaded only when a Drive item is about to be used, so the app does not talk to Google for
- * anyone who does not use Drive.
+ * With the `drive.file` scope the app sees only the files it saved itself and the ones the person picks in the Google
+ * Picker. The Picker (which needs an API key besides the client ID) opens any tree the person can see, shared ones
+ * too, and picks the folder a new tree is saved in. Without an API key the app lists just the trees it saved itself
+ * and saves new ones in the top folder. The Google scripts are loaded only when a Drive item is about to be used, so
+ * the app does not talk to Google for anyone who does not use Drive.
  */
 @Injectable({ providedIn: 'root' })
 export class GoogleDrive {
@@ -70,9 +112,60 @@ export class GoogleDrive {
     return !!GOOGLE_CONFIG.clientId;
   }
 
+  /** True when the Google Picker can be used (an API key is set), so trees can be picked anywhere in Drive. */
+  get picks(): boolean {
+    return this.configured && !!GOOGLE_CONFIG.apiKey;
+  }
+
   /** Loads the Google script ahead of a click, so the sign-in pop-up opens straight from it. */
   prepare(): void {
     if (this.configured) void this.load().catch(() => (this.ready = undefined));
+  }
+
+  /**
+   * Signs in if needed and shows the Google Picker: for a tree to open (in My Drive, shared with the person, or in a
+   * shared drive), or for the folder to save a new tree in. Picking grants the app access to just that file or folder.
+   */
+  async pick(target: DriveTarget, locale: string, title: string): Promise<DriveOutcome<DriveFile>> {
+    const auth = await this.authorize();
+    if (auth.status !== 'done') return auth;
+    let google: GoogleGlobal;
+    try {
+      google = await this.load();
+    } catch {
+      this.ready = undefined;
+      return { status: 'failed' };
+    }
+    const picker = google.picker;
+    if (!picker) return { status: 'failed' };
+    const builder = new picker.PickerBuilder()
+      .enableFeature('sdr')
+      .setOAuthToken(auth.value.token)
+      .setDeveloperKey(GOOGLE_CONFIG.apiKey)
+      .setAppId(GOOGLE_CONFIG.appId)
+      .setLocale(locale)
+      .setTitle(title);
+    if (target === 'file') {
+      builder
+        .addView(new picker.DocsView('all').setMimeTypes(XML_TYPES).setIncludeFolders(true).setOwnedByMe(true).setMode('list'))
+        .addView(new picker.DocsView('all').setMimeTypes(XML_TYPES).setOwnedByMe(false).setMode('list'))
+        .addView(new picker.DocsView('all').setMimeTypes(XML_TYPES).setEnableDrives(true).setIncludeFolders(true).setMode('list'));
+    } else {
+      builder
+        .addView(new picker.DocsView('folders').setMimeTypes(FOLDER_TYPE).setIncludeFolders(true).setSelectFolderEnabled(true).setParent('root'))
+        .addView(new picker.DocsView('folders').setMimeTypes(FOLDER_TYPE).setIncludeFolders(true).setSelectFolderEnabled(true).setOwnedByMe(false))
+        .addView(new picker.DocsView('folders').setMimeTypes(FOLDER_TYPE).setIncludeFolders(true).setSelectFolderEnabled(true).setEnableDrives(true));
+    }
+    const picked = await new Promise<PickerResult>((resolve) => {
+      builder
+        .setCallback((result) => {
+          if (result.action === 'picked' || result.action === 'cancel') resolve(result);
+        })
+        .build()
+        .setVisible(true);
+    });
+    const doc = picked.action === 'picked' ? picked.docs?.[0] : undefined;
+    return doc ? { status: 'done', value: { id: doc.id, name: doc.name } } : { status: 'declined' };
   }
 
   /** Signs in if needed and lists the trees Stemma may open in Drive (the XML files it saved there), newest first. */
@@ -85,6 +178,8 @@ export class GoogleDrive {
       fields: 'files(id,name,modifiedTime)',
       pageSize: '200',
       spaces: 'drive',
+      supportsAllDrives: 'true',
+      includeItemsFromAllDrives: 'true',
     });
     try {
       const response = await fetch(`${FILES}?${query}`, { headers: this.headers(auth.value.token) });
@@ -104,11 +199,11 @@ export class GoogleDrive {
     try {
       const headers = this.headers(auth.value.token);
       const id = encodeURIComponent(file.id);
-      const meta = await fetch(`${FILES}/${id}?fields=id,name,trashed`, { headers });
+      const meta = await fetch(`${FILES}/${id}?fields=id,name,trashed&supportsAllDrives=true`, { headers });
       if (!meta.ok) return this.failed(meta);
       const info = (await meta.json()) as DriveFile & { trashed?: boolean };
       if (info.trashed) return { status: 'missing' };
-      const response = await fetch(`${FILES}/${id}?alt=media`, { headers });
+      const response = await fetch(`${FILES}/${id}?alt=media&supportsAllDrives=true`, { headers });
       if (!response.ok) return this.failed(response);
       return { status: 'done', value: { file: { id: info.id, name: info.name }, text: await response.text() } };
     } catch {
@@ -121,7 +216,7 @@ export class GoogleDrive {
     const auth = await this.authorize();
     if (auth.status !== 'done') return auth;
     try {
-      const response = await fetch(`${UPLOAD}/${encodeURIComponent(file.id)}?uploadType=media&fields=id,name`, {
+      const response = await fetch(`${UPLOAD}/${encodeURIComponent(file.id)}?uploadType=media&fields=id,name&supportsAllDrives=true`, {
         method: 'PATCH',
         headers: { ...this.headers(auth.value.token), 'Content-Type': 'application/xml' },
         body: xml,
@@ -133,20 +228,20 @@ export class GoogleDrive {
     }
   }
 
-  /** Saves the tree as a new file in the top folder of the person's Drive. */
-  async create(name: string, xml: string): Promise<DriveOutcome<DriveFile>> {
+  /** Saves the tree as a new file in `folder` (picked in the Picker), or else in the top folder of the person's Drive. */
+  async create(name: string, xml: string, folder?: DriveFile): Promise<DriveOutcome<DriveFile>> {
     const auth = await this.authorize();
     if (auth.status !== 'done') return auth;
     const boundary = `stemma-${crypto.randomUUID()}`;
     const body = new Blob([
       `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n`,
-      JSON.stringify({ name, mimeType: 'application/xml' }),
+      JSON.stringify({ name, mimeType: 'application/xml', ...(folder ? { parents: [folder.id] } : {}) }),
       `\r\n--${boundary}\r\nContent-Type: application/xml\r\n\r\n`,
       xml,
       `\r\n--${boundary}--`,
     ]);
     try {
-      const response = await fetch(`${UPLOAD}?uploadType=multipart&fields=id,name`, {
+      const response = await fetch(`${UPLOAD}?uploadType=multipart&fields=id,name&supportsAllDrives=true`, {
         method: 'POST',
         headers: { ...this.headers(auth.value.token), 'Content-Type': `multipart/related; boundary=${boundary}` },
         body,
@@ -168,7 +263,7 @@ export class GoogleDrive {
     if (!this.token || this.token.expires <= Date.now()) return null;
     const headers = this.headers(this.token.value);
     const get = async (id: string) => {
-      const response = await fetch(`${FILES}/${encodeURIComponent(id)}?fields=id,name,parents,modifiedTime`, { headers });
+      const response = await fetch(`${FILES}/${encodeURIComponent(id)}?fields=id,name,parents,modifiedTime&supportsAllDrives=true`, { headers });
       if (!response.ok) return null;
       return (await response.json()) as { id: string; name: string; parents?: string[]; modifiedTime?: string };
     };
@@ -203,6 +298,7 @@ export class GoogleDrive {
   private failed(response: Response): DriveOutcome<never> {
     if (response.status === 401) this.token = undefined;
     if (response.status === 404) return { status: 'missing' };
+    if (response.status === 403) return { status: 'denied' };
     return { status: 'failed' };
   }
 
@@ -235,11 +331,25 @@ export class GoogleDrive {
   }
 
   private load(): Promise<GoogleGlobal> {
-    this.ready ??= script(GIS_SCRIPT).then(() => {
-      const google = (window as unknown as GoogleWindow).google;
-      if (!google?.accounts?.oauth2) throw new Error('Google Identity Services did not load.');
-      return google;
-    });
+    this.ready ??= Promise.all([script(GIS_SCRIPT), this.picks ? script(GAPI_SCRIPT) : Promise.resolve()]).then(
+      () =>
+        new Promise<GoogleGlobal>((resolve, reject) => {
+          const w = window as unknown as GoogleWindow;
+          if (!w.google?.accounts?.oauth2) {
+            reject(new Error('Google Identity Services did not load.'));
+            return;
+          }
+          if (!this.picks) {
+            resolve(w.google);
+            return;
+          }
+          if (!w.gapi) {
+            reject(new Error('The Google API script did not load.'));
+            return;
+          }
+          w.gapi.load('picker', () => (w.google ? resolve(w.google) : reject(new Error('Google Identity Services did not load.'))));
+        }),
+    );
     return this.ready;
   }
 }

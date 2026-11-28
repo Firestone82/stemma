@@ -2,7 +2,7 @@ import { ChangeDetectionStrategy, Component, inject, output } from '@angular/cor
 import { I18n } from '../../../i18n/i18n';
 import { MessageKey } from '../../../i18n/locales';
 
-const STEPS: readonly MessageKey[] = ['dialog.drive.step1', 'dialog.drive.step2', 'dialog.drive.step3'];
+const STEPS: readonly MessageKey[] = ['dialog.drive.step1', 'dialog.drive.step2', 'dialog.drive.step3', 'dialog.drive.step4'];
 
 /**
  * Shown by the Google Drive items while no Google Cloud project is set up (see google-config.ts): what Drive needs,
