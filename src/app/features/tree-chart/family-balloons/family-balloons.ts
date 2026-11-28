@@ -7,6 +7,8 @@ export interface FamilySlot {
   /** The balloon's id (see core/model/family-view). */
   id: string;
   kind: BalloonKind;
+  /** In the focused view, over an ancestor: a press swaps which line of ancestors goes on up. */
+  swap?: boolean;
   /** The place the layout gave it: a card's. */
   x: number;
   y: number;
@@ -40,6 +42,8 @@ export class FamilyBalloons {
   readonly labels = input.required<ReadonlyMap<string, string>>();
   /** The words under the names: "Show the family". */
   readonly hint = input.required<(families: number) => string>();
+  /** The words under the names of a balloon that swaps the line of ancestors: "⇄ Show this side". */
+  readonly swapHint = input('');
   readonly pick = output<string>();
 
   protected readonly shield = shieldPath(10, 12);

@@ -287,6 +287,16 @@ export const cs: Catalogue = {
   'familyView.balloon.parents': 'Rodiče osoby {name}: {families}. Vyberte a přidejte je do zobrazení.',
   'familyView.balloon.children': 'Děti osoby {name}: {families}. Vyberte a přidejte je do zobrazení.',
   'familyView.balloon.partner': 'Partner(ka) osoby {name}: {families}. Vyberte a přidejte je do zobrazení.',
+  'focusedView.button': 'Nejbližší rodina',
+  'focusedView.on': 'Zobrazena je jen rodina uprostřed a nejbližší příbuzní, vzdálené větve jsou sbalené. Vyberte a zobrazí se celý strom.',
+  'focusedView.off': 'Zobrazit jen rodinu uprostřed a nejbližší příbuzné, vzdálené větve sbalit.',
+  'focusedView.show': '+ Zobrazit',
+  'focusedView.swap': '⇄ Zobrazit tuto větev',
+  'focusedView.balloon.parents': 'Rodiče osoby {name}: {families}. Vyberte a zobrazí se.',
+  'focusedView.balloon.children': 'Děti osoby {name}: {families}. Vyberte a zobrazí se.',
+  'focusedView.balloon.partner': 'Partner(ka) osoby {name}: {families}. Vyberte a zobrazí se.',
+  'focusedView.balloon.swap': 'Rodiče osoby {name}: {families}. Vyberte a nahoru povede tato větev místo zobrazené.',
+  'focusedView.offChart': 'Sbaleno: graf ukazuje nejbližší rodinu.',
 
   // -- panel ------------------------------------------------------------------------------
   'panel.label': 'Podrobnosti',

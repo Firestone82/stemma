@@ -22,6 +22,8 @@ import { TextMeasurer } from '../core/services/text-measure';
 import { TreeStore } from '../core/store/tree-store';
 import { I18n } from '../i18n/i18n';
 import { FamilyView } from './family-view';
+import { FocusedView } from './focused-view';
+import { focusedScope } from '../core/model/focused-view';
 
 export interface CardLabel {
   given: string;
@@ -64,6 +66,7 @@ export class ChartModel {
   private readonly measure = inject(TextMeasurer);
   private readonly i18n = inject(I18n);
   private readonly familyView = inject(FamilyView);
+  private readonly focusedView = inject(FocusedView);
   private readonly checks = inject(DataChecks);
 
   readonly view = computed<ViewSettings>(() => this.store.doc().view, { equal: shallowEqual });
@@ -128,7 +131,7 @@ export class ChartModel {
    * person in the middle and their partner. Undefined when that is everyone.
    */
   private readonly scope = computed<Scope | undefined>(() => {
-    const family = this.familyScope();
+    const family = this.familyScope() ?? this.focusedScope();
     if (family) return family;
     // As the setting reads: a file's second cousins (branches 3) count as everyone.
     const { branches, inLawFamilies, siblingsOnly } = relativesSettings(relativesOf(this.view()));
@@ -189,6 +192,24 @@ export class ChartModel {
     return familyViewScope(this.store.doc(), this.store.index(), new Set(keys), (id) => keyOf.get(id) ?? '', this.focusId());
   });
 
+  /** The focused view is on (and no family view): far branches of the whole tree are folded into balloons. */
+  readonly focusedActive = computed(() => this.focusedView.on() && !this.familyKeys().length && !!this.focusId());
+
+  /** The part of the tree the focused view shows (see core/model/focused-view); undefined when it is off. */
+  private readonly focusedScope = computed<Scope | undefined>(() => {
+    if (!this.focusedActive()) return undefined;
+    const centerId = this.focusId()!;
+    return focusedScope(this.store.doc(), this.store.index(), {
+      centerId,
+      partnerId: this.focusPartnerId(),
+      through: this.focusedView.through(),
+      opened: this.focusedView.people(),
+    });
+  });
+
+  /** The view that folds the people it leaves off into balloons: the family view, or the focused view. */
+  private readonly balloonScope = computed(() => this.familyScope() ?? this.focusedScope());
+
   /**
    * In a family view of more than one family, the families a click on a line
    * takes back out (by the line's family id): of the families in view among
@@ -215,7 +236,7 @@ export class ChartModel {
 
   /** In the family view, the families left off that the people on the chart are joined to. */
   readonly balloons = computed<readonly FamilyBalloon[]>(() => {
-    const scope = this.familyScope();
+    const scope = this.balloonScope();
     if (!scope) return [];
     const keyOf = this.familyKeyOf();
     return familyBalloons(this.store.doc(), this.store.index(), scope.people, (id) => keyOf.get(id) ?? '');
@@ -257,7 +278,7 @@ export class ChartModel {
   /** What the chart lays out: the people it shows and, in a family view, a stand-in for each family left off. */
   private readonly laidOut = computed(() => {
     const doc = this.scope()?.doc ?? this.store.doc();
-    return this.familyScope() ? withPortals(doc, this.store.index(), this.balloons()) : doc;
+    return this.balloonScope() ? withPortals(doc, this.store.index(), this.balloons()) : doc;
   });
 
   private readonly structure = computed(() => structureOf(this.laidOut(), this.store.loadId()), {

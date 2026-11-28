@@ -55,8 +55,15 @@
       <g stemmaFamilyLines [layout]="shown()" [cuts]="cutTitles()" [hover]="hoverId()" (takeOut)="onCut($event)"></g>
       <g stemmaUnions [layout]="shown()" [cuts]="cutTitles()" (pick)="onUnionPick($event)" (takeOut)="onCut($event)"></g>
       <g stemmaPlaceholders [layout]="shown()" (pick)="onPlaceholderPick($event)"></g>
-      @if (familyActive()) {
-        <g stemmaFamilyBalloons [slots]="familySlots()" [labels]="balloonLabels()" [hint]="showFamilies" (pick)="onBalloonPick($event)"></g>
+      @if (balloonsShown()) {
+        <g
+          stemmaFamilyBalloons
+          [slots]="familySlots()"
+          [labels]="balloonLabels()"
+          [hint]="showFamilies"
+          [swapHint]="swapHint()"
+          (pick)="onBalloonPick($event)"
+        ></g>
       }
 
       <g class="cards">
@@ -130,7 +137,10 @@
     @if (familyActive()) {
       <stemma-family-bar />
     } @else {
-      <stemma-relatives-filter />
+      @if (!model.focusedActive()) {
+        <stemma-relatives-filter />
+      }
+      <stemma-focused-toggle />
     }
   </div>
 }

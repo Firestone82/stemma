@@ -286,6 +286,16 @@ export const en = {
   'familyView.balloon.parents': 'Parents of {name}: {families}. Select to add them to the view.',
   'familyView.balloon.children': 'Children of {name}: {families}. Select to add them to the view.',
   'familyView.balloon.partner': 'Partner of {name}: {families}. Select to add them to the view.',
+  'focusedView.button': 'Nearest family',
+  'focusedView.on': 'Only the family in the middle and its nearest relatives are shown; far branches are folded away. Select to show the whole tree.',
+  'focusedView.off': 'Show only the family in the middle and its nearest relatives, with far branches folded away.',
+  'focusedView.show': '+ Show',
+  'focusedView.swap': '⇄ Show this side',
+  'focusedView.balloon.parents': 'Parents of {name}: {families}. Select to show them.',
+  'focusedView.balloon.children': 'Children of {name}: {families}. Select to show them.',
+  'focusedView.balloon.partner': 'Partner of {name}: {families}. Select to show them.',
+  'focusedView.balloon.swap': 'Parents of {name}: {families}. Select to follow this line up instead of the one shown.',
+  'focusedView.offChart': 'Folded away: the chart shows the nearest family.',
 
   // -- panel ------------------------------------------------------------------------------
   'panel.label': 'Details',

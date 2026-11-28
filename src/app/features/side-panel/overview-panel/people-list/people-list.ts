@@ -90,7 +90,9 @@ export class PeopleList {
   protected readonly offChartHint = computed(() =>
     this.model.familyKeys().length
       ? this.t('familyView.offChart')
-      : this.t('relatives.hiddenNote', { level: this.t(`relatives.${relativesOf(this.model.view())}`) }),
+      : this.model.focusedActive()
+        ? this.t('focusedView.offChart')
+        : this.t('relatives.hiddenNote', { level: this.t(`relatives.${relativesOf(this.model.view())}`) }),
   );
 
   /** Whether the button offers to open every family (some are closed) or to close them. */

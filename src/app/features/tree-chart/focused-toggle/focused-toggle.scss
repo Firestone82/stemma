@@ -1,0 +1,49 @@
+:host {
+  display: block;
+}
+
+.pill {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  height: 42px;
+  padding: 0 13px;
+  border: 1px solid var(--rule);
+  border-radius: 999px;
+  background: var(--sheet);
+  box-shadow: var(--shadow-1);
+  color: var(--ink-2);
+  font-size: var(--text-sm);
+  white-space: nowrap;
+  cursor: pointer;
+
+  &:hover {
+    color: var(--ink);
+  }
+
+  &[aria-pressed='true'] {
+    border-color: var(--rule-2);
+    color: var(--ink);
+
+    .label {
+      font-weight: 500;
+    }
+  }
+}
+
+/* "23 of 590": how many are on the chart. */
+.shown {
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--sheet-2);
+  color: var(--ink-2);
+  font-size: var(--text-xs);
+  font-variant-numeric: tabular-nums;
+}
+
+/* On a phone the button keeps its icon and the count; its label says the rest. */
+@media (max-width: 520px) {
+  .label {
+    display: none;
+  }
+}
