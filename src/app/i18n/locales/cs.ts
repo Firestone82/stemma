@@ -764,6 +764,9 @@ export const cs: Catalogue = {
   'print.middle': 'Uprostřed',
   'print.person': 'Osoba',
   'print.with': 'Spolu s',
+  'print.wholeFamily': 'Celá rodina',
+  'print.wholeFamilyName': 'celá rodina',
+  'print.saveHintWhole': 'Ctrl+S uloží nastavení pro celou rodinu i do souboru; když znovu vyberete celou rodinu, vrátí se.',
   'print.nobody': 'Nikdo',
   'print.swap': 'Prohodit je',
   'print.saveFor': 'Uložit pro: {name}',
@@ -831,6 +834,8 @@ export const cs: Catalogue = {
   'print.amidPartnersHint':
     'Kdo měl víc partnerů, stojí mezi nimi a každý pár je vedle sebe. Když je volba vypnutá, stojí partneři rodiny, která visí po straně čáry, všichni na jedné straně a čára ke vzdálenějšímu vede přes kartu mezi nimi.',
   'print.reach': 'Rozsah',
+  'print.wholeFamilyHint':
+    'Uprostřed nikdo není, takže se vytisknou všichni ze stromu (kromě skrytých z tisku). Chcete-li vytisknout jen část rodiny, vyberte osobu doprostřed.',
   'print.up': 'Generace nahoru',
   'print.down': 'Generace dolů',
   'print.fewerUp': 'Méně generací nahoru',

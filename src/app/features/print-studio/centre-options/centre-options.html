@@ -20,7 +20,7 @@
       inputId="print-partner"
       [options]="partners()"
       [value]="model.partnerChoice()"
-      [disabled]="!model.partners().length"
+      [disabled]="model.wholeFamily() || !model.partners().length"
       (valueChange)="setPartner($event)"
     />
   </div>
@@ -43,8 +43,8 @@
       {{ t('print.saveForget') }}
     </button>
   } @else {
-    <span id="print-saved-note" class="note hint">{{ t('print.saveHint') }}</span>
-    <button type="button" class="btn small" [disabled]="!model.middleId()" [title]="t('print.saveShortcut')" (click)="model.saveForMiddle()">
+    <span id="print-saved-note" class="note hint">{{ t(model.wholeFamily() ? 'print.saveHintWhole' : 'print.saveHint') }}</span>
+    <button type="button" class="btn small" [disabled]="!model.canKeep()" [title]="t('print.saveShortcut')" (click)="model.saveForMiddle()">
       <stemma-icon name="check" [size]="15" />
       {{ t('print.saveFor', { name: savedName() }) }}
     </button>

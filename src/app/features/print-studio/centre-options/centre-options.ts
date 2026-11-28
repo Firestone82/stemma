@@ -30,7 +30,11 @@ export class CentreOptions {
   protected readonly model = inject(PrintModel);
   protected readonly t = inject(I18n).t;
 
-  protected readonly people = computed<SearchOption[]>(() => this.model.people().map((p) => ({ id: p.id, label: p.name, detail: p.dates })));
+  /** Everyone, after the whole family (nobody in the middle). */
+  protected readonly people = computed<SearchOption[]>(() => [
+    { id: '', label: this.t('print.wholeFamily') },
+    ...this.model.people().map((p) => ({ id: p.id, label: p.name, detail: p.dates })),
+  ]);
 
   protected readonly partners = computed<SearchOption[]>(() => [
     ...this.model.partners().map((p) => ({ id: p.id, label: p.label })),

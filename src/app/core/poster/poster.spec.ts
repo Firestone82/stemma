@@ -695,6 +695,22 @@ describe('the printed page', () => {
     expect(bare.cardMm.w).toBeGreaterThan(render(doc).cardMm.w);
   });
 
+  it('prints the whole family with nobody in the middle, whatever the reach, but not those hidden or left out', () => {
+    const doc = sampleDocument();
+    doc.people.find((p) => p.id === 'I29')!.hiddenFromPrint = true;
+    const p = render(doc, { centerId: null, ancestors: 1, descendants: 0, branches: 0 }, { omit: new Set(['I28']) });
+    expect(p.centerId).toBeUndefined();
+    expect(p.partnerId).toBeUndefined();
+    expect(p.anchorId).toBeTruthy();
+    expect(cardsIn(p.svg).sort()).toEqual(
+      doc.people
+        .map((x) => x.id)
+        .filter((id) => id !== 'I28' && id !== 'I29')
+        .sort(),
+    );
+    expect(p.total).toBe(29);
+  });
+
   it('prints part of the tree: generations, side branches and people left out', () => {
     const doc = sampleDocument();
     expect(render(doc, { ancestors: 1, descendants: 0, branches: 0 }).people).toBeLessThan(10);

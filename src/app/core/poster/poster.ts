@@ -7,6 +7,7 @@ import { CardDesign, CardParts, GHOST_DASH, LARGE_TEXT, UNKNOWN_DASH, accentOf, 
 import { LegendEntry, Tincture, assignColors } from '../colors/tinctures';
 import { chartLanguage, surnameLinesIn } from '../lang/language';
 import { Layouter } from '../layout/engine';
+import { chartAnchor } from '../layout/structure';
 import { Fitted, Room, fitLayoutSteps, fitShapesSteps, place } from '../layout/fit';
 import { Steps, finish } from '../layout/steps';
 import { RELATION_DASH, roundedPath, sharedPaths } from '../layout/lines';
@@ -84,8 +85,11 @@ export interface PosterResult {
   people: number;
   total: number;
   generations: number;
+  /** The person in the middle and their partner; neither for the whole family (PrintSettings.centerId null). */
   centerId?: string;
   partnerId?: string;
+  /** Who the families are laid out around: the person in the middle, or the one the shape of the tree gives for the whole family. */
+  anchorId?: string;
   /**
    * Where the families' names are on the page, as shares of its width and height; `free` when placed by
    * hand or held at an anchor (PrintSettings.legendBox, legendAnchor) and not where the page puts them itself.
@@ -262,8 +266,13 @@ export function renderPoster(input: PosterInput): PosterResult {
   return finish(posterSteps(input));
 }
 
-/** What part of the tree a print with these settings shows, around `centerId` (and `partnerId`): see scopeDocument. */
+/**
+ * What part of the tree a print with these settings shows, around `centerId` (and `partnerId`): see scopeDocument.
+ * With nobody in the middle (PrintSettings.centerId null) the whole family, however far the settings reach;
+ * people hidden from prints and those left out stay off all the same.
+ */
 export function scopeOptions(settings: PrintSettings, centerId: string, partnerId: string | undefined, omit?: ReadonlySet<string>): ScopeOptions {
+  if (settings.centerId === null) return { centerId: '', ancestors: 'all', descendants: 'all', branches: 'all', showHidden: settings.showHidden, omit };
   return {
     centerId,
     partnerId,
@@ -290,13 +299,20 @@ export function* posterSteps(input: PosterInput): Steps<PosterResult> {
   const language = chartLanguage(input.language ?? input.doc.view.language);
   const now = input.now ?? new Date();
   const fullIndex = new TreeIndex(input.doc);
-  const centerId = pickCenter(input.doc, fullIndex, settings);
+  // Nobody in the middle (centerId null): the whole family, with no couple framed or lines coloured.
+  const whole = settings.centerId === null && input.doc.people.length > 0;
+  const centerId = whole ? undefined : pickCenter(input.doc, fullIndex, settings);
   const partnerId = centerId ? pickPartner(fullIndex, centerId, settings) : undefined;
 
-  const doc = centerId
-    ? scopeDocument(input.doc, fullIndex, scopeOptions(settings, centerId, partnerId, input.omit)).doc
-    : { ...input.doc, people: [], families: [] };
+  const doc =
+    centerId || whole
+      ? scopeDocument(input.doc, fullIndex, scopeOptions(settings, centerId ?? '', partnerId, input.omit)).doc
+      : { ...input.doc, people: [], families: [] };
   const index = new TreeIndex(doc);
+  // Who the families are laid out around: the couple in the middle, or, for the whole family, the person the
+  // shape of the tree gives (as on the chart), so that its longest line runs down the middle.
+  const anchorId = centerId ?? chartAnchor(index);
+  const anchorPartner = centerId ? partnerId : anchorId && currentPartnerOf(index, anchorId);
   const measure = (t: string, f: FontSpec) => input.measure(t, cssFont(f)) + (f.letterSpacing ?? 0) * f.size * Math.max(0, Array.from(t).length - 1);
   const fit = (t: string, f: FontSpec, max: number) => fitText(t, f, max, measure);
 
@@ -368,7 +384,7 @@ export function* posterSteps(input: PosterInput): Steps<PosterResult> {
     // Room round the couple in the middle for the frame round them.
     halo: { ids: [centerId, partnerId].filter((id): id is string => !!id), pad: COUPLE_PAD + 2 },
   };
-  const layouter = layouterFor(index, options, centerId, partnerId);
+  const layouter = layouterFor(index, options, anchorId, anchorPartner);
   // Gaps widened by hand (PrintSettings.gaps): the arrangement found for the page stays, with those gaps wider,
   // and is then fitted to the room again (smaller, for the room the gaps take).
   const gaps = settings.gaps && Object.keys(settings.gaps).length ? settings.gaps : undefined;
@@ -934,6 +950,7 @@ export function* posterSteps(input: PosterInput): Steps<PosterResult> {
     generations,
     centerId,
     partnerId,
+    anchorId,
     text: allText,
     legend: legendRect && {
       x: legendRect.x / W,
@@ -1365,8 +1382,14 @@ function pickPartner(index: TreeIndex, centerId: string, settings: PrintSettings
   if (settings.partnerId === null) return undefined;
   const fams = index.partnerFamilies(centerId).filter((f) => f.partners.length === 2);
   if (settings.partnerId && fams.some((f) => f.partners.includes(settings.partnerId!))) return settings.partnerId;
+  return currentPartnerOf(index, centerId);
+}
+
+/** The partner someone is with now: the last whose marriage did not end, else the last. */
+function currentPartnerOf(index: TreeIndex, personId: string): string | undefined {
+  const fams = index.partnerFamilies(personId).filter((f) => f.partners.length === 2);
   const current = [...fams].reverse().find((f) => !isBrokenUp(relationshipStatus(f))) ?? fams[fams.length - 1];
-  return current?.partners.find((p) => p !== centerId);
+  return current?.partners.find((p) => p !== personId);
 }
 
 function yearRange(doc: TreeDocument): { from: number; to: number } | undefined {

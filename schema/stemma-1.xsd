@@ -331,6 +331,8 @@
     <xs:attribute name="center" type="t:Id"/>
     <xs:attribute name="partner" type="t:Id"/>
     <xs:attribute name="withPartner" type="xs:boolean" default="true"/>
+    <!-- 1.9: nobody in the middle: the whole family on the page (center and partner are then left out). -->
+    <xs:attribute name="wholeFamily" type="xs:boolean" default="false"/>
     <!-- 1.9: families as close together as they go, with the least room between cards and lines. -->
     <xs:attribute name="tight" type="xs:boolean" default="false"/>
     <!-- 1.9: the gap between cards side by side, and how far lines keep from cards, in hundredths of a card's width. -->

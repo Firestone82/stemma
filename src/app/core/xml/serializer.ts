@@ -38,7 +38,7 @@ export function serializeTree(doc: TreeDocument, options: SerializeOptions = {})
   if (doc.print) writePrint(w, doc.print);
   // Later in 1.9: print settings kept for particular people (whoever is still in the tree).
   const ids = new Set(doc.people.map((p) => p.id));
-  const saved = (doc.savedPrints ?? []).filter((s) => s.centerId && ids.has(s.centerId));
+  const saved = (doc.savedPrints ?? []).filter((s) => s.centerId === null || (!!s.centerId && ids.has(s.centerId)));
   if (saved.length) {
     w.open('savedPrints', []);
     for (const s of saved) writePrint(w, s);
@@ -197,7 +197,8 @@ function writePrint(w: XmlWriter, p: PrintSettings): void {
   const attrs: Attrs = [
     ['paper', p.paper],
     ['orientation', p.orientation],
-    ['center', p.centerId],
+    ['center', p.centerId ?? undefined],
+    ['wholeFamily', p.centerId === null ? true : undefined],
     ['partner', p.partnerId ?? undefined],
     ['withPartner', p.partnerId === null ? false : undefined],
     ['ancestors', reach(p.ancestors)],

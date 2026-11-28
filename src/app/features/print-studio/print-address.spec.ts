@@ -11,6 +11,13 @@ describe("the print studio's address", () => {
     expect(hash).toBe('#/print?person=I3&paper=A1&ancestors=2&showFrame=false');
   });
 
+  it('says the whole family with an empty person, and reads it back as nobody in the middle', () => {
+    const hash = printAddress(settings({ centerId: null, paper: 'A1' }), DEFAULT_PRINT, 'I11');
+    expect(hash).toBe('#/print?person=&paper=A1');
+    expect(readPrintAddress(hash, DEFAULT_PRINT)).toEqual({ centerId: null, paper: 'A1' });
+    expect(addressPatch(settings({ centerId: 'I3' }), { centerId: null }, DEFAULT_PRINT)).toEqual({ centerId: null });
+  });
+
   it('leaves out cards moved and lines led by hand', () => {
     const hash = printAddress(settings({ moves: { I3: { x: 10, y: 0 } }, lineBends: { 'F1|I3': [{ x: 1, y: 2 }] } }), DEFAULT_PRINT);
     expect(hash).toBe('#/print');

@@ -155,7 +155,8 @@ export function scopeDocument(doc: TreeDocument, index: TreeIndex, options: Scop
 
   return {
     doc: {
-      meta: { ...doc.meta, homePersonId: options.centerId },
+      // Nobody in the middle (the whole family): the tree's own home person.
+      meta: options.centerId ? { ...doc.meta, homePersonId: options.centerId } : doc.meta,
       view: doc.view,
       people: included.size === doc.people.length ? doc.people : doc.people.filter((p) => included.has(p.id)),
       families,
