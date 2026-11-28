@@ -335,6 +335,11 @@ export interface PrintSettings extends CardSettings {
   /** Where the names stand in a box bigger than they need (`legendBox`): in a corner of it, along a side, in the middle (when not set). */
   legendAlign?: Anchor;
   /**
+   * On a page with a frame, names in a corner keep a little in from the margin, clear of the frame's flourish
+   * there. Off (the usual), they stand on the margin itself, as the title does at its anchor.
+   */
+  legendFrameClear: boolean;
+  /**
    * How far the names held at the top of the page (or at its foot) keep from the title when the two would meet
    * there, in centimetres on paper: the names then stand under the title (or over it). LEGEND_GAP_CM when not set.
    */
@@ -498,6 +503,7 @@ export const DEFAULT_PRINT: PrintSettings = {
   showLegend: true,
   legendHeading: true,
   legendBlocks: false,
+  legendFrameClear: false,
   settingsPage: true,
   showFrame: true,
   showDecorations: false,

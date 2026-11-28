@@ -944,7 +944,7 @@ export function* posterSteps(input: PosterInput): Steps<PosterResult> {
     },
     title: titleRect && paper ? { x: titleRect.x / W, y: titleRect.y / H, w: titleRect.w / W, h: titleRect.h / H, free: titleFree } : undefined,
     inner: { x: margin / W, y: margin / H, w: 1 - (2 * margin) / W, h: 1 - (2 * margin) / H },
-    cornerClear: settings.showFrame ? { x: heritage.cornerClear(ctx) / W, y: heritage.cornerClear(ctx) / H } : { x: 0, y: 0 },
+    cornerClear: settings.showFrame && settings.legendFrameClear ? { x: heritage.cornerClear(ctx) / W, y: heritage.cornerClear(ctx) / H } : { x: 0, y: 0 },
     shown: doc.people.map((p) => p.id),
     cardUnits: { w: design.width, h: design.height },
     gaps: { partner: options.partnerGap, sibling: options.siblingGap, family: options.familyGap, stack: options.stackGap },
@@ -1207,11 +1207,12 @@ function namesColumns(ctx: PosterContext, chart: Rect): number[] {
 
 /**
  * A box so big at an anchor of the page inside its margin (`chart`): in a corner, in the middle of a side, in the
- * middle. In a corner it keeps clear of the frame's flourish there, where the page has a frame.
+ * middle. It stands on the margin as the title does at its anchor; in a corner it keeps clear of the frame's
+ * flourish there only when asked (PrintSettings.legendFrameClear) and the page has a frame.
  */
 function placeAt(ctx: PosterContext, chart: Rect, at: Anchor, w: number, h: number): Rect {
   const to = anchorShares(at);
-  const clear = ctx.settings.showFrame && to.x !== 0.5 && to.y !== 0.5 ? heritage.cornerClear(ctx) : 0;
+  const clear = ctx.settings.showFrame && ctx.settings.legendFrameClear && to.x !== 0.5 && to.y !== 0.5 ? heritage.cornerClear(ctx) : 0;
   return { x: chart.x + clear + to.x * (chart.w - clear * 2 - w), y: chart.y + clear + to.y * (chart.h - clear * 2 - h), w, h };
 }
 

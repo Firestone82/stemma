@@ -892,6 +892,7 @@ export const en = {
   'print.sp.namesSec': 'Family names',
   'print.sp.heading': 'Heading',
   'print.sp.blocks': 'Keep a place of their own',
+  'print.sp.frameClear': "Clear of the frame's corners",
   'print.sp.size.names': 'Line height',
   'print.sp.hand': 'Done by hand',
   'print.sp.moved': 'Cards moved',
@@ -918,6 +919,7 @@ export const en = {
     'In hundredths of a card\u2019s width. Families keep 2.5× the gap between cards; partners as much, never less than their marker needs. The space round lines is also kept by lines led again after moving a card.',
   'print.why.noTitle': 'Turned off: switch on \u201cTitle\u201d under \u201cOn the cards\u201d to set it.',
   'print.why.noLegend': 'Turned off: switch on \u201cFamily names\u201d under \u201cOn the cards\u201d to set them.',
+  'print.why.noFrame': 'Only with \u201cFrame\u201d switched on under \u201cOn the cards\u201d.',
   'print.why.fitPaper': 'Only on a sheet of paper: a page sized to the tree places this by itself.',
   'print.why.fitBox': 'Only for a box made bigger by hand and held at a place on the page.',
   'print.why.noHeading': 'Switch on the heading over the names first.',
@@ -943,6 +945,9 @@ export const en = {
   'print.legendBlocks': 'Names keep a place of their own',
   'print.legendBlocksHint':
     'Switched on, no card may stand where the names are. Switched off (the usual), cards use the whole page and the names go where no card is; only where there is no such place is room kept for them.',
+  'print.legendFrameClear': "Keep clear of the frame's corners",
+  'print.legendFrameClearHint':
+    "Switched on, names in a corner stand a little in from the margin, clear of the frame's flourish. Switched off (the usual), they stand on the margin, as the title does.",
   'print.namesFitBox': 'Fit the box to the names',
   'anchor.topLeft': 'Top left',
   'anchor.top': 'Top middle',

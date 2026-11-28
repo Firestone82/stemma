@@ -50,6 +50,7 @@ const IN_ADDRESS: { readonly [K in keyof PrintSettings]-?: boolean } = {
   legendHeadAlign: true,
   legendHeadWidth: true,
   legendBlocks: true,
+  legendFrameClear: true,
   settingsPage: true,
   layoutChoice: true,
   showFrame: true,

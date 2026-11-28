@@ -178,6 +178,7 @@ const KNOWN = {
       'legendHeadAlign',
       'legendHeadWidth',
       'legendBlocks',
+      'legendFrameClear',
       'settingsPage',
       'layoutChoice',
       'amidPartners',
@@ -454,6 +455,7 @@ class Reader {
     const headWidth = Number(el.getAttribute('legendHeadWidth'));
     if (el.hasAttribute('legendHeadWidth') && Number.isFinite(headWidth) && headWidth > 0) print.legendHeadWidth = Math.min(LEGEND_GAP_MAX * 5, headWidth);
     print.legendBlocks = boolAttr(el, 'legendBlocks', DEFAULT_PRINT.legendBlocks);
+    print.legendFrameClear = boolAttr(el, 'legendFrameClear', DEFAULT_PRINT.legendFrameClear);
     print.settingsPage = boolAttr(el, 'settingsPage', DEFAULT_PRINT.settingsPage);
     const choice = Number(el.getAttribute('layoutChoice'));
     if (el.hasAttribute('layoutChoice') && Number.isInteger(choice) && choice > 0 && choice < 20) print.layoutChoice = choice;

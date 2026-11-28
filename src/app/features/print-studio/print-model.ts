@@ -821,6 +821,7 @@ export class PrintModel {
             ...(s.legendHeading ? [row('print.sp.headAlign', t(`print.headAlign.${s.legendHeadAlign ?? 'center'}` as MessageKey))] : []),
             ...(s.legendHeading ? [row('print.sp.headWidth', s.legendHeadWidth ? `${s.legendHeadWidth} cm` : t('print.sizeAuto'))] : []),
             row('print.sp.blocks', on(s.legendBlocks)),
+            ...(s.showFrame ? [row('print.sp.frameClear', on(s.legendFrameClear))] : []),
             row('print.sp.size.names', size(s.legendSize, p.lettering.autoLegendCm)),
             row('print.sp.position', at(boxes?.legend)),
           ],
