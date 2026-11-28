@@ -1,0 +1,105 @@
+@let p = plan();
+<div class="dialog-body">
+  <h2>{{ t('part.merge.title') }}</h2>
+  <p>{{ source() }}</p>
+  @if (p.unchanged) {
+    <p class="summary">{{ t('part.merge.nothing') }}</p>
+  } @else {
+    <p class="summary">{{ summary() }}</p>
+  }
+
+  @if (doubtful().length) {
+    <section>
+      <h3>{{ t('part.merge.who') }}</h3>
+      <p class="hint">{{ t('part.merge.whoHint') }}</p>
+      <ul class="rows">
+        @for (n of doubtful(); track n.person.id) {
+          <li class="who">
+            <span class="person">{{ label(n.person) }}</span>
+            <select class="select" [attr.aria-label]="t('part.merge.whoIs', { name: label(n.person) })" (change)="setTarget(n, $event)">
+              <option value="" [selected]="!n.target">{{ t('part.merge.asNew') }}</option>
+              @for (id of options(n); track id) {
+                <option [value]="id" [selected]="id === n.target">{{ t('part.merge.sameAs', { name: localLabel(id) }) }}</option>
+              }
+              <option [value]="someoneElse">{{ t('part.merge.someoneElse') }}</option>
+            </select>
+            @if (n.auto) {
+              <span class="hint">{{ t('part.merge.autoMatched') }}</span>
+            }
+            @if (picking() === n.person.id) {
+              <stemma-person-picker [inputId]="'part-pick-' + n.person.id" [exclude]="excludeFor(n)" (selectedChange)="picked(n, $event)" />
+            }
+          </li>
+        }
+      </ul>
+    </section>
+  }
+
+  @if (plainNew().length) {
+    <details>
+      <summary>{{ t('part.merge.newPeople', { count: plainNew().length }) }}</summary>
+      <ul class="rows">
+        @for (n of plainNew(); track n.person.id) {
+          <li class="who">
+            <span class="person">{{ label(n.person) }}</span>
+            @if (picking() === n.person.id) {
+              <stemma-person-picker [inputId]="'part-pick-' + n.person.id" [exclude]="excludeFor(n)" (selectedChange)="picked(n, $event)" />
+            } @else {
+              <button type="button" class="link-btn" (click)="picking.set(n.person.id)">{{ t('part.merge.someoneElse') }}</button>
+            }
+          </li>
+        }
+      </ul>
+    </details>
+  }
+
+  @if (groups().length) {
+    <section>
+      <h3>{{ t('part.merge.conflicts') }}</h3>
+      <p class="hint">{{ t('part.merge.conflictsHint') }}</p>
+      @for (g of groups(); track g.key) {
+        <fieldset class="group">
+          <legend>{{ g.title }}</legend>
+          @for (c of g.conflicts; track c.key) {
+            <div class="conflict" role="radiogroup" [attr.aria-label]="fieldLabel(c)">
+              <span class="field-name">{{ fieldLabel(c) }}</span>
+              @for (s of sides; track s) {
+                <label class="side" [class.on]="chosen(c) === s">
+                  <input type="radio" [name]="c.key" [checked]="chosen(c) === s" (change)="setSide(c, s)" />
+                  <span class="where">{{ s === 'local' ? t('part.merge.inTree') : t('part.merge.inFile') }}</span>
+                  @if (photo(c, s); as src) {
+                    <img class="photo" [src]="src" alt="" />
+                  }
+                  <span class="value">{{ value(c, s) }}</span>
+                </label>
+              }
+            </div>
+          }
+        </fieldset>
+      }
+    </section>
+  }
+
+  @if (p.removals.length) {
+    <section>
+      <h3>{{ t('part.merge.removed') }}</h3>
+      <p class="hint">{{ t('part.merge.removedHint') }}</p>
+      <ul class="rows">
+        @for (r of p.removals; track r.id) {
+          <li>
+            <label class="check">
+              <input type="checkbox" [checked]="removing(r.id)" (change)="toggleRemove(r.id)" />
+              {{ t('part.merge.removeToo', { name: label(r.person) }) }}
+            </label>
+          </li>
+        }
+      </ul>
+    </section>
+  }
+</div>
+<div class="dialog-actions">
+  <button type="button" class="btn" (click)="done.emit()">{{ t('common.cancel') }}</button>
+  <button type="button" class="btn primary" [disabled]="p.unchanged" (click)="merge()">
+    <stemma-icon name="check" [size]="16" />{{ t('part.merge.merge') }}
+  </button>
+</div>

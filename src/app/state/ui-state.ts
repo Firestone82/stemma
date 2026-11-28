@@ -1,6 +1,7 @@
 import { Injectable, computed, inject, signal } from '@angular/core';
 import { Notice } from '../core/model/notice';
 import { TreeStore } from '../core/store/tree-store';
+import { TreeDocument } from '../core/model/types';
 
 export type Relation = 'parent' | 'partner' | 'child' | 'sibling';
 
@@ -19,6 +20,8 @@ export type DialogRequest =
   | { kind: 'xml'; xml: string; filename: string }
   | { kind: 'about' }
   | { kind: 'family-export' }
+  | { kind: 'part-export' }
+  | { kind: 'part-merge'; part: TreeDocument; name: string }
   | { kind: 'unsaved'; proceed: () => unknown };
 
 export type MenuName = 'file' | 'appearance' | 'relatives';

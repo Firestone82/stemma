@@ -2,9 +2,10 @@ import { ChangeDetectionStrategy, Component, computed, inject } from '@angular/c
 import { I18n } from '../../../i18n/i18n';
 import { Icon } from '../../../shared/icon/icon';
 import { DocumentActions } from '../../../state/document-actions';
+import { PartActions } from '../../../state/part-actions';
 import { UiState } from '../../../state/ui-state';
 
-/** The File button and its menu: new, close, open, save, export, print, the example family, the file format. */
+/** The File button and its menu: new, close, open, save, export, parts of the tree to fill in elsewhere, print, the example family, the file format. */
 @Component({
   selector: 'stemma-file-menu',
   imports: [Icon],
@@ -16,6 +17,7 @@ import { UiState } from '../../../state/ui-state';
 export class FileMenu {
   protected readonly ui = inject(UiState);
   protected readonly documents = inject(DocumentActions);
+  protected readonly parts = inject(PartActions);
   protected readonly t = inject(I18n).t;
 
   protected readonly open = computed(() => this.ui.menu() === 'file');

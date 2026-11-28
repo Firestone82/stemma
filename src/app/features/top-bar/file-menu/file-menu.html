@@ -26,6 +26,9 @@
       <stemma-icon name="tree" />{{ t('file.familyDocument') }}
     </button>
     <div class="menu-sep" role="separator"></div>
+    <button type="button" class="menu-item" role="menuitem" (click)="parts.exportPart()"><stemma-icon name="people" />{{ t('file.exportPart') }}</button>
+    <button type="button" class="menu-item" role="menuitem" (click)="parts.importPart()"><stemma-icon name="link" />{{ t('file.mergePart') }}</button>
+    <div class="menu-sep" role="separator"></div>
     <button type="button" class="menu-item" role="menuitem" (click)="documents.openPrint()">
       <stemma-icon name="printer" />{{ t('file.print') }}<span class="shortcut">Ctrl P</span>
     </button>
