@@ -6,6 +6,11 @@
 <div class="actions">
   <button type="button" class="btn primary" (click)="addFirst()"><stemma-icon name="plus" [size]="16" />{{ t('empty.addFirst') }}</button>
   <button type="button" class="btn" (click)="documents.openFile()"><stemma-icon name="folder" [size]="16" />{{ t('empty.open') }}</button>
+  @if (documents.offersDrive()) {
+    <button type="button" class="btn" (pointerenter)="documents.prepareDrive()" (focus)="documents.prepareDrive()" (click)="documents.openFromDrive()">
+      <stemma-icon name="cloud" [size]="16" />{{ t('empty.openDrive') }}
+    </button>
+  }
 </div>
 <button type="button" class="link-btn" (click)="documents.loadSample()">{{ t('empty.sample') }}</button>
 @if (recent().length) {
@@ -14,11 +19,11 @@
     <ul>
       @for (entry of recent(); track entry.key) {
         <li>
-          <button type="button" class="open" (click)="documents.openRecent(entry)">
-            <stemma-icon name="folder" [size]="16" />
+          <button type="button" class="open" (pointerenter)="entry.kind === 'drive' && documents.prepareDrive()" (click)="documents.openRecent(entry)">
+            <stemma-icon [name]="entry.kind === 'drive' ? 'cloud' : 'folder'" [size]="16" />
             <span class="names">
               <span class="title">{{ entry.title || entry.name }}</span>
-              <span class="meta">{{ entry.name }} · {{ when(entry.at) }}</span>
+              <span class="meta">{{ entry.kind === 'drive' ? t('recent.inDrive', { name: entry.name }) : entry.name }} · {{ when(entry.at) }}</span>
             </span>
           </button>
           <button

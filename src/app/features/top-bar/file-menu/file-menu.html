@@ -1,4 +1,4 @@
-<button type="button" class="btn" (click)="ui.toggleMenu('file')" aria-haspopup="menu" [attr.aria-expanded]="open()">
+<button type="button" class="btn" (click)="toggle()" aria-haspopup="menu" [attr.aria-expanded]="open()">
   {{ t('file.menu') }} <stemma-icon name="chevronDown" [size]="14" />
 </button>
 @if (open()) {
@@ -18,6 +18,15 @@
     @if (documents.source()) {
       <button type="button" class="menu-item" role="menuitem" (click)="documents.saveXmlAs()">
         <stemma-icon name="copy" />{{ t('file.saveAs') }}<span class="shortcut">Ctrl Shift S</span>
+      </button>
+    }
+    @if (documents.offersDrive()) {
+      <div class="menu-sep" role="separator"></div>
+      <button type="button" class="menu-item" role="menuitem" [attr.title]="driveHint()" (click)="documents.openFromDrive()">
+        <stemma-icon name="cloud" />{{ t('file.openDrive') }}
+      </button>
+      <button type="button" class="menu-item" role="menuitem" [attr.title]="driveHint()" (click)="documents.saveToDrive()">
+        <stemma-icon name="cloudUp" />{{ t('file.saveDrive') }}
       </button>
     }
     <div class="menu-sep" role="separator"></div>

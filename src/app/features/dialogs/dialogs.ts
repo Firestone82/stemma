@@ -9,12 +9,27 @@ import { NewerVersion } from './newer-version/newer-version';
 import { PartExport } from './part-export/part-export';
 import { PartMerge } from './part-merge/part-merge';
 import { XmlExport } from './xml-export/xml-export';
+import { DriveOpen } from './drive-open/drive-open';
+import { DriveSetup } from './drive-setup/drive-setup';
 import { UnsavedChanges } from './unsaved-changes/unsaved-changes';
 
 /** The one modal dialog of the app; what it shows comes from UiState.dialog. */
 @Component({
   selector: 'stemma-dialogs',
-  imports: [ConfirmDelete, ConfirmNew, FamilyExport, PartExport, PartMerge, ImportReport, NewerVersion, XmlExport, AboutFormat, UnsavedChanges],
+  imports: [
+    ConfirmDelete,
+    ConfirmNew,
+    FamilyExport,
+    PartExport,
+    PartMerge,
+    ImportReport,
+    NewerVersion,
+    XmlExport,
+    AboutFormat,
+    UnsavedChanges,
+    DriveSetup,
+    DriveOpen,
+  ],
   templateUrl: './dialogs.html',
   styleUrl: './dialogs.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -24,7 +39,7 @@ export class Dialogs {
   private readonly dialog = viewChild.required<ElementRef<HTMLDialogElement>>('dialog');
 
   protected readonly request = this.ui.dialog;
-  protected readonly wide = computed(() => this.request()?.kind === 'xml' || this.request()?.kind === 'about' || this.request()?.kind === 'part-merge');
+  protected readonly wide = computed(() => ['xml', 'about', 'drive-setup', 'part-merge'].includes(this.request()?.kind ?? ''));
 
   constructor() {
     effect(() => {

@@ -29,14 +29,14 @@ describe('RecentFiles', () => {
 
   it('lists files newest first and keeps the list', async () => {
     await recent.remember({ kind: 'local', name: 'a.xml', title: 'A', handle: handle('a.xml') }, 1);
-    await recent.remember({ kind: 'local', name: 'b.xml', title: 'B', handle: handle('b.xml') }, 2);
+    await recent.remember({ kind: 'drive', title: 'B', file: { id: 'b', name: 'b.xml' } }, 2);
     expect(recent.list().map((e) => e.name)).toEqual(['b.xml', 'a.xml']);
     expect(storage.list.map((e) => e.name)).toEqual(['b.xml', 'a.xml']);
   });
 
   it('moves a file opened again to the top, under its new title', async () => {
     await recent.remember({ kind: 'local', name: 'a.xml', title: 'A', handle: handle('a.xml', 'h1') }, 1);
-    await recent.remember({ kind: 'local', name: 'b.xml', title: 'B', handle: handle('b.xml') }, 2);
+    await recent.remember({ kind: 'drive', title: 'B', file: { id: 'b', name: 'b.xml' } }, 2);
     await recent.remember({ kind: 'local', name: 'a.xml', title: 'A renamed', handle: handle('a.xml', 'h1') }, 3);
     expect(recent.list().map((e) => [e.name, e.title, e.at])).toEqual([
       ['a.xml', 'A renamed', 3],
@@ -57,19 +57,19 @@ describe('RecentFiles', () => {
   });
 
   it(`keeps the newest ${RECENT_LIMIT}`, async () => {
-    for (let i = 0; i < RECENT_LIMIT + 3; i++) await recent.remember({ kind: 'local', name: `f${i}.xml`, title: `T${i}` }, i);
+    for (let i = 0; i < RECENT_LIMIT + 3; i++) await recent.remember({ kind: 'drive', title: `T${i}`, file: { id: `f${i}`, name: `f${i}.xml` } }, i);
     expect(recent.list()).toHaveLength(RECENT_LIMIT);
     expect(recent.list()[0].name).toBe(`f${RECENT_LIMIT + 2}.xml`);
   });
 
   it('forgets a file', async () => {
-    await recent.remember({ kind: 'local', name: 'b.xml', title: 'B' });
+    await recent.remember({ kind: 'drive', title: 'B', file: { id: 'b', name: 'b.xml' } });
     await recent.forget(recent.list()[0].key);
     expect(recent.list()).toEqual([]);
     expect(storage.list).toEqual([]);
   });
 
-  it('drops entries it cannot open, such as Google Drive files from an older version', async () => {
+  it('drops entries it cannot open', async () => {
     await recent.useStorage(
       memoryStorage([{ kind: 'drive', key: 'x', name: 'x.xml', title: '', at: 0 }, 'junk', { kind: 'local', key: 'l', name: 'l.xml', title: '', at: 0 }]),
     );

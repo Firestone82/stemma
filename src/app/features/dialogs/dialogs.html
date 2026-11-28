@@ -30,6 +30,12 @@
       @case ('unsaved') {
         <stemma-unsaved-changes [proceed]="r.proceed" (done)="close()" />
       }
+      @case ('drive-setup') {
+        <stemma-drive-setup (done)="close()" />
+      }
+      @case ('drive-open') {
+        <stemma-drive-open [files]="r.files" (done)="close()" />
+      }
       @case ('about') {
         <stemma-about-format (done)="close()" />
       }
