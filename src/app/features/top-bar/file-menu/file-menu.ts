@@ -34,6 +34,9 @@ export class FileMenu {
     return this.t(this.documents.canSaveXml() ? 'file.save' : 'file.saveCopy');
   });
 
+  /** A tree in Google Drive (its own, or one opened from someone's link) can be shared by a link. */
+  protected readonly canShare = computed(() => this.documents.source()?.kind === 'drive' || !!this.documents.shared());
+
   /** Without a Google Cloud project set up, the Drive items say so (and open the steps to set one up). */
   protected readonly driveHint = computed(() => (this.documents.driveReady() ? null : this.t('file.driveNotSetUp')));
 

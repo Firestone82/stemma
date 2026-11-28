@@ -83,6 +83,13 @@ class FakeDrive {
   async details(): Promise<{ saved: number; folders: string[] } | null> {
     return { saved: 1234, folders: ['Family'] };
   }
+  /** Files anyone with the link may read, by id; `null` stands for Drive being out of reach. */
+  public = new Map<string, { file: DriveFile; text: string } | null>();
+  async readShared(id: string): Promise<DriveOutcome<{ file: DriveFile; text: string }>> {
+    if (!this.public.has(id)) return { status: 'missing' };
+    const found = this.public.get(id);
+    return found ? { status: 'done', value: found } : { status: 'failed' };
+  }
 }
 
 /** Puts a file in the fake Drive, opens the Drive list and picks that file from it. */
@@ -475,5 +482,101 @@ describe('DocumentActions recent files and reopening', () => {
     const held = event();
     actions.beforeUnload(held);
     expect(held.preventDefault).toHaveBeenCalled();
+  });
+});
+
+describe('DocumentActions shared links', () => {
+  let actions: DocumentActions;
+  let drive: FakeDrive;
+  let store: TreeStore;
+  let ui: UiState;
+  let recent: RecentFiles;
+  const shared = { id: '1SharedTreeId_abc', name: 'nowak.xml' };
+  const nowak = serializeTree(emptyDocument('Nowak'));
+  const start = location.pathname + location.search + location.hash;
+
+  /** Opens the app as at a visit to `?drive=<id>`, with `own` kept in the browser from before. */
+  async function visit(id: string, own = 'My own tree'): Promise<void> {
+    localStorage.setItem('stemma.tree.v1', serializeTree(emptyDocument(own)));
+    history.replaceState(null, '', `${location.pathname}?drive=${id}`);
+    actions.restore();
+    await vi.waitFor(() => expect(ui.restoring()).toBe(false));
+    await Promise.resolve();
+  }
+
+  beforeEach(async () => {
+    localStorage.clear();
+    drive = new FakeDrive();
+    TestBed.configureTestingModule({
+      providers: [
+        { provide: FileIo, useValue: new FakeFiles() },
+        { provide: GoogleDrive, useValue: drive },
+      ],
+    });
+    recent = TestBed.inject(RecentFiles);
+    await recent.useStorage(memoryStorage());
+    actions = TestBed.inject(DocumentActions);
+    store = TestBed.inject(TreeStore);
+    ui = TestBed.inject(UiState);
+  });
+
+  afterEach(() => {
+    localStorage.clear();
+    history.replaceState(null, '', start);
+  });
+
+  it('opens the tree a shared link points to, without a file to save to or a recent entry', async () => {
+    drive.public.set(shared.id, { file: shared, text: nowak });
+    await visit(shared.id);
+    expect(store.doc().meta.title).toBe('Nowak');
+    expect(actions.shared()).toEqual(shared);
+    expect(actions.source()).toBeNull();
+    expect(actions.fileBacked()).toBe(true);
+    expect(recent.list()).toEqual([]);
+    expect(location.search).toBe(`?drive=${shared.id}`);
+  });
+
+  it('leaves the tree kept in the browser alone, and brings it back when the shared one is closed', async () => {
+    drive.public.set(shared.id, { file: shared, text: nowak });
+    await visit(shared.id);
+    actions.setTitle('Changed while looking');
+    actions.flush();
+    expect(localStorage.getItem('stemma.tree.v1')).toContain('My own tree');
+
+    actions.closeTree();
+    const asked = ui.dialog();
+    expect(asked?.kind).toBe('unsaved');
+    if (asked?.kind === 'unsaved') await actions.discardThen(asked.proceed);
+    await vi.waitFor(() => expect(store.doc().meta.title).toBe('My own tree'));
+    expect(actions.shared()).toBeNull();
+    expect(location.search).toBe('');
+    expect(localStorage.getItem('stemma.tree.v1')).toContain('My own tree');
+  });
+
+  it('says why when the file is not shared with anyone who has the link, and opens the own tree', async () => {
+    await visit(shared.id);
+    expect(ui.dialog()).toEqual({ kind: 'shared-failed', reason: 'private' });
+    expect(store.doc().meta.title).toBe('My own tree');
+    expect(actions.shared()).toBeNull();
+  });
+
+  it('says when Google Drive could not be reached', async () => {
+    drive.public.set(shared.id, null);
+    await visit(shared.id);
+    expect(ui.dialog()).toEqual({ kind: 'shared-failed', reason: 'failed' });
+  });
+
+  it('offers the link for a shared tree and for an own tree in Drive', async () => {
+    drive.public.set(shared.id, { file: shared, text: nowak });
+    await visit(shared.id);
+    actions.shareTree();
+    expect(ui.dialog()).toEqual({ kind: 'drive-share', file: shared, own: false });
+
+    const mine = { id: 'mine-id', name: 'mine.xml' };
+    await openFromDrive(actions, drive, ui, mine, nowak);
+    expect(actions.shared()).toBeNull();
+    expect(location.search).toBe('');
+    actions.shareTree();
+    expect(ui.dialog()).toEqual({ kind: 'drive-share', file: mine, own: true });
   });
 });

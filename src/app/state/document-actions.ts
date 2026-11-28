@@ -9,7 +9,7 @@ import { LegendEntry, familyDocument } from '../core/family-document/family-docu
 import { ChartLanguage } from '../core/lang/language';
 import { familyOutline, linkedFamilies } from '../core/family-document/outline';
 import { FileIo, PickerType, SaveOutcome, datedFilename } from '../core/services/file-io';
-import { DriveFile, DriveOutcome, GoogleDrive } from '../core/services/google-drive';
+import { DriveFile, DriveOutcome, GoogleDrive, SHARE_PARAM, sharedFileId } from '../core/services/google-drive';
 import { LocalDetails, RecentFile, RecentFiles } from '../core/services/recent-files';
 import { ToastService } from '../core/services/toast';
 import { TreeStore } from '../core/store/tree-store';
@@ -40,11 +40,16 @@ const XML_TYPE: PickerType = { description: 'Stemma family tree (XML)', accept: 
  */
 export type TreeSource = { kind: 'local'; handle: FileSystemFileHandle; name: string } | { kind: 'drive'; file: DriveFile };
 
-/** A file being opened: where Save will write (if anywhere) and what the recent files list keeps of it. */
-interface PendingOpen {
-  source: TreeSource | null;
-  recent: ({ kind: 'local'; name: string; handle?: FileSystemFileHandle } & LocalDetails) | { kind: 'drive'; file: DriveFile };
-}
+/**
+ * A file being opened: where Save will write (if anywhere) and what the recent files list keeps of it. A tree opened
+ * from a shared link has neither: it is `shared`, and only the link leads back to it.
+ */
+type PendingOpen =
+  | {
+      source: TreeSource | null;
+      recent: ({ kind: 'local'; name: string; handle?: FileSystemFileHandle } & LocalDetails) | { kind: 'drive'; file: DriveFile };
+    }
+  | { shared: DriveFile };
 
 /** Whole trees: starting, opening, saving, the example family and the print studio. */
 @Injectable({ providedIn: 'root' })
@@ -67,6 +72,12 @@ export class DocumentActions {
    * the browser cannot write back to it. Such a tree is not kept in the browser for the next visit (see Autosave).
    */
   readonly fileBacked = signal(false);
+  /**
+   * The tree on screen came from a shared link (`?drive=<file id>`, see `shareLink`): someone's tree in Google Drive,
+   * read without signing in. It opens like a copy: it may be explored and changed, but nothing is written back to the
+   * shared file; Save keeps the person's own copy, and closing it brings back the tree they had in the browser.
+   */
+  readonly shared = signal<DriveFile | null>(null);
   /** The tree's revision when it was last opened or saved. */
   private readonly savedRevision = signal(-1);
   /** The tree belongs to a file and has changes the file does not have yet: leaving the page asks first. */
@@ -82,6 +93,16 @@ export class DocumentActions {
    * never reopened from the browser's copy: the start page offers the recent files instead, which read the file afresh.
    */
   restore(): void {
+    const id = typeof location === 'undefined' ? null : sharedFileId(location.search);
+    if (id) {
+      void this.openShared(id);
+      return;
+    }
+    this.restoreOwn();
+  }
+
+  /** The tree kept in the browser (see `restore`), without looking at the page's address. */
+  private restoreOwn(): void {
     const saved = this.autosave.read();
     if (saved === 'closed') {
       this.closeQuietly();
@@ -98,23 +119,50 @@ export class DocumentActions {
   }
 
   private reopen(saved: string | null): void {
-    this.forgetFile();
+    let doc = null;
     if (saved) {
       try {
-        this.store.load(parseTree(saved).doc);
-        this.autosave.enable();
-        return;
+        doc = parseTree(saved).doc;
       } catch {
         // A damaged copy should not block the app; fall back to the example.
       }
     }
-    this.store.load(sampleDocument());
-    this.ui.showSampleNote.set(!this.prefs.read().sampleNoteDismissed);
+    // Loaded before the tie to a file goes, so a shared tree being closed is not written over the browser's copy.
+    this.store.load(doc ?? sampleDocument());
+    this.forgetFile();
+    if (!doc) this.ui.showSampleNote.set(!this.prefs.read().sampleNoteDismissed);
     this.autosave.enable();
+  }
+
+  /**
+   * Opens the tree a shared link points to, read from Google Drive without signing in, while the chart waits for it as
+   * at a reload. Where it cannot be read (not shared with anyone who has the link, gone, or Drive out of reach) a
+   * dialog says why and the person's own tree opens as usual.
+   */
+  private async openShared(id: string): Promise<void> {
+    this.ui.restoring.set(true);
+    let outcome: DriveOutcome<{ file: DriveFile; text: string }>;
+    try {
+      outcome = await this.drive.readShared(id, (file, loaded, total) => this.ui.driveLoading.set({ name: file.name, loaded, total }));
+    } finally {
+      this.ui.driveLoading.set(null);
+      this.ui.restoring.set(false);
+    }
+    if (outcome.status === 'done') {
+      this.pending = { shared: outcome.value.file };
+      this.openXml(outcome.value.text, outcome.value.file.name);
+      this.autosave.enable();
+      // Opened, or waiting on the newer-version dialog; a tree that could not be read leaves the person's own one.
+      if (this.shared() || this.pending) return;
+    } else {
+      this.ui.dialog.set({ kind: 'shared-failed', reason: outcome.status === 'missing' ? 'private' : 'failed' });
+    }
+    this.restoreOwn();
   }
 
   /** The tree is no longer tied to a file: a new tree, the example family. The browser keeps a copy of it again. */
   private forgetFile(): void {
+    this.leaveShared();
     this.pending = null;
     this.source.set(null);
     this.fileBacked.set(false);
@@ -123,10 +171,31 @@ export class DocumentActions {
 
   /** The tree on screen now is the file's content: Save writes there, and the browser keeps no copy of it. */
   private takeFile(source: TreeSource | null, revision = this.store.revision()): void {
+    this.leaveShared();
     this.source.set(source);
     this.fileBacked.set(true);
     this.savedRevision.set(revision);
     this.autosave.setFileBacked(true);
+  }
+
+  /** The tree on screen is the one a shared link points to (see `shared`). */
+  private takeShared(file: DriveFile): void {
+    this.source.set(null);
+    this.fileBacked.set(true);
+    this.savedRevision.set(this.store.revision());
+    this.autosave.setAside();
+    this.shared.set(file);
+  }
+
+  /** Another tree takes the shared one's place: the address no longer points to it, so a reload does not bring it back. */
+  private leaveShared(): void {
+    this.shared.set(null);
+    if (typeof location === 'undefined') return;
+    const params = new URLSearchParams(location.search);
+    if (!params.has(SHARE_PARAM)) return;
+    params.delete(SHARE_PARAM);
+    const search = params.toString();
+    history.replaceState(history.state, '', `${location.pathname}${search ? `?${search}` : ''}${location.hash}`);
   }
 
   /**
@@ -157,7 +226,20 @@ export class DocumentActions {
   /** Closes the tree and goes back to the start page with the recent files. */
   closeTree(): void {
     this.ui.closeMenu();
-    void this.whenSaved(() => this.closeQuietly());
+    // A shared tree was only borrowed: closing it brings back the person's own tree from the browser.
+    void this.whenSaved(() => (this.shared() ? this.restoreOwn() : this.closeQuietly()));
+  }
+
+  /**
+   * The link that opens the tree for anyone, and whether Drive lets anyone with it see the file (see DriveShare). Offered
+   * for a tree in Google Drive: one opened from or saved there, or one opened from a shared link.
+   */
+  shareTree(): void {
+    this.ui.closeMenu();
+    const source = this.source();
+    const own = source?.kind === 'drive' ? source.file : null;
+    const file = own ?? this.shared();
+    if (file) this.ui.dialog.set({ kind: 'drive-share', file, own: !!own });
   }
 
   /** The start page: an empty tree in the app's language, tied to no file. */
@@ -354,7 +436,9 @@ export class DocumentActions {
       this.store.load(result.doc);
       const pending = this.pending;
       this.pending = null;
-      if (pending) {
+      if (pending && 'shared' in pending) {
+        this.takeShared(pending.shared);
+      } else if (pending) {
         this.takeFile(pending.source);
         void this.recent.remember({ ...pending.recent, title: this.store.doc().meta.title });
         if (pending.recent.kind === 'drive') this.describeDrive(pending.recent.file);
@@ -366,7 +450,7 @@ export class DocumentActions {
       if (result.warnings.length || result.upgrades.length) {
         this.ui.dialog.set({ kind: 'import-report', title: result.doc.meta.title, notes: result.warnings, upgrades: result.upgrades });
       } else {
-        this.toast.show(this.i18n.t('file.opened', { title: result.doc.meta.title }));
+        this.toast.show(this.i18n.t(this.shared() ? 'file.openedShared' : 'file.opened', { title: result.doc.meta.title }));
       }
     } catch (e) {
       if (e instanceof XmlFormatError && e.code === 'newer-major') {

@@ -12,7 +12,8 @@
  *   3. Create an OAuth client ID of type "Web application". Under "Authorised JavaScript origins" add
  *      `http://localhost:4200` and `https://firestone82.github.io`.
  *   4. Optional, for the Google Picker (opening trees shared with you, saving into a folder of your choice): create an
- *      API key restricted to the Google Picker API and to the same websites.
+ *      API key restricted to the Google Picker API and the Google Drive API (shared links read public trees with it),
+ *      and to the same websites.
  */
 const CLIENT_ID = '422957047741-f7mbdrgi6g3vtsnkmvu2tmla67pmoks7.apps.googleusercontent.com';
 
