@@ -287,7 +287,8 @@ export const en = {
   'familyView.balloon.children': 'Children of {name}: {families}. Select to add them to the view.',
   'familyView.balloon.partner': 'Partner of {name}: {families}. Select to add them to the view.',
   'focusedView.button': 'Family focus',
-  'focusedView.on': 'Only the family of the person in the middle and their nearest relatives are shown; other families are folded away. Select to show the whole tree.',
+  'focusedView.on':
+    'Only the family of the person in the middle and their nearest relatives are shown; other families are folded away. Select to show the whole tree.',
   'focusedView.off': 'Show only the family of the person in the middle and their nearest relatives, with other families folded away.',
   'focusedView.show': '+ Show',
   'focusedView.swap': '⇄ Show this side',
