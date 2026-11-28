@@ -50,9 +50,18 @@ class FakeDrive {
   toPick: DriveFile | null = null;
   createdIn: (DriveFile | undefined)[] = [];
 
-  async read(file: DriveFile): Promise<DriveOutcome<{ file: DriveFile; text: string }>> {
+  /** What the app showed of the reading as it went. */
+  progressSeen: unknown[] = [];
+  onProgress: () => unknown = () => undefined;
+
+  async read(file: DriveFile, progress?: (loaded: number, total: number | null) => void): Promise<DriveOutcome<{ file: DriveFile; text: string }>> {
     const found = this.inDrive.get(file.id);
-    return found === undefined ? { status: 'missing' } : { status: 'done', value: found };
+    if (found === undefined) return { status: 'missing' };
+    progress?.(0, 200);
+    this.progressSeen.push(this.onProgress());
+    progress?.(100, 200);
+    this.progressSeen.push(this.onProgress());
+    return { status: 'done', value: found };
   }
   async pick(target: string): Promise<DriveOutcome<DriveFile>> {
     this.picked.push({ target, file: this.toPick });
@@ -297,6 +306,16 @@ describe('DocumentActions recent files and reopening', () => {
     await new Promise((resolve) => setTimeout(resolve));
     await recent.settled();
     expect(recent.list()[0]).toMatchObject({ kind: 'drive', saved: 1234, folders: ['Family'] });
+  });
+
+  it('shows how far along a tree from Drive is while it is read, and nothing once it is open', async () => {
+    drive.onProgress = () => ui.driveLoading();
+    await openFromDrive(actions, drive, ui, { id: 'abc', name: 'drive.xml' }, novak);
+    expect(drive.progressSeen).toEqual([
+      { name: 'drive.xml', loaded: 0, total: 200 },
+      { name: 'drive.xml', loaded: 100, total: 200 },
+    ]);
+    expect(ui.driveLoading()).toBeNull();
   });
 
   it('keeps one entry for a file opened twice', async () => {

@@ -10,6 +10,9 @@
       <stemma-sample-note />
     }
     <stemma-side-panel />
+    @if (ui.driveLoading(); as loading) {
+      <stemma-drive-loading [loading]="loading" />
+    }
   </main>
   <stemma-review-bar />
 }

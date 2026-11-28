@@ -39,8 +39,17 @@ export class EmptyState {
     if (entry.kind === 'local') return this.t(entry.downloaded ? 'recent.downloads' : 'recent.computer');
     if (!entry.folders) return this.t('recent.drive');
     const folders = entry.folders;
-    const top = folders[0] === '…' ? [] : [this.t('recent.myDrive')];
-    return [this.t('recent.drive'), ...top, ...folders].join(' / ');
+    const unknown = folders[0] === '…';
+    let top: string[];
+    if (entry.top === 'shared') top = [this.t('recent.sharedWithMe'), ...(unknown && folders.length === 1 ? [] : folders)];
+    else if (entry.top === 'shared-drive' || unknown) top = folders;
+    else top = [this.t('recent.myDrive'), ...folders];
+    return [this.t('recent.drive'), ...top].join(' / ');
+  }
+
+  constructor() {
+    // Where the Google sign-in is still kept, the Drive files' times and folders are brought up to date.
+    this.documents.refreshRecentDrive();
   }
 
   protected addFirst(): void {

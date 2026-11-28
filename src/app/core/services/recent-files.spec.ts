@@ -76,9 +76,9 @@ describe('RecentFiles', () => {
   });
 
   it('keeps the folders of a Drive file opened again until Drive is asked', async () => {
-    await recent.remember({ kind: 'drive', title: 'B', file: { id: 'b', name: 'b.xml' }, saved: 3, folders: ['Family'] }, 1);
+    await recent.remember({ kind: 'drive', title: 'B', file: { id: 'b', name: 'b.xml' }, saved: 3, top: 'shared', folders: ['Family'] }, 1);
     await recent.remember({ kind: 'drive', title: 'B', file: { id: 'b', name: 'b.xml' } }, 4);
-    expect(recent.list()[0]).toMatchObject({ saved: 3, folders: ['Family'], at: 4 });
+    expect(recent.list()[0]).toMatchObject({ saved: 3, top: 'shared', folders: ['Family'], at: 4 });
   });
 
   it('forgets a file', async () => {

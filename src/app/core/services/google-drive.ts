@@ -1,5 +1,6 @@
 import { Injectable } from '@angular/core';
 import { GOOGLE_CONFIG } from './google-config';
+import type { DriveDetails } from './recent-files';
 
 /** A file in Google Drive the tree was opened from or saved to. */
 export interface DriveFile {
@@ -111,6 +112,8 @@ interface GoogleWindow {
 @Injectable({ providedIn: 'root' })
 export class GoogleDrive {
   private ready: Promise<GoogleGlobal> | undefined;
+  /** The id of the top folder of My Drive, asked once (`null` where Drive will not tell). */
+  private rootId: Promise<string | null> | undefined;
   private kept: { value: string; expires: number } | undefined = readToken();
   /** The e-mail of the account the token belongs to (see `account`). */
   private email: string | undefined = readItem(localStorageOrNull(), ACCOUNT_KEY);
@@ -227,20 +230,26 @@ export class GoogleDrive {
     }
   }
 
-  /** Reads a file opened from or saved to Drive earlier again (the recent files), signing in if needed. */
-  async read(file: DriveFile): Promise<DriveOutcome<{ file: DriveFile; text: string }>> {
+  /**
+   * Reads a file opened from or saved to Drive earlier again (the recent files), signing in if needed. `progress` hears
+   * how much has come so far, out of the file's size where Drive gives it.
+   */
+  async read(file: DriveFile, progress?: (loaded: number, total: number | null) => void): Promise<DriveOutcome<{ file: DriveFile; text: string }>> {
     const auth = await this.authorize();
     if (auth.status !== 'done') return auth;
     try {
       const headers = this.headers(auth.value.token);
       const id = encodeURIComponent(file.id);
-      const meta = await fetch(`${FILES}/${id}?fields=id,name,trashed&supportsAllDrives=true`, { headers });
+      const meta = await fetch(`${FILES}/${id}?fields=id,name,trashed,size&supportsAllDrives=true`, { headers });
       if (!meta.ok) return this.failed(meta);
-      const info = (await meta.json()) as DriveFile & { trashed?: boolean };
+      const info = (await meta.json()) as DriveFile & { trashed?: boolean; size?: string };
       if (info.trashed) return { status: 'missing' };
+      const total = info.size ? Number(info.size) : null;
+      progress?.(0, total);
       const response = await fetch(`${FILES}/${id}?alt=media&supportsAllDrives=true`, { headers });
       if (!response.ok) return this.failed(response);
-      return { status: 'done', value: { file: { id: info.id, name: info.name }, text: await response.text() } };
+      const text = await readText(response, (loaded) => progress?.(loaded, total));
+      return { status: 'done', value: { file: { id: info.id, name: info.name }, text } };
     } catch {
       return { status: 'failed' };
     }
@@ -289,37 +298,53 @@ export class GoogleDrive {
   }
 
   /**
-   * When a file was last changed and the folders it is in, from the top (My Drive) down, for the recent files. Asked
-   * only with the sign-in already given (after the file was read or written), so it never opens a pop-up. Folders the
-   * app may not see (with the `drive.file` scope, those it did not make) end the path, shown as "…" in their place;
-   * `null` when Drive cannot be asked.
+   * When a file was last changed and where it is, for the recent files: the folders it is in, from the top of My Drive
+   * down, or that it was shared with the person by someone else. Asked only with the sign-in already given (after the
+   * file was read or written, or still kept for this tab), so it never opens a pop-up; `null` when Drive cannot be asked.
+   * With the `drive.file` scope the app may read only the folders it made or the person picked; a folder above those
+   * ends the path, shown as "…" in its place.
    */
-  async details(file: DriveFile): Promise<{ saved: number; folders: string[] } | null> {
-    if (!this.token || this.token.expires <= Date.now()) return null;
-    const headers = this.headers(this.token.value);
-    const get = async (id: string) => {
-      const response = await fetch(`${FILES}/${encodeURIComponent(id)}?fields=id,name,parents,modifiedTime&supportsAllDrives=true`, { headers });
+  async details(file: DriveFile): Promise<DriveDetails | null> {
+    const token = this.token;
+    if (!token) return null;
+    const headers = this.headers(token.value);
+    const get = async (id: string, fields = 'id,name,parents') => {
+      const response = await fetch(`${FILES}/${encodeURIComponent(id)}?fields=${fields}&supportsAllDrives=true`, { headers });
       if (!response.ok) return null;
-      return (await response.json()) as { id: string; name: string; parents?: string[]; modifiedTime?: string };
+      return (await response.json()) as { id: string; name: string; parents?: string[]; modifiedTime?: string; ownedByMe?: boolean; driveId?: string };
     };
     try {
-      const info = await get(file.id);
+      const info = await get(file.id, 'id,name,parents,modifiedTime,ownedByMe,driveId');
       if (!info) return null;
+      this.rootId ??= get('root', 'id')
+        .then((root) => root?.id ?? null)
+        .catch(() => null);
+      const root = await this.rootId;
       const folders: string[] = [];
       let parent = info.parents?.[0];
       let complete = !parent;
       for (let depth = 0; parent && depth < 20; depth++) {
+        if (parent === root) {
+          complete = true;
+          break;
+        }
         const folder = await get(parent);
         if (!folder) break;
-        // The top folder has no parents; Drive calls it "My Drive" in the person's own language, so it is left out here.
+        // The top of My Drive (or of a shared drive, whose name is kept) has no parents.
         if (!folder.parents?.length) {
+          if (folder.id === info.driveId) folders.unshift(folder.name);
           complete = true;
           break;
         }
         folders.unshift(folder.name);
         parent = folder.parents[0];
       }
-      return { saved: info.modifiedTime ? Date.parse(info.modifiedTime) : Date.now(), folders: complete ? folders : ['…', ...folders] };
+      const top: DriveDetails['top'] = info.driveId ? 'shared-drive' : info.ownedByMe === false ? 'shared' : 'mine';
+      return {
+        saved: info.modifiedTime ? Date.parse(info.modifiedTime) : Date.now(),
+        top,
+        folders: complete ? folders : ['…', ...folders],
+      };
     } catch {
       return null;
     }
@@ -473,6 +498,23 @@ function readToken(): { value: string; expires: number } | undefined {
     // Unreadable or blocked storage: sign in again.
   }
   return undefined;
+}
+
+/** The body of a response as text, telling `progress` how many bytes have come so far. */
+async function readText(response: Response, progress: (loaded: number) => void): Promise<string> {
+  const reader = response.body?.getReader();
+  if (!reader) return response.text();
+  const decoder = new TextDecoder();
+  let text = '';
+  let loaded = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    loaded += value.byteLength;
+    text += decoder.decode(value, { stream: true });
+    progress(loaded);
+  }
+  return text + decoder.decode();
 }
 
 /** Adds a script to the page once and waits for it. */

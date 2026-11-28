@@ -19,9 +19,14 @@ export interface LocalDetails {
   downloaded?: boolean;
 }
 
-/** What Drive says of a file: when it was last changed, and the folders it is in, from the top (My Drive) down. */
+/**
+ * What Drive says of a file: when it was last changed, whether it is in the person's own Drive, was shared with them
+ * by someone else, or is in a shared drive, and the folders it is in from the top down ("…" first where the folders
+ * above could not be read).
+ */
 export interface DriveDetails {
   saved?: number;
+  top?: 'mine' | 'shared' | 'shared-drive';
   folders?: string[];
 }
 
@@ -130,6 +135,7 @@ export class RecentFiles {
       const before = list.find((e): e is Extract<RecentFile, { kind: 'drive' }> => e.key === key && e.kind === 'drive');
       const saved = input.saved ?? before?.saved;
       const folders = input.folders ?? before?.folders;
+      const top = input.top ?? before?.top;
       return {
         kind: 'drive',
         key,
@@ -139,6 +145,7 @@ export class RecentFiles {
         file: { id: input.file.id, name: input.file.name },
         ...(saved !== undefined ? { saved } : {}),
         ...(folders ? { folders } : {}),
+        ...(top ? { top } : {}),
       };
     }
     const same = await sameLocalFile(input, list);
