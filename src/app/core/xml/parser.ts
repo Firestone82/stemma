@@ -23,6 +23,7 @@ import {
   ANCHOR_VALUES,
   Anchor,
   ORIENTATION_VALUES,
+  PartInfo,
   Person,
   PersonName,
   PrintSettings,
@@ -138,7 +139,10 @@ const RETIRED_PRINT = [
 
 const KNOWN = {
   // <background> and <arrangement> (formats 1.3 and 1.4) are no longer read or written.
-  root: { attrs: ['formatVersion', 'generator'], elements: ['meta', 'view', 'people', 'families', 'print', 'savedPrints', 'background', 'arrangement'] },
+  root: {
+    attrs: ['formatVersion', 'generator'],
+    elements: ['meta', 'view', 'people', 'families', 'print', 'savedPrints', 'part', 'background', 'arrangement'],
+  },
   savedPrints: { attrs: [], elements: ['print'] },
   meta: { attrs: [], elements: ['title', 'description', 'created', 'modified', 'homePerson'] },
   view: {
@@ -334,6 +338,8 @@ class Reader {
       }
       if (byPerson.size) doc.savedPrints = [...byPerson.values()];
     }
+    const partEl = first(root, 'part');
+    if (partEl) doc.part = this.readPart(partEl);
     setExt(doc, captureExt(root, KNOWN.root, ['xmlns']));
     const sectionExt: TreeDocument['sectionExt'] = {};
     const pe = peopleEl ? captureExt(peopleEl, KNOWN.people) : undefined;
@@ -342,6 +348,24 @@ class Reader {
     if (fe) sectionExt.families = fe;
     if (pe || fe) doc.sectionExt = sectionExt;
     return doc;
+  }
+
+  /** How a part of a tree was when it was taken out (see core/part). Records without a ref are skipped. */
+  readPart(el: Element): PartInfo {
+    const part: PartInfo = { source: el.getAttribute('source') ?? '', exported: el.getAttribute('exported') ?? '', people: {}, families: {} };
+    const root = el.getAttribute('root');
+    if (root) part.rootId = root;
+    const ids = (raw: string | null) => (raw ?? '').split(/\s+/).filter(Boolean);
+    for (const p of elements(el, 'person')) {
+      const ref = p.getAttribute('ref');
+      if (ref) part.people[ref] = p.getAttribute('base') ?? '';
+    }
+    for (const f of elements(el, 'family')) {
+      const ref = f.getAttribute('ref');
+      if (ref)
+        part.families[ref] = { fields: f.getAttribute('base') ?? '', partners: ids(f.getAttribute('partners')), children: ids(f.getAttribute('children')) };
+    }
+    return part;
   }
 
   readMeta(el: Element | undefined): TreeMeta {

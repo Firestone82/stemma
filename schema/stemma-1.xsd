@@ -206,6 +206,8 @@
       <xs:element name="print" type="t:Print" minOccurs="0"/>
       <!-- 1.9: print settings kept for particular people, one <print> for each, named by its center. -->
       <xs:element name="savedPrints" type="t:SavedPrints" minOccurs="0"/>
+      <!-- 1.9: in a file holding a part of a tree taken out to be filled in, how its records were then. -->
+      <xs:element name="part" type="t:Part" minOccurs="0"/>
       <xs:group ref="t:Foreign"/>
     </xs:sequence>
     <xs:attribute name="formatVersion" type="t:FormatVersion" use="required"/>
@@ -217,6 +219,35 @@
     <xs:sequence>
       <xs:element name="print" type="t:Print" minOccurs="0" maxOccurs="unbounded"/>
     </xs:sequence>
+  </xs:complexType>
+
+  <!--
+    A part of a tree taken out to a file of its own (1.9), to be filled in elsewhere and merged back.
+    source: the title of the tree it came from; exported: when; root: the person it was taken around.
+    Each person and family as it was then: base holds short fingerprints of its fields, joined with
+    dots; a family also lists its partners and children. Records of people and families deleted from
+    the file since stay, and refer to nobody in it, so they are not references.
+  -->
+  <xs:complexType name="Part">
+    <xs:sequence>
+      <xs:element name="person" minOccurs="0" maxOccurs="unbounded">
+        <xs:complexType>
+          <xs:attribute name="ref" type="xs:NCName" use="required"/>
+          <xs:attribute name="base" type="xs:string"/>
+        </xs:complexType>
+      </xs:element>
+      <xs:element name="family" minOccurs="0" maxOccurs="unbounded">
+        <xs:complexType>
+          <xs:attribute name="ref" type="xs:NCName" use="required"/>
+          <xs:attribute name="base" type="xs:string"/>
+          <xs:attribute name="partners" type="xs:NMTOKENS"/>
+          <xs:attribute name="children" type="xs:NMTOKENS"/>
+        </xs:complexType>
+      </xs:element>
+    </xs:sequence>
+    <xs:attribute name="source" type="xs:string"/>
+    <xs:attribute name="exported" type="xs:string"/>
+    <xs:attribute name="root" type="xs:NCName"/>
   </xs:complexType>
 
   <xs:complexType name="Meta">
