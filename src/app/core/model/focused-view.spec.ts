@@ -31,7 +31,12 @@ function tree(): TreeDocument {
   person('K+', 'female');
   person('G', 'male');
   person('GG', 'male');
+  person('U', 'male');
+  person('U+', 'female');
+  person('UC', 'male');
   pedigree('C', 4, ['S']);
+  families.find((f) => f.id === 'F:C.f')!.children.push({ personId: 'U', relation: 'biological' });
+  family('F:U', ['U', 'U+'], ['UC']);
   pedigree('P', 2);
   family('F:CP', ['C', 'P'], ['K']);
   family('F:S', ['S', 'S+'], ['N']);
@@ -48,9 +53,16 @@ describe('focused view', () => {
 
   it('shows the couple with their nearest relatives', () => {
     const s = shown();
-    for (const id of ['C', 'P', 'S', 'S+', 'K', 'K+', 'G', 'C.f', 'C.m', 'C.f.f', 'C.f.m', 'C.m.f', 'C.m.m', 'P.f', 'P.m']) expect(s.has(id), id).toBe(true);
-    // Nephews, great-grandchildren and the partner's grandparents are folded away.
-    for (const id of ['N', 'GG', 'P.f.f', 'P.m.m']) expect(s.has(id), id).toBe(false);
+    for (const id of ['C', 'P', 'S', 'S+', 'N', 'K', 'K+', 'G', 'C.f', 'C.m', 'C.f.f', 'C.f.m', 'C.m.f', 'C.m.m']) expect(s.has(id), id).toBe(true);
+    // Great-grandchildren and the partner's parents are folded away.
+    for (const id of ['GG', 'P.f', 'P.m']) expect(s.has(id), id).toBe(false);
+  });
+
+  it('shows aunts and uncles on their own', () => {
+    const s = shown();
+    expect(s.has('U')).toBe(true);
+    expect(s.has('U+')).toBe(false);
+    expect(s.has('UC')).toBe(false);
   });
 
   it('lets one line of ancestors go on up: the father’s father’s', () => {
@@ -62,7 +74,7 @@ describe('focused view', () => {
   it('folds the other lines into balloons over the ancestors', () => {
     const scope = focusedScope(doc, index, { centerId: 'C', partnerId: 'P' });
     const balloons = new Set(familyBalloons(doc, index, scope.people, () => '').map((b) => b.id));
-    for (const id of ['parents:C.f.m', 'parents:C.m.f', 'parents:C.m.m', 'parents:C.f.f.m', 'parents:P.f', 'parents:P.m', 'children:F:S', 'children:F:G']) {
+    for (const id of ['parents:C.f.m', 'parents:C.m.f', 'parents:C.m.m', 'parents:C.f.f.m', 'parents:P', 'partner:U:U+', 'children:F:G']) {
       expect(balloons.has(id), id).toBe(true);
     }
     expect(balloons.has('parents:C.f.f')).toBe(false);
@@ -78,16 +90,17 @@ describe('focused view', () => {
   });
 
   it('can let the partner’s line go up instead', () => {
-    const s = shown({ through: 'P.f' });
+    const s = shown({ through: 'P' });
+    expect(s.has('P.f')).toBe(true);
+    expect(s.has('P.m')).toBe(true);
     expect(s.has('P.f.f')).toBe(true);
-    expect(s.has('P.f.m')).toBe(true);
     expect(s.has('P.m.f')).toBe(false);
     expect(s.has('C.f.f.f')).toBe(false);
   });
 
   it('brings people opened from a balloon in, with their partners', () => {
-    const s = shown({ opened: ['N', 'GG'] });
-    expect(s.has('N')).toBe(true);
+    const s = shown({ opened: ['UC', 'GG'] });
+    expect(s.has('UC')).toBe(true);
     expect(s.has('GG')).toBe(true);
   });
 
