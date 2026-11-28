@@ -10,7 +10,7 @@ import { DEFAULT_VIEW, Family, Person, TreeDocument } from './types';
  * daughter, whose son was born into his father's family. C and P have a son K, whose son G has a son GG.
  */
 const FAMILY_C = ['S', 'U', 'UC', 'K', 'G', 'GG', 'GU', 'GUC', 'GUD'];
-const keyOf = (id: string) => (FAMILY_C.includes(id) ? 'C' : /^[CP](\.[fm])*$/.test(id) ? id.replace(/(\.f)+$/, '') : id);
+const keyOf = (id: string) => (id === 'MU' ? 'C.m' : FAMILY_C.includes(id) ? 'C' : /^[CP](\.[fm])*$/.test(id) ? id.replace(/(\.f)+$/, '') : id);
 
 function tree(): TreeDocument {
   const people: Person[] = [];
@@ -27,7 +27,7 @@ function tree(): TreeDocument {
     pedigree(`${id}.f`, depth - 1);
     pedigree(`${id}.m`, depth - 1);
   };
-  for (const id of ['C', 'S+', 'N', 'K', 'G', 'GG', 'U', 'UC', 'GU', 'GUC', 'GUDC']) person(id, 'male');
+  for (const id of ['C', 'MU', 'S+', 'N', 'K', 'G', 'GG', 'U', 'UC', 'GU', 'GUC', 'GUDC']) person(id, 'male');
   for (const id of ['P', 'S', 'K+', 'U+', 'GUD']) person(id, 'female');
   pedigree('C', 4);
   pedigree('P', 2);
@@ -35,6 +35,7 @@ function tree(): TreeDocument {
     families.find((f) => f.id === familyId)!.children.push(...ids.map((personId) => ({ personId, relation: 'biological' as const })));
   kids('F:C', 'S');
   kids('F:C.f', 'U');
+  kids('F:C.m', 'MU');
   kids('F:C.f.f', 'GU');
   family('F:U', ['U', 'U+'], ['UC']);
   family('F:GU', ['GU'], ['GUC', 'GUD']);
@@ -58,7 +59,11 @@ describe('focused view', () => {
   };
 
   it('shows the nearest relatives with their partners', () => {
-    expectShown(shown(), ['C', 'P', 'S', 'S+', 'N', 'K', 'K+', 'G', 'C.f', 'C.m', 'C.f.m', 'C.m.f', 'C.m.m', 'U', 'U+'], ['P.f', 'P.m', 'C.m.m.f', 'C.f.m.f']);
+    expectShown(shown(), ['C', 'P', 'S', 'S+', 'N', 'K', 'K+', 'G', 'C.f', 'C.m', 'C.f.m', 'U', 'U+'], ['P.f', 'P.m', 'C.f.m.f']);
+  });
+
+  it('leaves out the family a mother who married in was born into', () => {
+    expectShown(shown(), [], ['C.m.f', 'C.m.m', 'MU', 'C.m.m.f']);
   });
 
   it('shows the whole family of the person in the middle, up and down', () => {
@@ -69,8 +74,7 @@ describe('focused view', () => {
 
   it('folds the other families into balloons', () => {
     const balloons = new Set(familyBalloons(doc, index, scope().people, keyOf).map((b) => b.id));
-    for (const id of ['parents:C.f.m', 'parents:C.m.f', 'parents:C.m.m', 'parents:C.f.f.m', 'parents:P', 'children:F:GUD'])
-      expect(balloons.has(id), id).toBe(true);
+    for (const id of ['parents:C.f.m', 'parents:C.m', 'parents:C.f.f.m', 'parents:P', 'children:F:GUD']) expect(balloons.has(id), id).toBe(true);
     expect(balloons.has('parents:C.f.f')).toBe(false);
   });
 
@@ -78,7 +82,7 @@ describe('focused view', () => {
     const s = shown({ through: 'C.m.m' });
     expectShown(s, ['C.m.m.f', 'C.m.m.f.f', 'C.m.m.m'], ['C.m.m.m.f']);
     // The family shown before is folded away beyond the nearest relatives.
-    expectShown(s, ['C.f.f', 'U', 'K', 'G'], ['C.f.f.f', 'GU', 'UC', 'GG']);
+    expectShown(s, ['C.f', 'C.m.f', 'K', 'G'], ['C.f.f', 'C.f.f.f', 'U', 'GU', 'UC', 'GG']);
   });
 
   it('can show the partner’s family instead', () => {
@@ -91,6 +95,10 @@ describe('focused view', () => {
 
   it('ignores an ancestor who is no ancestor', () => {
     expect([...shown({ through: 'S+' })].sort()).toEqual([...shown()].sort());
+  });
+
+  it('can show the mother’s family instead', () => {
+    expectShown(shown({ through: 'C.m' }), ['C.m.f', 'C.m.m', 'MU', 'C.m.f.f'], ['C.m.m.f', 'C.f.f']);
   });
 
   it('tells the balloons over ancestors from the others', () => {
